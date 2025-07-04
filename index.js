@@ -133,7 +133,7 @@ function addVectorTask(chatId, task) {
     const tasks = getChatTasks(chatId);
     tasks.push(task);
     settings.vector_tasks[chatId] = tasks;
-    Object.assign(extension_settings['vectors-enhanced'], settings);
+    Object.assign(extension_settings.vectors_enhanced, settings);
     saveSettingsDebounced();
 }
 
@@ -151,7 +151,7 @@ async function removeVectorTask(chatId, taskId) {
         // Remove from tasks list
         tasks.splice(index, 1);
         settings.vector_tasks[chatId] = tasks;
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     }
 }
@@ -335,18 +335,18 @@ async function getVectorizableContent() {
  */
 function updateProgress(current, total, message) {
     const percent = Math.round((current / total) * 100);
-    $('#vectors_progress').show();
-    $('#vectors_progress .progress-bar-inner').css('width', `${percent}%`);
-    $('#vectors_progress .progress-text').text(`${message} (${current}/${total})`);
+    $('#vectors_enhanced_progress').show();
+    $('#vectors_enhanced_progress .progress-bar-inner').css('width', `${percent}%`);
+    $('#vectors_enhanced_progress .progress-text').text(`${message} (${current}/${total})`);
 }
 
 /**
  * Hides progress display
  */
 function hideProgress() {
-    $('#vectors_progress').hide();
-    $('#vectors_progress .progress-bar-inner').css('width', '0%');
-    $('#vectors_progress .progress-text').text('准备中...');
+    $('#vectors_enhanced_progress').hide();
+    $('#vectors_enhanced_progress .progress-bar-inner').css('width', '0%');
+    $('#vectors_enhanced_progress .progress-text').text('准备中...');
 }
 
 /**
@@ -403,7 +403,7 @@ async function updateTaskList() {
     if (!chatId) return;
     
     const tasks = getChatTasks(chatId);
-    const taskList = $('#vectors_task_list');
+    const taskList = $('#vectors_enhanced_task_list');
     taskList.empty();
     
     if (tasks.length === 0) {
@@ -426,7 +426,7 @@ async function updateTaskList() {
         
         checkbox.find('input').on('change', function() {
             task.enabled = this.checked;
-            Object.assign(extension_settings['vectors-enhanced'], settings);
+            Object.assign(extension_settings.vectors_enhanced, settings);
             saveSettingsDebounced();
         });
         
@@ -935,7 +935,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 window['vectors_rearrangeChat'] = rearrangeChat;
 
 // 全局事件绑定 - 确保按钮始终有效
-$(document).on('click', '#vectors_preview', async function(e) {
+$(document).on('click', '#vectors_enhanced_preview', async function(e) {
     e.preventDefault();
     console.log('预览按钮被点击 (全局绑定)');
     try {
@@ -946,7 +946,7 @@ $(document).on('click', '#vectors_preview', async function(e) {
     }
 });
 
-$(document).on('click', '#vectors_export', async function(e) {
+$(document).on('click', '#vectors_enhanced_export', async function(e) {
     e.preventDefault();
     console.log('导出按钮被点击 (全局绑定)');
     try {
@@ -957,7 +957,7 @@ $(document).on('click', '#vectors_export', async function(e) {
     }
 });
 
-$(document).on('click', '#vectors_vectorize', async function(e) {
+$(document).on('click', '#vectors_enhanced_vectorize', async function(e) {
     e.preventDefault();
     console.log('向量化按钮被点击 (全局绑定)');
     try {
@@ -1113,8 +1113,8 @@ async function purgeVectorIndex(collectionId) {
  * Updates UI based on settings
  */
 function toggleSettings() {
-    $('#vectors_vllm_settings').toggle(settings.source === 'vllm');
-    $('#vectors_local_settings').toggle(settings.source === 'transformers');
+    $('#vectors_enhanced_vllm_settings').toggle(settings.source === 'vllm');
+    $('#vectors_enhanced_local_settings').toggle(settings.source === 'transformers');
 }
 
 /**
@@ -1122,9 +1122,9 @@ function toggleSettings() {
  */
 function updateContentSelection() {
     // This will be called when settings change to update the UI
-    $('#vectors_chat_settings').toggle(settings.selected_content.chat.enabled);
-    $('#vectors_files_settings').toggle(settings.selected_content.files.enabled);
-    $('#vectors_wi_settings').toggle(settings.selected_content.world_info.enabled);
+    $('#vectors_enhanced_chat_settings').toggle(settings.selected_content.chat.enabled);
+    $('#vectors_enhanced_files_settings').toggle(settings.selected_content.files.enabled);
+    $('#vectors_enhanced_wi_settings').toggle(settings.selected_content.world_info.enabled);
 }
 
 /**
@@ -1137,7 +1137,7 @@ async function updateFileList() {
         ...(context.chat?.filter(x => x.extra?.file).map(x => x.extra.file) || [])
     ];
     
-    const fileList = $('#vectors_files_list');
+    const fileList = $('#vectors_enhanced_files_list');
     fileList.empty();
     
     if (allFiles.length === 0) {
@@ -1168,7 +1168,7 @@ async function updateFileList() {
                 } else {
                     settings.selected_content.files.selected = settings.selected_content.files.selected.filter(url => url !== file.url);
                 }
-                Object.assign(extension_settings['vectors-enhanced'], settings);
+                Object.assign(extension_settings.vectors_enhanced, settings);
                 saveSettingsDebounced();
             });
             
@@ -1196,7 +1196,7 @@ async function updateFileList() {
                 } else {
                     settings.selected_content.files.selected = settings.selected_content.files.selected.filter(url => url !== file.url);
                 }
-                Object.assign(extension_settings['vectors-enhanced'], settings);
+                Object.assign(extension_settings.vectors_enhanced, settings);
                 saveSettingsDebounced();
             });
             
@@ -1210,7 +1210,7 @@ async function updateFileList() {
  */
 async function updateWorldInfoList() {
     const entries = await getSortedEntries();
-    const wiList = $('#vectors_wi_list');
+    const wiList = $('#vectors_enhanced_wi_list');
     wiList.empty();
     
     if (!entries || entries.length === 0) {
@@ -1260,7 +1260,7 @@ async function updateWorldInfoList() {
             // 更新所有子条目
             worldDiv.find('.wi-entry input').prop('checked', isChecked);
             
-            Object.assign(extension_settings['vectors-enhanced'], settings);
+            Object.assign(extension_settings.vectors_enhanced, settings);
             saveSettingsDebounced();
         });
         
@@ -1302,7 +1302,7 @@ async function updateWorldInfoList() {
                     delete settings.selected_content.world_info.selected[world];
                 }
                 
-                Object.assign(extension_settings['vectors-enhanced'], settings);
+                Object.assign(extension_settings.vectors_enhanced, settings);
                 saveSettingsDebounced();
             });
             
@@ -1320,8 +1320,8 @@ function updateChatSettings() {
     const context = getContext();
     const messageCount = context.chat?.length || 0;
     
-    $('#vectors_chat_start').attr('max', messageCount);
-    $('#vectors_chat_end').attr('min', -1).attr('max', messageCount);
+    $('#vectors_enhanced_chat_start').attr('max', messageCount);
+    $('#vectors_enhanced_chat_end').attr('min', -1).attr('max', messageCount);
 }
 
 // Event handlers
@@ -1336,12 +1336,15 @@ const onChatEvent = debounce(async () => {
 }, debounce_timeout.relaxed);
 
 jQuery(async () => {
-    if (!extension_settings['vectors-enhanced']) {
-        extension_settings['vectors-enhanced'] = settings;
+    // 使用独立的设置键避免冲突
+    const SETTINGS_KEY = 'vectors_enhanced';
+    
+    if (!extension_settings[SETTINGS_KEY]) {
+        extension_settings[SETTINGS_KEY] = settings;
     }
 
     // 深度合并设置，确保所有必需的属性都存在
-    Object.assign(settings, extension_settings['vectors-enhanced']);
+    Object.assign(settings, extension_settings[SETTINGS_KEY]);
     
     // 确保 chat types 存在（处理旧版本兼容性）
     if (!settings.selected_content.chat.types) {
@@ -1359,150 +1362,145 @@ jQuery(async () => {
     }
     
     // 保存修正后的设置
-    Object.assign(extension_settings['vectors-enhanced'], settings);
+    Object.assign(extension_settings[SETTINGS_KEY], settings);
     saveSettingsDebounced();
 
-    // 为第三方插件加载模板
-    const response = await fetch('/scripts/extensions/third-party/vectors-enhanced/settings.html');
-    if (!response.ok) {
-        console.error('Failed to load settings template');
-        return;
-    }
-    const template = await response.text();
-    $('#vectors_container').append(template);
+    // 第三方插件需要使用完整路径
+    const template = await renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings');
+    $('#extensions_settings').append(template);
 
     // Initialize UI elements
-    $('#vectors_source').val(settings.source).on('change', () => {
-        settings.source = String($('#vectors_source').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_source').val(settings.source).on('change', () => {
+        settings.source = String($('#vectors_enhanced_source').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
         toggleSettings();
     });
 
-    $('#vectors_vllm_model').val(settings.vllm_model).on('input', () => {
-        settings.vllm_model = String($('#vectors_vllm_model').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_vllm_model').val(settings.vllm_model).on('input', () => {
+        settings.vllm_model = String($('#vectors_enhanced_vllm_model').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_vllm_url').val(settings.vllm_url).on('input', () => {
-        settings.vllm_url = String($('#vectors_vllm_url').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_vllm_url').val(settings.vllm_url).on('input', () => {
+        settings.vllm_url = String($('#vectors_enhanced_vllm_url').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_auto_vectorize').prop('checked', settings.auto_vectorize).on('input', () => {
-        settings.auto_vectorize = $('#vectors_auto_vectorize').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_auto_vectorize').prop('checked', settings.auto_vectorize).on('input', () => {
+        settings.auto_vectorize = $('#vectors_enhanced_auto_vectorize').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_chunk_size').val(settings.chunk_size).on('input', () => {
-        settings.chunk_size = Number($('#vectors_chunk_size').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_chunk_size').val(settings.chunk_size).on('input', () => {
+        settings.chunk_size = Number($('#vectors_enhanced_chunk_size').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_overlap_percent').val(settings.overlap_percent).on('input', () => {
-        settings.overlap_percent = Number($('#vectors_overlap_percent').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_overlap_percent').val(settings.overlap_percent).on('input', () => {
+        settings.overlap_percent = Number($('#vectors_enhanced_overlap_percent').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_score_threshold').val(settings.score_threshold).on('input', () => {
-        settings.score_threshold = Number($('#vectors_score_threshold').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_score_threshold').val(settings.score_threshold).on('input', () => {
+        settings.score_threshold = Number($('#vectors_enhanced_score_threshold').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_force_chunk_delimiter').val(settings.force_chunk_delimiter).on('input', () => {
-        settings.force_chunk_delimiter = String($('#vectors_force_chunk_delimiter').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_force_chunk_delimiter').val(settings.force_chunk_delimiter).on('input', () => {
+        settings.force_chunk_delimiter = String($('#vectors_enhanced_force_chunk_delimiter').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_enabled').prop('checked', settings.enabled).on('input', () => {
-        settings.enabled = $('#vectors_enabled').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_enabled').prop('checked', settings.enabled).on('input', () => {
+        settings.enabled = $('#vectors_enhanced_enabled').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_query_messages').val(settings.query_messages).on('input', () => {
-        settings.query_messages = Number($('#vectors_query_messages').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_query_messages').val(settings.query_messages).on('input', () => {
+        settings.query_messages = Number($('#vectors_enhanced_query_messages').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_max_results').val(settings.max_results).on('input', () => {
-        settings.max_results = Number($('#vectors_max_results').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_max_results').val(settings.max_results).on('input', () => {
+        settings.max_results = Number($('#vectors_enhanced_max_results').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
     
     // 内容标签设置事件处理器
-    $('#vectors_tag_chat').on('input', () => {
-        const value = $('#vectors_tag_chat').val().trim() || 'past_chat';
+    $('#vectors_enhanced_tag_chat').on('input', () => {
+        const value = $('#vectors_enhanced_tag_chat').val().trim() || 'past_chat';
         settings.content_tags.chat = value;
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
     
-    $('#vectors_tag_wi').on('input', () => {
-        const value = $('#vectors_tag_wi').val().trim() || 'world_part';
+    $('#vectors_enhanced_tag_wi').on('input', () => {
+        const value = $('#vectors_enhanced_tag_wi').val().trim() || 'world_part';
         settings.content_tags.world_info = value;
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
     
-    $('#vectors_tag_file').on('input', () => {
-        const value = $('#vectors_tag_file').val().trim() || 'databank';
+    $('#vectors_enhanced_tag_file').on('input', () => {
+        const value = $('#vectors_enhanced_tag_file').val().trim() || 'databank';
         settings.content_tags.file = value;
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_template').val(settings.template).on('input', () => {
-        settings.template = String($('#vectors_template').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_template').val(settings.template).on('input', () => {
+        settings.template = String($('#vectors_enhanced_template').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_depth').val(settings.depth).on('input', () => {
-        settings.depth = Number($('#vectors_depth').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_depth').val(settings.depth).on('input', () => {
+        settings.depth = Number($('#vectors_enhanced_depth').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
     $(`input[name="vectors_position"][value="${settings.position}"]`).prop('checked', true);
     $('input[name="vectors_position"]').on('change', () => {
         settings.position = Number($('input[name="vectors_position"]:checked').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_depth_role').val(settings.depth_role).on('change', () => {
-        settings.depth_role = Number($('#vectors_depth_role').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_depth_role').val(settings.depth_role).on('change', () => {
+        settings.depth_role = Number($('#vectors_enhanced_depth_role').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_include_wi').prop('checked', settings.include_wi).on('input', () => {
-        settings.include_wi = $('#vectors_include_wi').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_include_wi').prop('checked', settings.include_wi).on('input', () => {
+        settings.include_wi = $('#vectors_enhanced_include_wi').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
     // Content selection handlers
-    $('#vectors_chat_enabled').prop('checked', settings.selected_content.chat.enabled).on('input', () => {
-        settings.selected_content.chat.enabled = $('#vectors_chat_enabled').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_chat_enabled').prop('checked', settings.selected_content.chat.enabled).on('input', () => {
+        settings.selected_content.chat.enabled = $('#vectors_enhanced_chat_enabled').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
         updateContentSelection();
     });
 
-    $('#vectors_files_enabled').prop('checked', settings.selected_content.files.enabled).on('input', async () => {
-        settings.selected_content.files.enabled = $('#vectors_files_enabled').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_files_enabled').prop('checked', settings.selected_content.files.enabled).on('input', async () => {
+        settings.selected_content.files.enabled = $('#vectors_enhanced_files_enabled').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
         updateContentSelection();
         if (settings.selected_content.files.enabled) {
@@ -1510,9 +1508,9 @@ jQuery(async () => {
         }
     });
 
-    $('#vectors_wi_enabled').prop('checked', settings.selected_content.world_info.enabled).on('input', async () => {
-        settings.selected_content.world_info.enabled = $('#vectors_wi_enabled').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_wi_enabled').prop('checked', settings.selected_content.world_info.enabled).on('input', async () => {
+        settings.selected_content.world_info.enabled = $('#vectors_enhanced_wi_enabled').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
         updateContentSelection();
         if (settings.selected_content.world_info.enabled) {
@@ -1525,57 +1523,57 @@ jQuery(async () => {
     const chatTypes = settings.selected_content.chat.types || { user: true, assistant: true };
     const chatTags = settings.selected_content.chat.tags || '';
     
-    $('#vectors_chat_start').val(chatRange.start).on('input', () => {
+    $('#vectors_enhanced_chat_start').val(chatRange.start).on('input', () => {
         if (!settings.selected_content.chat.range) {
             settings.selected_content.chat.range = { start: 0, end: -1 };
         }
-        settings.selected_content.chat.range.start = Number($('#vectors_chat_start').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        settings.selected_content.chat.range.start = Number($('#vectors_enhanced_chat_start').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_chat_end').val(chatRange.end).on('input', () => {
+    $('#vectors_enhanced_chat_end').val(chatRange.end).on('input', () => {
         if (!settings.selected_content.chat.range) {
             settings.selected_content.chat.range = { start: 0, end: -1 };
         }
-        settings.selected_content.chat.range.end = Number($('#vectors_chat_end').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        settings.selected_content.chat.range.end = Number($('#vectors_enhanced_chat_end').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
     // Message type checkboxes
-    $('#vectors_chat_user').prop('checked', chatTypes.user).on('input', () => {
+    $('#vectors_enhanced_chat_user').prop('checked', chatTypes.user).on('input', () => {
         if (!settings.selected_content.chat.types) {
             settings.selected_content.chat.types = { user: true, assistant: true };
         }
-        settings.selected_content.chat.types.user = $('#vectors_chat_user').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        settings.selected_content.chat.types.user = $('#vectors_enhanced_chat_user').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
-    $('#vectors_chat_assistant').prop('checked', chatTypes.assistant).on('input', () => {
+    $('#vectors_enhanced_chat_assistant').prop('checked', chatTypes.assistant).on('input', () => {
         if (!settings.selected_content.chat.types) {
             settings.selected_content.chat.types = { user: true, assistant: true };
         }
-        settings.selected_content.chat.types.assistant = $('#vectors_chat_assistant').prop('checked');
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        settings.selected_content.chat.types.assistant = $('#vectors_enhanced_chat_assistant').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
     // Tags input
-    $('#vectors_chat_tags').val(chatTags).on('input', () => {
-        settings.selected_content.chat.tags = String($('#vectors_chat_tags').val());
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+    $('#vectors_enhanced_chat_tags').val(chatTags).on('input', () => {
+        settings.selected_content.chat.tags = String($('#vectors_enhanced_chat_tags').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
 
     // Refresh buttons
-    $('#vectors_files_refresh').on('click', async () => {
+    $('#vectors_enhanced_files_refresh').on('click', async () => {
         await updateFileList();
         toastr.info('文件列表已刷新');
     });
 
-    $('#vectors_wi_refresh').on('click', async () => {
+    $('#vectors_enhanced_wi_refresh').on('click', async () => {
         await updateWorldInfoList();
         toastr.info('世界信息列表已刷新');
     });
@@ -1594,9 +1592,9 @@ jQuery(async () => {
             world_info: 'world_part'
         };
     }
-    $('#vectors_tag_chat').val(settings.content_tags.chat);
-    $('#vectors_tag_wi').val(settings.content_tags.world_info);
-    $('#vectors_tag_file').val(settings.content_tags.file);
+    $('#vectors_enhanced_tag_chat').val(settings.content_tags.chat);
+    $('#vectors_enhanced_tag_wi').val(settings.content_tags.world_info);
+    $('#vectors_enhanced_tag_file').val(settings.content_tags.file);
 
     // Initialize lists if enabled
     if (settings.selected_content.files.enabled) {
@@ -1618,13 +1616,13 @@ jQuery(async () => {
     eventSource.on(event_types.CHAT_DELETED, (chatId) => {
         cachedVectors.delete(chatId);
         delete settings.vector_tasks[chatId];
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
     eventSource.on(event_types.GROUP_CHAT_DELETED, (chatId) => {
         cachedVectors.delete(chatId);
         delete settings.vector_tasks[chatId];
-        Object.assign(extension_settings['vectors-enhanced'], settings);
+        Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
     eventSource.on(event_types.CHAT_CHANGED, async () => {
