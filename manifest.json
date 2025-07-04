@@ -1,0 +1,15 @@
+{
+    "display_name": "聊天记录超级管理器",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [
+        "embeddings"
+    ],
+    "generate_interceptor": "vectors_rearrangeChat",
+    "js": "index.js",
+    "css": "style.css",
+    "author": "RaphllA",
+    "version": "1.0.0",
+    "homePage": "https://github.com/RaphllA/st-extension-vectors-enhanced/",
+    "description": "增强版向量存储插件，支持多任务管理、自定义内容标签、中文界面等功能"
+}
