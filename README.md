@@ -43,21 +43,6 @@
 *   **快捷指令**：支持 `/vec-preview`, `/vec-export`, `/vec-process` 等斜杠命令。
 
 
----
-
-## 🛠️ 安装指南
-
-1.  在 SillyTavern 中，导航到 `扩展 (Extensions)` -> `下载扩展 (Download Extension)`。
-2.  复制下方的 **安装链接**。
-3.  将其粘贴到输入框中，然后点击 `下载 (Download)`。
-4.  下载完成后，**刷新 SillyTavern 界面**。
-5.  在右侧面板（或顶部栏）找到并打开 “聊天记录超级管理器” 即可开始使用。
-
-**安装链接:**
-```
-https://raw.githubusercontent.com/你的GitHub用户名/你的仓库名/main/manifest.json
-```
-*(请将 `你的GitHub用户名` 和 `你的仓库名` 替换为你的实际信息)*
 
 ---
 
