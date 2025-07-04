@@ -1,6 +1,6 @@
 {
     "display_name": "聊天记录超级管理器",
-    "loading_order": 100,
+    "loading_order": 5000,
     "requires": [],
     "optional": [
         "embeddings"

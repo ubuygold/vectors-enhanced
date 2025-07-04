@@ -4,8 +4,19 @@
         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
     </div>
     <div class="inline-drawer-content">
+            <!-- 主开关 -->
+            <div class="vectors-enhanced-section" style="padding-bottom: 0.5rem; border-bottom: 2px solid var(--SmartThemeQuoteColor);">
+                <label class="checkbox_label" for="vectors_master_enabled" title="启用/禁用整个插件的所有功能。禁用时，所有向量化和查询功能都将停止工作。">
+                    <input id="vectors_enhanced_master_enabled" type="checkbox" />
+                    <span style="font-weight: bold; color: var(--SmartThemeQuoteColor);">启用聊天记录超级管理器</span>
+                </label>
+                <small style="display: block; margin-top: 0.25rem; color: var(--SmartThemeEmColor);">
+                    关闭此开关将禁用插件的所有功能，包括向量化、查询和任务管理
+                </small>
+            </div>
+            
             <!-- 向量化设置部分 -->
-            <div class="vectors-enhanced-section">
+            <div id="vectors_enhanced_main_settings" class="vectors-enhanced-section">
                 <h3>向量化设置</h3>
                 
                 <!-- 启用向量查询 - 移到最上面 -->
@@ -170,7 +181,7 @@
             <hr class="m-t-1 m-b-1">
 
             <!-- 内容选择部分 -->
-            <div class="vectors-enhanced-section">
+            <div id="vectors_enhanced_content_settings" class="vectors-enhanced-section">
                 <h3>内容选择</h3>
                 
                 <!-- 聊天消息 -->
@@ -265,7 +276,7 @@
                 <hr class="m-t-1 m-b-1">
 
                 <!-- 向量化任务列表 -->
-                <div class="vectors-enhanced-section">
+                <div id="vectors_enhanced_tasks_settings" class="vectors-enhanced-section">
                     <h3>向量化任务</h3>
                     <div id="vectors_enhanced_task_list" class="task-list">
                         <!-- 任务列表将动态填充 -->
@@ -275,31 +286,33 @@
                 <hr class="m-t-1 m-b-1">
 
                 <!-- 操作按钮 -->
-                <div class="vectors-enhanced-actions flex-container">
-                    <button id="vectors_enhanced_preview" class="menu_button menu_button_icon">
-                        <i class="fa-solid fa-eye"></i>
-                        <span>预览</span>
-                    </button>
-                    <button id="vectors_enhanced_export" class="menu_button menu_button_icon">
-                        <i class="fa-solid fa-download"></i>
-                        <span>导出</span>
-                    </button>
-                    <button id="vectors_enhanced_vectorize" class="menu_button menu_button_icon">
-                        <i class="fa-solid fa-vector-square"></i>
-                        <span>向量化</span>
-                    </button>
-                </div>
-
-                <div id="vectors_enhanced_progress" class="vectors-enhanced-progress m-t-1" style="display: none;">
-                    <div class="progress-bar">
-                        <div class="progress-bar-inner" style="width: 0%"></div>
+                <div id="vectors_enhanced_actions_settings" class="vectors-enhanced-section">
+                    <div class="vectors-enhanced-actions flex-container">
+                        <button id="vectors_enhanced_preview" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-eye"></i>
+                            <span>预览</span>
+                        </button>
+                        <button id="vectors_enhanced_export" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-download"></i>
+                            <span>导出</span>
+                        </button>
+                        <button id="vectors_enhanced_vectorize" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-vector-square"></i>
+                            <span>向量化</span>
+                        </button>
                     </div>
-                    <div class="progress-text">准备中...</div>
-                </div>
 
-            <div id="vectors_enhanced_status" class="vectors-enhanced-status m-t-1" style="display: none;">
-                <!-- 状态消息将在此显示 -->
-            </div>
+                    <div id="vectors_enhanced_progress" class="vectors-enhanced-progress m-t-1" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-bar-inner" style="width: 0%"></div>
+                        </div>
+                        <div class="progress-text">准备中...</div>
+                    </div>
+
+                    <div id="vectors_enhanced_status" class="vectors-enhanced-status m-t-1" style="display: none;">
+                        <!-- 状态消息将在此显示 -->
+                    </div>
+                </div>
         </div>
     </div>
 </div>

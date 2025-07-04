@@ -155,8 +155,10 @@
 }
 
 /* Preview modal styles */
-.vector-enhanced-preview {
-    height: 100%;
+.vector-preview {
+    height: 70vh;
+    max-height: 800px;
+    min-height: 500px;
     display: flex;
     flex-direction: column;
 }
@@ -167,14 +169,15 @@
     margin-bottom: 1rem;
     text-align: center;
     color: var(--SmartThemeBodyColor);
+    flex-shrink: 0;
 }
 
 .preview-sections {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1rem;
-    height: calc(100% - 3rem);
-    overflow: hidden;
+    flex: 1;
+    min-height: 0;
 }
 
 .preview-section {
@@ -182,7 +185,8 @@
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    min-height: 0;
+    height: 100%;
 }
 
 .preview-section-title {
@@ -191,12 +195,38 @@
     padding: 0.75rem;
     font-weight: bold;
     font-size: 1.1em;
+    flex-shrink: 0;
+    border-radius: 8px 8px 0 0; /* 顶部圆角 */
 }
 
 .preview-section-content {
     flex: 1;
-    overflow-y: auto;
+    overflow-y: auto !important;
+    overflow-x: hidden;
     padding: 1rem;
+    min-height: 0;
+    height: 100%; /* 占满剩余高度 */
+    position: relative;
+    border-radius: 0 0 8px 8px; /* 底部圆角 */
+}
+
+/* 强制聊天消息滚动 */
+.preview-section-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.preview-section-content::-webkit-scrollbar-track {
+    background: var(--SmartThemeBorderColor);
+    border-radius: 4px;
+}
+
+.preview-section-content::-webkit-scrollbar-thumb {
+    background: var(--SmartThemeQuoteColor);
+    border-radius: 4px;
+}
+
+.preview-section-content::-webkit-scrollbar-thumb:hover {
+    background: var(--SmartThemeBodyColor);
 }
 
 .preview-item {
@@ -324,11 +354,13 @@
 .vector-enhanced-task-item {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 8px;
     margin-bottom: 5px;
     background: var(--SmartThemeBlurTintColor);
     border-radius: 5px;
     gap: 10px;
+    min-height: 40px;
 }
 
 .vector-enhanced-task-item:last-child {
@@ -339,15 +371,30 @@
     flex: 1;
     margin: 0;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+}
+
+.vector-enhanced-task-item label .checkbox_label {
+    display: flex;
+    align-items: center;
+    width: 100%;
 }
 
 .vector-enhanced-task-item button {
-    padding: 4px 8px;
+    padding: 6px 10px;
     font-size: 0.9em;
     flex-shrink: 0;
+    min-width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .vector-enhanced-task-item small {
     display: block;
     margin-top: 0.25rem;
+    font-size: 0.85em;
 }

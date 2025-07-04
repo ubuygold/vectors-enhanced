@@ -53,6 +53,9 @@ const MODULE_NAME = 'vectors-enhanced';
 export const EXTENSION_PROMPT_TAG = '3_vectors';
 
 const settings = {
+    // Master switch - controls all plugin functionality
+    master_enabled: false,  // 主开关：控制整个插件的所有功能，默认禁用
+    
     // Vector source settings
     source: 'transformers',
     vllm_model: '',
@@ -412,7 +415,7 @@ async function updateTaskList() {
     }
     
     tasks.forEach((task, index) => {
-        const taskDiv = $('<div class="vector-task-item"></div>');
+        const taskDiv = $('<div class="vector-enhanced-task-item"></div>');
         
         const checkbox = $(`
             <label class="checkbox_label flex-container alignItemsCenter">
@@ -736,6 +739,11 @@ function getHashValue(str) {
  * @returns {Promise<number>} Number of remaining items
  */
 async function synchronizeChat(batchSize = 5) {
+    // 检查主开关是否启用
+    if (!settings.master_enabled) {
+        return -1;
+    }
+
     if (!settings.auto_vectorize) {
         return -1;
     }
@@ -771,6 +779,12 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         }
 
         setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi, settings.depth_role);
+
+        // 检查主开关是否启用
+        if (!settings.master_enabled) {
+            console.debug('Vectors: Master switch disabled, skipping all functionality');
+            return;
+        }
 
         // 检查是否启用向量查询
         if (!settings.enabled) {
@@ -938,6 +952,12 @@ window['vectors_rearrangeChat'] = rearrangeChat;
 $(document).on('click', '#vectors_enhanced_preview', async function(e) {
     e.preventDefault();
     console.log('预览按钮被点击 (全局绑定)');
+    
+    if (!settings.master_enabled) {
+        toastr.warning('请先启用聊天记录超级管理器');
+        return;
+    }
+    
     try {
         await previewContent();
     } catch (error) {
@@ -949,6 +969,12 @@ $(document).on('click', '#vectors_enhanced_preview', async function(e) {
 $(document).on('click', '#vectors_enhanced_export', async function(e) {
     e.preventDefault();
     console.log('导出按钮被点击 (全局绑定)');
+    
+    if (!settings.master_enabled) {
+        toastr.warning('请先启用聊天记录超级管理器');
+        return;
+    }
+    
     try {
         await exportVectors();
     } catch (error) {
@@ -960,6 +986,12 @@ $(document).on('click', '#vectors_enhanced_export', async function(e) {
 $(document).on('click', '#vectors_enhanced_vectorize', async function(e) {
     e.preventDefault();
     console.log('向量化按钮被点击 (全局绑定)');
+    
+    if (!settings.master_enabled) {
+        toastr.warning('请先启用聊天记录超级管理器');
+        return;
+    }
+    
     try {
         await vectorizeContent();
     } catch (error) {
@@ -1115,6 +1147,30 @@ async function purgeVectorIndex(collectionId) {
 function toggleSettings() {
     $('#vectors_enhanced_vllm_settings').toggle(settings.source === 'vllm');
     $('#vectors_enhanced_local_settings').toggle(settings.source === 'transformers');
+}
+
+/**
+ * Updates UI state based on master switch
+ */
+function updateMasterSwitchState() {
+    const isEnabled = settings.master_enabled;
+    
+    // 控制主要设置区域的显示/隐藏
+    $('#vectors_enhanced_main_settings').toggle(isEnabled);
+    $('#vectors_enhanced_content_settings').toggle(isEnabled);
+    $('#vectors_enhanced_tasks_settings').toggle(isEnabled);
+    $('#vectors_enhanced_actions_settings').toggle(isEnabled);
+    
+    // 如果禁用，还需要禁用所有输入控件（作为额外保护）
+    const settingsContainer = $('#vectors_enhanced_container');
+    settingsContainer.find('input, select, textarea, button').not('#vectors_enhanced_master_enabled').prop('disabled', !isEnabled);
+    
+    // 更新视觉效果
+    if (isEnabled) {
+        settingsContainer.removeClass('vectors-disabled');
+    } else {
+        settingsContainer.addClass('vectors-disabled');
+    }
 }
 
 /**
@@ -1367,7 +1423,18 @@ jQuery(async () => {
 
     // 第三方插件需要使用完整路径
     const template = await renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings');
-    $('#extensions_settings').append(template);
+    $('#extensions_settings2').append(template);
+
+    // Initialize master switch first
+    $('#vectors_enhanced_master_enabled').prop('checked', settings.master_enabled).on('change', function() {
+        settings.master_enabled = $(this).prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
+        saveSettingsDebounced();
+        updateMasterSwitchState();
+    });
+
+    // Initialize master switch state
+    updateMasterSwitchState();
 
     // Initialize UI elements
     $('#vectors_enhanced_source').val(settings.source).on('change', () => {
