@@ -251,6 +251,38 @@
                                 仅提取指定标签内的内容，如 &lt;context&gt;...&lt;/context&gt;
                             </small>
                         </div>
+
+                        <!-- 新功能：隐藏消息管理 -->
+                        <div class="flex-container flexFlowColumn m-t-1" style="border-top: 1px dashed var(--SmartThemeQuoteColor); padding-top: 0.5rem;">
+                            <label>
+                                <small><strong>隐藏消息管理</strong></small>
+                            </label>
+                            
+                            <!-- 包含隐藏消息选项 -->
+                            <label class="checkbox_label">
+                                <input id="vectors_enhanced_include_hidden" type="checkbox" />
+                                <span>包含隐藏的消息</span>
+                            </label>
+                            <small class="text-muted margin-bottom-10px">
+                                勾选后，隐藏的消息也会被包含在向量化中
+                            </small>
+                            
+                            <!-- 隐藏/显示按钮 -->
+                            <div class="flex-container m-t-0-5">
+                                <button id="vectors_enhanced_hide_range" class="menu_button menu_button_icon" title="隐藏选定范围的消息">
+                                    <i class="fa-solid fa-eye-slash"></i>
+                                    <span>隐藏消息</span>
+                                </button>
+                                <button id="vectors_enhanced_unhide_range" class="menu_button menu_button_icon" title="显示选定范围的消息">
+                                    <i class="fa-solid fa-eye"></i>
+                                    <span>显示消息</span>
+                                </button>
+                                <button id="vectors_enhanced_show_hidden" class="menu_button menu_button_icon" title="查看当前隐藏的消息">
+                                    <i class="fa-solid fa-list"></i>
+                                    <span>查看隐藏</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -333,6 +365,7 @@
                     <div id="vectors_enhanced_status" class="vectors-enhanced-status m-t-1" style="display: none;">
                         <!-- 状态消息将在此显示 -->
                     </div>
+                    
                 </div>
         </div>
     </div>

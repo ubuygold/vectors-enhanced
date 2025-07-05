@@ -96,7 +96,8 @@ const settings = {
             enabled: false,
             range: { start: 0, end: -1 },
             types: { user: true, assistant: true },
-            tags: '' // comma-separated tag names to extract
+            tags: '', // comma-separated tag names to extract
+            include_hidden: false // 是否包含隐藏消息
         },
         files: { enabled: false, selected: [] },
         world_info: { enabled: false, selected: {} } // { worldId: [entryIds] }
@@ -266,7 +267,11 @@ async function getVectorizableContent() {
         const tagList = tags ? tags.split(',').map(t => t.trim()).filter(t => t) : [];
         
         messages.forEach((msg, idx) => {
-            if (msg.is_system) return;
+            // 处理隐藏消息
+            if (msg.is_system === true && !chatSettings.include_hidden) {
+                return; // 跳过隐藏的消息（除非明确要包含）
+            }
+            
             if (!types.user && msg.is_user) return;
             if (!types.assistant && !msg.is_user) return;
             
@@ -278,7 +283,8 @@ async function getVectorizableContent() {
                 metadata: {
                     index: start + idx,
                     is_user: msg.is_user,
-                    name: msg.name
+                    name: msg.name,
+                    is_hidden: msg.is_system === true
                 },
                 selected: true
             });
@@ -638,10 +644,6 @@ async function previewContent() {
         return;
     }
     
-    let html = '<div class="vector-preview">';
-    html += `<div class="preview-header">已选择内容（${items.length} 项）</div>`;
-    html += '<div class="preview-sections">';
-    
     // Group by type
     const grouped = items.reduce((acc, item) => {
         if (!acc[item.type]) acc[item.type] = [];
@@ -649,61 +651,91 @@ async function previewContent() {
         return acc;
     }, {});
     
+    let html = '<div class="vector-preview" style="max-height: none; overflow: visible;">';
+    html += `<div class="preview-header" style="font-size: 1.2em; font-weight: bold; margin-bottom: 1rem; color: var(--SmartThemeQuoteColor);">已选择内容（${items.length} 项）</div>`;
+    html += '<div class="preview-sections" style="display: flex; gap: 1rem; overflow: visible;">';
+    
     // Files section
-    html += '<div class="preview-section">';
-    html += `<div class="preview-section-title">文件（${grouped.file?.length || 0}）</div>`;
-    html += '<div class="preview-section-content">';
+    html += '<div class="preview-section" style="flex: 1; display: flex; flex-direction: column; border: 1px solid var(--SmartThemeBorderColor); border-radius: 6px; overflow: hidden; max-height: 60vh;">';
+    html += `<div class="preview-section-title" style="padding: 0.75rem; background-color: var(--SmartThemeQuoteColor); color: var(--SmartThemeBodyColor); border-bottom: 1px solid var(--SmartThemeBorderColor); font-weight: bold;">文件（${grouped.file?.length || 0}）</div>`;
+    html += '<div class="preview-section-content" style="flex: 1; overflow-y: auto; padding: 1rem;">';
     if (grouped.file && grouped.file.length > 0) {
-        grouped.file.forEach(item => {
+        html += '<div style="text-align: left;">';
+        grouped.file.forEach((item, index) => {
             const sizeKB = (item.metadata.size / 1024).toFixed(1);
-            html += `<div class="preview-item">`;
+            html += `<div style="margin-bottom: 0.5rem;">`;
             html += `<strong>${item.metadata.name}</strong> - ${sizeKB} KB`;
             html += `</div>`;
+            if (index < grouped.file.length - 1) {
+                html += '<hr style="margin: 0.5rem 0; border-color: var(--SmartThemeBorderColor);">';
+            }
         });
+        html += '</div>';
     } else {
-        html += '<div class="preview-empty">无文件</div>';
+        html += '<div class="preview-empty" style="color: var(--SmartThemeEmColor); font-style: italic;">无文件</div>';
     }
     html += '</div></div>';
     
     // World Info section
-    html += '<div class="preview-section">';
-    html += `<div class="preview-section-title">世界信息（${grouped.world_info?.length || 0}）</div>`;
-    html += '<div class="preview-section-content">';
+    html += '<div class="preview-section" style="flex: 1; display: flex; flex-direction: column; border: 1px solid var(--SmartThemeBorderColor); border-radius: 6px; overflow: hidden; max-height: 60vh;">';
+    html += `<div class="preview-section-title" style="padding: 0.75rem; background-color: var(--SmartThemeQuoteColor); color: var(--SmartThemeBodyColor); border-bottom: 1px solid var(--SmartThemeBorderColor); font-weight: bold;">世界信息（${grouped.world_info?.length || 0}）</div>`;
+    html += '<div class="preview-section-content" style="flex: 1; overflow-y: auto; padding: 1rem;">';
     if (grouped.world_info && grouped.world_info.length > 0) {
-        // Group by world
-        const byWorld = {};
+        html += '<div style="text-align: left;">';
+        
+        // Group world info items by world book
+        const worldGroups = {};
         grouped.world_info.forEach(item => {
-            if (!byWorld[item.metadata.world]) byWorld[item.metadata.world] = [];
-            byWorld[item.metadata.world].push(item);
+            const worldName = item.metadata.world;
+            if (!worldGroups[worldName]) {
+                worldGroups[worldName] = [];
+            }
+            worldGroups[worldName].push(item);
         });
         
-        for (const [world, entries] of Object.entries(byWorld)) {
-            html += `<div class="preview-world-group">`;
-            html += `<div class="preview-world-name">${world}</div>`;
-            entries.forEach(entry => {
-                html += `<div class="preview-world-entry">${entry.metadata.comment || '(无注释)'}</div>`;
+        let worldIndex = 0;
+        Object.keys(worldGroups).forEach(worldName => {
+            html += `<div style="margin-bottom: 1rem;">`;
+            html += `<strong style="color: var(--SmartThemeQuoteColor); font-size: 1.1em;">${worldName}</strong><br>`;
+            
+            worldGroups[worldName].forEach((item, index) => {
+                html += `<div style="margin-left: 1rem; margin-top: 0.25rem; margin-bottom: 0.5rem; padding-left: 0.5rem; border-left: 2px solid var(--SmartThemeBorderColor);">`;
+                html += `<span style="display: block; line-height: 1.4;">${item.metadata.comment || '(无注释)'}</span>`;
+                html += `</div>`;
             });
+            
             html += `</div>`;
-        }
+            if (worldIndex < Object.keys(worldGroups).length - 1) {
+                html += '<hr style="margin: 0.5rem 0; border-color: var(--SmartThemeBorderColor);">';
+            }
+            worldIndex++;
+        });
+        
+        html += '</div>';
     } else {
-        html += '<div class="preview-empty">无世界信息</div>';
+        html += '<div class="preview-empty" style="color: var(--SmartThemeEmColor); font-style: italic;">无世界信息</div>';
     }
     html += '</div></div>';
     
     // Chat messages section
-    html += '<div class="preview-section">';
-    html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
-    html += '<div class="preview-section-content">';
+    html += '<div class="preview-section" style="flex: 1; display: flex; flex-direction: column; border: 1px solid var(--SmartThemeBorderColor); border-radius: 6px; overflow: hidden; max-height: 60vh;">';
+    html += `<div class="preview-section-title" style="padding: 0.75rem; background-color: var(--SmartThemeQuoteColor); color: var(--SmartThemeBodyColor); border-bottom: 1px solid var(--SmartThemeBorderColor); font-weight: bold;">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
+    html += '<div class="preview-section-content" style="flex: 1; overflow-y: auto; padding: 1rem;">';
     if (grouped.chat && grouped.chat.length > 0) {
-        grouped.chat.forEach(item => {
+        html += '<div style="text-align: left;">';
+        grouped.chat.forEach((item, index) => {
             const msgType = item.metadata.is_user ? '用户' : 'AI';
-            html += `<div class="preview-chat-message">`;
-            html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-            html += `<div class="preview-chat-content">${item.text}</div>`;
+            html += `<div style="margin-bottom: 0.5rem;">`;
+            html += `<strong style="color: var(--SmartThemeQuoteColor);">#${item.metadata.index} - ${msgType}（${item.metadata.name}）${item.metadata.is_hidden ? ' [隐藏]' : ''}</strong><br>`;
+            html += `<div style="margin-top: 0.5rem; white-space: pre-wrap; word-break: break-word;">${item.text}</div>`;
             html += `</div>`;
+            if (index < grouped.chat.length - 1) {
+                html += '<hr style="margin: 0.5rem 0; border-color: var(--SmartThemeBorderColor);">';
+            }
         });
+        html += '</div>';
     } else {
-        html += '<div class="preview-empty">无聊天记录</div>';
+        html += '<div class="preview-empty" style="color: var(--SmartThemeEmColor); font-style: italic;">无聊天记录</div>';
     }
     html += '</div></div>';
     
@@ -1317,13 +1349,36 @@ async function updateWorldInfoList() {
         const allChecked = worldEntries.length > 0 && worldEntries.every(e => selectedEntries.includes(e.uid));
         
         const worldHeader = $(`
-            <div class="wi-world-header flex-container alignItemsCenter">
-                <label class="checkbox_label flex1">
-                    <input type="checkbox" class="world-select-all" data-world="${world}" ${allChecked ? 'checked' : ''} />
-                    <span class="wi-world-name">${world}</span>
+            <div class="wi-world-header flex-container alignItemsCenter" style="cursor: pointer;">
+                <i class="fa-solid fa-chevron-right wi-world-toggle" style="margin-right: 0.25rem; font-size: 0.8em; color: var(--SmartThemeQuoteColor); transition: transform 0.2s; flex-shrink: 0;"></i>
+                <label class="checkbox_label flex1" style="pointer-events: none; display: flex; align-items: center; min-width: 0;">
+                    <input type="checkbox" class="world-select-all" data-world="${world}" ${allChecked ? 'checked' : ''} style="pointer-events: auto; margin-right: 0.25rem; flex-shrink: 0;" />
+                    <span class="wi-world-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${world}">${world}</span>
                 </label>
             </div>
         `);
+        
+        // 创建条目容器（默认隐藏）
+        const entriesContainer = $('<div class="wi-entries-container" style="display: none; padding-left: 2.25rem;"></div>');
+        
+        // 折叠/展开事件
+        worldHeader.on('click', function(e) {
+            // 如果点击的是复选框，不处理折叠事件
+            if ($(e.target).is('input[type="checkbox"]')) {
+                return;
+            }
+            
+            const isExpanded = entriesContainer.is(':visible');
+            const toggleIcon = worldHeader.find('.wi-world-toggle');
+            
+            if (isExpanded) {
+                entriesContainer.slideUp(200);
+                toggleIcon.css('transform', 'rotate(0deg)');
+            } else {
+                entriesContainer.slideDown(200);
+                toggleIcon.css('transform', 'rotate(90deg)');
+            }
+        });
         
         // 全选复选框事件
         worldHeader.find('.world-select-all').on('change', function() {
@@ -1336,7 +1391,7 @@ async function updateWorldInfoList() {
             }
             
             // 更新所有子条目
-            worldDiv.find('.wi-entry input').prop('checked', isChecked);
+            entriesContainer.find('.wi-entry input').prop('checked', isChecked);
             
             Object.assign(extension_settings.vectors_enhanced, settings);
             saveSettingsDebounced();
@@ -1384,9 +1439,10 @@ async function updateWorldInfoList() {
                 saveSettingsDebounced();
             });
             
-            worldDiv.append(checkbox);
+            entriesContainer.append(checkbox);
         });
         
+        worldDiv.append(entriesContainer);
         wiList.append(worldDiv);
     }
 }
@@ -1413,6 +1469,272 @@ const onChatEvent = debounce(async () => {
     await updateTaskList();
 }, debounce_timeout.relaxed);
 
+/**
+ * 调试函数：探索消息的隐藏机制
+ * @returns {void}
+ */
+function debugHiddenMessages() {
+    const context = getContext();
+    if (!context.chat || context.chat.length === 0) {
+        console.log('调试：没有可用的聊天消息');
+        return;
+    }
+    
+    console.log('=== 开始探索消息隐藏机制 ===');
+    console.log(`总消息数: ${context.chat.length}`);
+    
+    // 检查前5条消息的完整结构
+    console.log('\n前5条消息的完整结构:');
+    context.chat.slice(0, 5).forEach((msg, index) => {
+        console.log(`\n消息 #${index}:`, msg);
+        
+        // 检查可能的隐藏属性
+        const possibleHiddenProps = ['hidden', 'is_hidden', 'hide', 'isHidden', 'visible', 'is_visible'];
+        console.log(`检查可能的隐藏属性:`);
+        possibleHiddenProps.forEach(prop => {
+            if (prop in msg) {
+                console.log(`  - ${prop}: ${msg[prop]}`);
+            }
+        });
+        
+        // 检查 extra 对象
+        if (msg.extra) {
+            console.log(`  extra 对象:`, msg.extra);
+        }
+    });
+    
+    console.log('\n=== 探索结束 ===');
+}
+
+/**
+ * 调试函数：测试斜杠命令执行
+ * @returns {Promise<void>}
+ */
+async function debugSlashCommands() {
+    console.log('=== 测试斜杠命令执行 ===');
+    
+    try {
+        // 检查可能的命令执行方法
+        const context = getContext();
+        console.log('\n检查上下文对象:', context);
+        
+        // 方法1：直接修改消息的 is_system 属性
+        if (context.chat && context.chat.length > 0) {
+            console.log('\n测试直接修改消息属性:');
+            const testMessage = context.chat[0];
+            console.log('第一条消息的 is_system 状态:', testMessage.is_system);
+            console.log('可以通过修改 is_system 属性来隐藏/显示消息');
+        }
+        
+        // 方法2：查看全局函数
+        const globalFunctions = Object.keys(window).filter(key =>
+            key.includes('hide') || key.includes('slash') || key.includes('command')
+        );
+        console.log('\n相关的全局函数:', globalFunctions);
+        
+        // 方法3：检查 jQuery 事件
+        console.log('\n检查消息元素的事件处理器...');
+        const messageElement = $('.mes').first();
+        if (messageElement.length > 0) {
+            const events = $._data(messageElement[0], 'events');
+            console.log('消息元素的事件:', events);
+        }
+        
+    } catch (error) {
+        console.error('调试斜杠命令时出错:', error);
+    }
+    
+    console.log('=== 测试结束 ===');
+}
+
+/**
+ * 显示当前隐藏的消息列表
+ * @returns {Promise<void>}
+ */
+async function showHiddenMessages() {
+    const hidden = getHiddenMessages();
+    
+    if (hidden.length === 0) {
+        await callGenericPopup('当前没有隐藏的消息', POPUP_TYPE.TEXT, '', { okButton: '关闭' });
+        return;
+    }
+    
+    // 计算隐藏消息的楼层范围
+    const indexes = hidden.map(msg => msg.index).sort((a, b) => a - b);
+    const ranges = [];
+    let start = indexes[0];
+    let end = indexes[0];
+    
+    for (let i = 1; i < indexes.length; i++) {
+        if (indexes[i] === end + 1) {
+            end = indexes[i];
+        } else {
+            ranges.push(start === end ? `第${start}层` : `第${start}-${end}层`);
+            start = end = indexes[i];
+        }
+    }
+    ranges.push(start === end ? `第${start}层` : `第${start}-${end}层`);
+    
+    const rangeText = ranges.join('，');
+    
+    let html = '<div class="hidden-messages-popup">';
+    html += `<h3 style="color: var(--SmartThemeQuoteColor); margin-bottom: 1rem; font-size: 1.2em; text-align: left;">已隐藏楼层：${rangeText}</h3>`;
+    html += '<div class="hidden-messages-all-content" style="max-height: 60vh; overflow-y: auto; padding: 1rem; background-color: var(--SmartThemeBlurTintColor); border-radius: 6px; text-align: left; white-space: pre-wrap; word-break: break-word;">';
+    
+    // 按索引排序并显示所有隐藏消息
+    hidden.sort((a, b) => a.index - b.index).forEach((msg, idx) => {
+        const msgType = msg.is_user ? '用户' : 'AI';
+        html += `<span style="color: var(--SmartThemeQuoteColor); font-weight: bold;">#${msg.index} - ${msgType}（${msg.name}）：</span>\n${msg.text}\n\n`;
+    });
+    
+    html += '</div></div>';
+    
+    await callGenericPopup(html, POPUP_TYPE.TEXT, '', {
+        okButton: '关闭',
+        wide: true,
+        large: true
+    });
+}
+
+/**
+ * 更新隐藏消息信息显示
+ */
+function updateHiddenMessagesInfo() {
+    const hidden = getHiddenMessages();
+    const infoDiv = $('#vectors_enhanced_hidden_info');
+    const countSpan = $('#vectors_enhanced_hidden_count');
+    const listDiv = $('#vectors_enhanced_hidden_list');
+    
+    countSpan.text(hidden.length);
+    
+    if (hidden.length > 0) {
+        infoDiv.show();
+        listDiv.empty();
+        
+        // 只显示前5条隐藏消息的预览
+        const preview = hidden.slice(0, 5);
+        preview.forEach(msg => {
+            const msgType = msg.is_user ? '用户' : 'AI';
+            const item = $(`
+                <div class="hidden-message-preview">
+                    <strong>#${msg.index}</strong> - ${msgType}: ${msg.text}
+                </div>
+            `);
+            listDiv.append(item);
+        });
+        
+        if (hidden.length > 5) {
+            listDiv.append(`<div class="text-muted">...还有 ${hidden.length - 5} 条隐藏消息</div>`);
+        }
+    } else {
+        infoDiv.hide();
+    }
+}
+
+/**
+ * 切换消息的隐藏状态
+ * @param {number} messageIndex 消息索引
+ * @param {boolean} hide 是否隐藏
+ * @returns {Promise<boolean>} 是否成功
+ */
+async function toggleMessageVisibility(messageIndex, hide) {
+    const context = getContext();
+    if (!context.chat || messageIndex < 0 || messageIndex >= context.chat.length) {
+        console.error('无效的消息索引:', messageIndex);
+        return false;
+    }
+    
+    try {
+        // 修改消息的 is_system 属性
+        context.chat[messageIndex].is_system = hide;
+        
+        // 触发保存
+        await context.saveChat();
+        
+        // 刷新界面
+        await context.reloadCurrentChat();
+        
+        return true;
+    } catch (error) {
+        console.error('切换消息可见性失败:', error);
+        return false;
+    }
+}
+
+/**
+ * 批量切换消息范围的隐藏状态
+ * @param {number} startIndex 开始索引
+ * @param {number} endIndex 结束索引（不包含）
+ * @param {boolean} hide 是否隐藏
+ * @returns {Promise<void>}
+ */
+async function toggleMessageRangeVisibility(startIndex, endIndex, hide) {
+    const context = getContext();
+    if (!context.chat) {
+        toastr.error('没有可用的聊天记录');
+        return;
+    }
+    
+    // 确保索引有效
+    const actualEnd = endIndex === -1 ? context.chat.length : Math.min(endIndex, context.chat.length);
+    const actualStart = Math.max(0, startIndex);
+    
+    if (actualStart >= actualEnd) {
+        toastr.error('无效的消息范围');
+        return;
+    }
+    
+    try {
+        // 批量修改消息
+        let modifiedCount = 0;
+        for (let i = actualStart; i < actualEnd; i++) {
+            const msg = context.chat[i];
+            if (!msg) continue;
+            
+            // 只处理用户和AI消息，跳过真正的系统消息
+            // 注意：is_user 表示用户消息，没有 is_user 标记的通常是AI消息
+            // is_system 是用来标记隐藏状态的
+            if (msg.is_user !== undefined || msg.name) {
+                context.chat[i].is_system = hide;
+                modifiedCount++;
+            }
+        }
+        
+        // 保存并刷新
+        await context.saveChat();
+        await context.reloadCurrentChat();
+        
+        const action = hide ? '隐藏' : '显示';
+        toastr.success(`已${action} ${modifiedCount} 条消息`);
+    } catch (error) {
+        console.error('批量切换消息可见性失败:', error);
+        toastr.error('操作失败: ' + error.message);
+    }
+}
+
+/**
+ * 获取当前隐藏的消息信息
+ * @returns {Array<{index: number, text: string}>} 隐藏的消息列表
+ */
+function getHiddenMessages() {
+    const context = getContext();
+    if (!context.chat) return [];
+    
+    const hidden = [];
+    context.chat.forEach((msg, index) => {
+        if (msg.is_system === true) {
+            hidden.push({
+                index: index,
+                text: msg.mes ? msg.mes.substring(0, 100) + (msg.mes.length > 100 ? '...' : '') : '',
+                is_user: msg.is_user,
+                name: msg.name
+            });
+        }
+    });
+    
+    return hidden;
+}
+
 jQuery(async () => {
     // 使用独立的设置键避免冲突
     const SETTINGS_KEY = 'vectors_enhanced';
@@ -1427,6 +1749,11 @@ jQuery(async () => {
     // 确保 chat types 存在（处理旧版本兼容性）
     if (!settings.selected_content.chat.types) {
         settings.selected_content.chat.types = { user: true, assistant: true };
+    }
+    
+    // 确保 include_hidden 属性存在
+    if (settings.selected_content.chat.include_hidden === undefined) {
+        settings.selected_content.chat.include_hidden = false;
     }
     
     // 确保所有必需的结构都存在
@@ -1629,6 +1956,7 @@ jQuery(async () => {
     const chatRange = settings.selected_content.chat.range || { start: 0, end: -1 };
     const chatTypes = settings.selected_content.chat.types || { user: true, assistant: true };
     const chatTags = settings.selected_content.chat.tags || '';
+    const includeHidden = settings.selected_content.chat.include_hidden || false;
     
     $('#vectors_enhanced_chat_start').val(chatRange.start).on('input', () => {
         if (!settings.selected_content.chat.range) {
@@ -1684,6 +2012,30 @@ jQuery(async () => {
         await updateWorldInfoList();
         toastr.info('世界信息列表已刷新');
     });
+    
+    
+    // 隐藏消息管理功能
+    $('#vectors_enhanced_include_hidden').prop('checked', includeHidden).on('input', () => {
+        settings.selected_content.chat.include_hidden = $('#vectors_enhanced_include_hidden').prop('checked');
+        Object.assign(extension_settings.vectors_enhanced, settings);
+        saveSettingsDebounced();
+    });
+    
+    $('#vectors_enhanced_hide_range').on('click', async () => {
+        const start = settings.selected_content.chat.range?.start || 0;
+        const end = settings.selected_content.chat.range?.end || -1;
+        await toggleMessageRangeVisibility(start, end, true);
+    });
+    
+    $('#vectors_enhanced_unhide_range').on('click', async () => {
+        const start = settings.selected_content.chat.range?.start || 0;
+        const end = settings.selected_content.chat.range?.end || -1;
+        await toggleMessageRangeVisibility(start, end, false);
+    });
+    
+    $('#vectors_enhanced_show_hidden').on('click', async () => {
+        await showHiddenMessages();
+    });
 
 
     // Initialize UI
@@ -1713,6 +2065,9 @@ jQuery(async () => {
     
     // Initialize task list
     await updateTaskList();
+    
+    // Initialize hidden messages info
+    updateHiddenMessagesInfo();
 
     // Event listeners
     eventSource.on(event_types.MESSAGE_DELETED, onChatEvent);
@@ -1734,6 +2089,12 @@ jQuery(async () => {
     });
     eventSource.on(event_types.CHAT_CHANGED, async () => {
         await updateTaskList();
+        updateHiddenMessagesInfo();
+    });
+    
+    // 监听聊天重新加载事件，以便在使用 /hide 和 /unhide 命令后更新
+    eventSource.on(event_types.CHAT_LOADED, async () => {
+        updateHiddenMessagesInfo();
     });
 
     // Register slash commands
