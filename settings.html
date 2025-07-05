@@ -32,6 +32,7 @@
                     <select id="vectors_enhanced_source" class="text_pole">
                         <option value="transformers">本地 (Transformers)</option>
                         <option value="vllm">vLLM</option>
+                        <option value="ollama">Ollama</option>
                     </select>
                 </div>
 
@@ -53,8 +54,28 @@
 
                 <!-- 本地设置 -->
                 <div id="vectors_enhanced_local_settings" class="flex-container flexFlowColumn">
+                    <label for="vectors_local_model">
+                        模型名称（可选）
+                    </label>
+                    <input id="vectors_enhanced_local_model" class="text_pole" type="text" placeholder="例如：Cohee/jina-embeddings-v2-base-en" />
                     <small>
-                        使用本地Transformers模型进行嵌入
+                        留空将使用SillyTavern API页面配置的默认嵌入模型
+                    </small>
+                </div>
+
+                <!-- Ollama 设置 -->
+                <div id="vectors_enhanced_ollama_settings" class="flex-container flexFlowColumn" style="display: none;">
+                    <label for="vectors_ollama_model">
+                        模型名称
+                    </label>
+                    <input id="vectors_enhanced_ollama_model" class="text_pole" type="text" placeholder="例如：nomic-embed-text" />
+                    
+                    <label for="vectors_ollama_url">
+                        API URL（可选）
+                    </label>
+                    <input id="vectors_enhanced_ollama_url" class="text_pole" type="text" placeholder="http://localhost:11434" />
+                    <small>
+                        留空将使用默认地址 http://localhost:11434。请确保Ollama服务正在运行。
                     </small>
                 </div>
 

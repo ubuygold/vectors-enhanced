@@ -58,8 +58,11 @@ const settings = {
     
     // Vector source settings
     source: 'transformers',
+    local_model: '',        // 本地transformers模型名称
     vllm_model: '',
     vllm_url: '',
+    ollama_model: '',       // ollama模型名称
+    ollama_url: '',         // ollama API地址
     
     // General vectorization settings
     auto_vectorize: true,
@@ -1010,15 +1013,28 @@ function getVectorsRequestBody(args = {}) {
     
     switch (settings.source) {
         case 'transformers':
-            // Local transformers, no additional config needed
+            // Local transformers - read from SillyTavern API settings
+            // Try to get model from various possible settings locations
+            if (textgenerationwebui_settings.model || textgenerationwebui_settings.embeddings_model) {
+                body.model = textgenerationwebui_settings.embeddings_model || textgenerationwebui_settings.model;
+            }
+            // Also try to get from local transformers settings if available
+            if (settings.local_model) {
+                body.model = settings.local_model;
+            }
             break;
         case 'vllm':
             body.apiUrl = settings.vllm_url || textgenerationwebui_settings.server_urls[textgen_types.VLLM];
             body.model = settings.vllm_model;
             break;
+        case 'ollama':
+            body.apiUrl = settings.ollama_url || 'http://localhost:11434';
+            body.model = settings.ollama_model;
+            break;
     }
     
     body.source = settings.source;
+    console.debug(`Vectors: Request body for ${settings.source}:`, body);
     return body;
 }
 
@@ -1033,6 +1049,11 @@ function throwIfSourceInvalid() {
         if (!settings.vllm_model) {
             throw new Error('vLLM model not specified');
         }
+    } else if (settings.source === 'ollama') {
+        if (!settings.ollama_model) {
+            throw new Error('Ollama model not specified');
+        }
+        // ollama_url 是可选的，因为有默认值 http://localhost:11434
     }
 }
 
@@ -1147,6 +1168,7 @@ async function purgeVectorIndex(collectionId) {
 function toggleSettings() {
     $('#vectors_enhanced_vllm_settings').toggle(settings.source === 'vllm');
     $('#vectors_enhanced_local_settings').toggle(settings.source === 'transformers');
+    $('#vectors_enhanced_ollama_settings').toggle(settings.source === 'ollama');
 }
 
 /**
@@ -1452,6 +1474,24 @@ jQuery(async () => {
 
     $('#vectors_enhanced_vllm_url').val(settings.vllm_url).on('input', () => {
         settings.vllm_url = String($('#vectors_enhanced_vllm_url').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
+        saveSettingsDebounced();
+    });
+
+    $('#vectors_enhanced_local_model').val(settings.local_model).on('input', () => {
+        settings.local_model = String($('#vectors_enhanced_local_model').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
+        saveSettingsDebounced();
+    });
+
+    $('#vectors_enhanced_ollama_model').val(settings.ollama_model).on('input', () => {
+        settings.ollama_model = String($('#vectors_enhanced_ollama_model').val());
+        Object.assign(extension_settings.vectors_enhanced, settings);
+        saveSettingsDebounced();
+    });
+
+    $('#vectors_enhanced_ollama_url').val(settings.ollama_url).on('input', () => {
+        settings.ollama_url = String($('#vectors_enhanced_ollama_url').val());
         Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
     });
