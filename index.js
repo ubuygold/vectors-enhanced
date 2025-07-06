@@ -54,7 +54,7 @@ export const EXTENSION_PROMPT_TAG = '3_vectors';
 
 const settings = {
     // Master switch - controls all plugin functionality
-    master_enabled: true,  // 主开关：控制整个插件的所有功能，默认禁用
+    master_enabled: true,   // 主开关：控制整个插件的所有功能，默认启用
     
     // Vector source settings
     source: 'transformers',
