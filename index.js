@@ -54,7 +54,7 @@ export const EXTENSION_PROMPT_TAG = '3_vectors';
 
 const settings = {
     // Master switch - controls all plugin functionality
-    master_enabled: true,   // 主开关：控制整个插件的所有功能，默认启用
+    master_enabled: true,  // 主开关：控制整个插件的所有功能，默认禁用
     
     // Vector source settings
     source: 'transformers',
@@ -1215,9 +1215,17 @@ function updateMasterSwitchState() {
     $('#vectors_enhanced_tasks_settings').toggle(isEnabled);
     $('#vectors_enhanced_actions_settings').toggle(isEnabled);
     
-    // 如果禁用，还需要禁用所有输入控件（作为额外保护）
+    // 如果禁用，还需要禁用所有输入控件（作为额外保护），但确保主开关始终可用
     const settingsContainer = $('#vectors_enhanced_container');
-    settingsContainer.find('input, select, textarea, button').not('#vectors_enhanced_master_enabled').prop('disabled', !isEnabled);
+    if (isEnabled) {
+        // 启用时，启用所有控件
+        settingsContainer.find('input, select, textarea, button').prop('disabled', false);
+    } else {
+        // 禁用时，禁用除主开关外的所有控件
+        settingsContainer.find('input, select, textarea, button').not('#vectors_enhanced_master_enabled').prop('disabled', true);
+        // 确保主开关始终启用
+        $('#vectors_enhanced_master_enabled').prop('disabled', false);
+    }
     
     // 更新视觉效果
     if (isEnabled) {

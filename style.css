@@ -158,6 +158,21 @@
     filter: grayscale(50%);
 }
 
+/* 确保主开关始终可用，不受禁用样式影响 */
+#vectors_enhanced_master_enabled {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    filter: none !important;
+}
+
+/* 主开关的父容器也要确保可用 */
+#vectors_enhanced_container.vectors-disabled #vectors_enhanced_master_enabled,
+#vectors_enhanced_container.vectors-disabled label[for="vectors_enhanced_master_enabled"] {
+    pointer-events: auto !important;
+    opacity: 1 !important;
+    filter: none !important;
+}
+
 /* 内容类型部分样式 */
 .content-type-section {
     background-color: var(--SmartThemeBlurTintColor);
