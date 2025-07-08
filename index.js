@@ -382,6 +382,233 @@ function shouldSkipContent(text, blacklist) {
 }
 
 /**
+ * Validates if a tag name is suitable for extraction
+ * @param {string} tagName Tag name to validate
+ * @returns {boolean} True if tag name is valid
+ */
+function isValidTagName(tagName) {
+  // Exclude common HTML formatting tags that might be empty or problematic
+  const excludedTags = [
+    'font', 'span', 'div', 'p', 'br', 'hr', 'img', 'a', 'b', 'i', 'u', 's',
+    'em', 'strong', 'small', 'big', 'sub', 'sup', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'table', 'tr', 'td', 'th', 'tbody', 'thead', 'tfoot', 'ul', 'ol', 'li',
+    'form', 'input', 'button', 'select', 'option', 'textarea', 'label',
+    'script', 'style', 'meta', 'link', 'title', 'head', 'body', 'html'
+  ];
+  
+  // Must be alphanumeric with possible underscores/hyphens
+  const validPattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+  
+  return validPattern.test(tagName) && !excludedTags.includes(tagName.toLowerCase());
+}
+
+/**
+ * Efficiently scans large text for available tags with performance optimization
+ * @param {string} text Large text content to scan (can be hundreds of thousands of characters)
+ * @param {object} options Scanning options
+ * @param {number} options.chunkSize Size of text chunks to process (default: 50000)
+ * @param {number} options.maxTags Maximum number of unique tags to find (default: 100)
+ * @param {number} options.timeoutMs Maximum processing time in milliseconds (default: 5000)
+ * @returns {Promise<object>} Object containing found tags and performance stats
+ */
+async function scanTextForTags(text, options = {}) {
+  const startTime = performance.now();
+  const {
+    chunkSize = 50000,
+    maxTags = 100,
+    timeoutMs = 5000
+  } = options;
+
+  // Use Sets for O(1) lookup performance
+  const simpleTags = new Set();
+  const htmlTags = new Set();
+  const complexTags = new Set();
+  
+  // Performance-optimized regex patterns
+  const patterns = {
+    // Simple tags: <tag>content</tag>
+    simple: /<(\w+)>[\s\S]*?<\/\1>/g,
+    // HTML format tags with attributes: <tag attr="value">content</tag>
+    htmlFormat: /<(\w+)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g,
+    // Complex nested patterns: <details><summary>text</summary>
+    complex: /<(details|div|section|article)(?:\s[^>]*)?>[\s\S]*?<\/(details|div|section|article)>/g
+  };
+
+  let processedChars = 0;
+  let chunkCount = 0;
+  
+  // Process text in chunks to maintain performance
+  for (let i = 0; i < text.length; i += chunkSize) {
+    const chunk = text.slice(i, Math.min(i + chunkSize, text.length));
+    chunkCount++;
+    processedChars += chunk.length;
+    
+    // Check timeout
+    if (performance.now() - startTime > timeoutMs) {
+      console.warn(`Tag scanning timed out after ${timeoutMs}ms, processed ${processedChars} characters`);
+      break;
+    }
+    
+    // Scan for simple tags
+    let match;
+    const simpleRegex = new RegExp(patterns.simple.source, patterns.simple.flags);
+    while ((match = simpleRegex.exec(chunk)) !== null && simpleTags.size < maxTags) {
+      const tagName = match[1].toLowerCase();
+      // Filter reasonable tag names and exclude problematic ones
+      if (tagName.length >= 2 && tagName.length <= 20 && isValidTagName(tagName)) {
+        simpleTags.add(tagName);
+      }
+    }
+    
+    // Scan for HTML format tags
+    const htmlRegex = new RegExp(patterns.htmlFormat.source, patterns.htmlFormat.flags);
+    while ((match = htmlRegex.exec(chunk)) !== null && htmlTags.size < maxTags) {
+      const tagName = match[1].toLowerCase();
+      if (tagName.length >= 2 && tagName.length <= 20 && isValidTagName(tagName)) {
+        htmlTags.add(tagName);
+      }
+    }
+    
+    // Scan for complex tags (limited scope for performance)
+    if (complexTags.size < 20) { // Limit complex tag detection
+      const complexRegex = new RegExp(patterns.complex.source, patterns.complex.flags);
+      while ((match = complexRegex.exec(chunk)) !== null && complexTags.size < 20) {
+        const tagName = match[1].toLowerCase();
+        if (isValidTagName(tagName)) {
+          complexTags.add(tagName);
+        }
+      }
+    }
+    
+    // Early exit if we found enough tags
+    if (simpleTags.size >= maxTags && htmlTags.size >= maxTags) {
+      break;
+    }
+    
+    // Yield control to prevent UI blocking
+    if (chunkCount % 5 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+  
+  const endTime = performance.now();
+  const processingTime = endTime - startTime;
+  
+  // Convert sets to sorted arrays
+  const result = {
+    simpleTags: Array.from(simpleTags).sort(),
+    htmlTags: Array.from(htmlTags).sort(),
+    complexTags: Array.from(complexTags).sort(),
+    stats: {
+      processingTimeMs: Math.round(processingTime),
+      processedChars,
+      totalChars: text.length,
+      chunkCount,
+      avgChunkSize: Math.round(processedChars / chunkCount),
+      tagsFound: simpleTags.size + htmlTags.size + complexTags.size
+    }
+  };
+  
+  console.debug('Tag scanning completed:', result.stats);
+  return result;
+}
+
+/**
+ * Generates tag suggestions based on scanned content
+ * @param {object} scanResult Result from scanTextForTags
+ * @param {number} limit Maximum number of suggestions (default: 20)
+ * @returns {object} Object with suggestions array and detailed stats
+ */
+function generateTagSuggestions(scanResult, limit = 20) {
+  const suggestions = [];
+  const usedTags = new Set(); // Track used tags to avoid duplicates
+  
+  console.debug('标签建议生成:', {
+    simpleTags: scanResult.simpleTags.length,
+    htmlTags: scanResult.htmlTags.length,
+    complexTags: scanResult.complexTags.length,
+    limit: limit
+  });
+  
+  // Add simple tags (60% of limit)
+  const simpleLimit = Math.floor(limit * 0.6);
+  scanResult.simpleTags.slice(0, simpleLimit).forEach(tag => {
+    if (isValidTagName(tag) && !usedTags.has(tag)) {
+      suggestions.push(tag);
+      usedTags.add(tag);
+    }
+  });
+  
+  // Add HTML format tags (30% of limit)
+  const htmlLimit = Math.floor(limit * 0.3);
+  let htmlAdded = 0;
+  scanResult.htmlTags.forEach(tag => {
+    if (htmlAdded >= htmlLimit) return;
+    
+    // Only add valid tags that haven't been used
+    if (isValidTagName(tag)) {
+      const htmlFormat = `<${tag}></${tag}>`;
+      if (!usedTags.has(tag) && !usedTags.has(htmlFormat)) {
+        suggestions.push(htmlFormat);
+        usedTags.add(tag);
+        usedTags.add(htmlFormat);
+        htmlAdded++;
+      }
+    }
+  });
+  
+  // Add complex tags with common patterns (10% of limit)
+  const complexLimit = Math.floor(limit * 0.1);
+  let complexAdded = 0;
+  scanResult.complexTags.forEach(tag => {
+    if (complexAdded >= complexLimit) return;
+    
+    let complexFormat;
+    if (tag === 'details') {
+      // Only add details if we haven't already added it as a simple tag
+      if (!usedTags.has('details') && !usedTags.has('<details></details>')) {
+        complexFormat = '<details><summary>摘要</summary>,</details>';
+      }
+    } else if (isValidTagName(tag)) {
+      // Only add valid tags and avoid duplicates with simple tags
+      if (!usedTags.has(tag)) {
+        complexFormat = `<${tag}></${tag}>`;
+      }
+    }
+    
+    if (complexFormat && !usedTags.has(complexFormat)) {
+      suggestions.push(complexFormat);
+      usedTags.add(complexFormat);
+      usedTags.add(tag); // Mark the base tag as used too
+      complexAdded++;
+    }
+  });
+  
+  // Final deduplication and limit
+  const finalSuggestions = suggestions.slice(0, limit);
+  
+  console.debug('标签建议结果:', {
+    总发现: scanResult.stats.tagsFound,
+    简单标签: scanResult.simpleTags.length,
+    HTML标签: scanResult.htmlTags.length,
+    复杂标签: scanResult.complexTags.length,
+    最终建议: finalSuggestions.length,
+    建议列表: finalSuggestions
+  });
+  
+  return {
+    suggestions: finalSuggestions,
+    stats: {
+      totalFound: scanResult.stats.tagsFound,
+      simpleCount: scanResult.simpleTags.length,
+      htmlCount: scanResult.htmlTags.length,
+      complexCount: scanResult.complexTags.length,
+      finalCount: finalSuggestions.length
+    }
+  };
+}
+
+/**
  * Extracts content from specific tags in a message
  * @param {string} text Message text
  * @param {string[]} tags Tags to extract (supports exclusion syntax)
@@ -569,7 +796,8 @@ async function getVectorizableContent(contentSettings = null) {
     const tags = chatSettings.tags || '';
     const blacklist = settings.content_blacklist || [];
 
-    const messages = context.chat.slice(start, end === -1 ? undefined : end);
+    // Make end index inclusive by adding 1 to the slice operation
+    const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
     const tagList = tags
       ? tags
           .split(',')
@@ -1814,7 +2042,8 @@ async function previewContent() {
     const context = getContext();
     const start = chatSettings.range?.start || 0;
     const end = chatSettings.range?.end || -1;
-    const messages = context.chat.slice(start, end === -1 ? undefined : end);
+    // Make end index inclusive by adding 1 to the slice operation
+    const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
 
     messages.forEach(msg => {
       if (msg.is_system) return;
@@ -3491,6 +3720,16 @@ jQuery(async () => {
     await showTagExamples();
   });
 
+  // 标签扫描按钮事件
+  $('#vectors_enhanced_tag_scanner').on('click', async () => {
+    await scanAndSuggestTags();
+  });
+
+  // 清除标签建议按钮事件
+  $('#vectors_enhanced_clear_suggestions').on('click', () => {
+    clearTagSuggestions();
+  });
+
   // 初始化隐藏消息信息显示
   updateHiddenMessagesInfo();
 
@@ -3567,6 +3806,145 @@ async function initializeDebugModule() {
   } catch (error) {
     console.warn('[Vectors] Failed to load debug module (this is normal in production):', error.message);
   }
+}
+
+/**
+ * Scans current selected content for tags and displays suggestions
+ */
+async function scanAndSuggestTags() {
+  const scanBtn = $('#vectors_enhanced_tag_scanner');
+  const originalText = scanBtn.find('span').text();
+  
+  // Helper function to restore button state
+  const restoreButtonState = () => {
+    scanBtn.prop('disabled', false);
+    scanBtn.find('span').text(originalText);
+    scanBtn.find('i').removeClass('fa-spinner fa-spin').addClass('fa-search');
+  };
+  
+  try {
+    // Show loading state
+    scanBtn.prop('disabled', true);
+    scanBtn.find('span').text('扫描中...');
+    scanBtn.find('i').removeClass('fa-search').addClass('fa-spinner fa-spin');
+
+    // Collect content from current selection
+    const content = await getVectorizableContent();
+    if (!content || content.length === 0) {
+      toastr.warning('没有选择任何内容进行扫描');
+      restoreButtonState();
+      return;
+    }
+
+    // Combine all text for scanning
+    const combinedText = content.map(item => item.text).join('\n\n');
+    if (combinedText.length === 0) {
+      toastr.warning('选择的内容为空');
+      restoreButtonState();
+      return;
+    }
+
+    console.log(`开始扫描标签，总文本长度: ${combinedText.length} 字符`);
+
+    // Perform tag scanning with performance optimization
+    const scanOptions = {
+      chunkSize: 50000, // 50KB chunks for good performance
+      maxTags: 100,     // Limit total tags for UI performance
+      timeoutMs: 5000   // 5 second timeout for very large texts
+    };
+
+    const scanResult = await scanTextForTags(combinedText, scanOptions);
+
+    // Generate and display suggestions
+    const suggestionResult = generateTagSuggestions(scanResult, 25);
+    displayTagSuggestions(suggestionResult.suggestions, scanResult.stats, suggestionResult.stats);
+
+    console.log(`标签扫描完成，发现 ${scanResult.stats.tagsFound} 个标签，生成 ${suggestionResult.suggestions.length} 个建议，耗时 ${scanResult.stats.processingTimeMs}ms`);
+    
+    if (suggestionResult.suggestions.length > 0) {
+      toastr.success(`发现 ${suggestionResult.suggestions.length} 个可用标签`);
+    } else {
+      toastr.info('未发现可提取的标签');
+    }
+
+  } catch (error) {
+    console.error('标签扫描失败:', error);
+    toastr.error('标签扫描失败: ' + error.message);
+  } finally {
+    // Always restore button state
+    restoreButtonState();
+  }
+}
+
+/**
+ * Displays tag suggestions in the UI
+ * @param {string[]} suggestions Array of tag suggestions
+ * @param {object} scanStats Scanning performance stats
+ * @param {object} suggestionStats Suggestion generation stats (optional, for debugging)
+ */
+function displayTagSuggestions(suggestions, scanStats, suggestionStats = null) {
+  const container = $('#vectors_enhanced_tag_suggestions');
+  const tagList = $('#vectors_enhanced_tag_list');
+  const statsSpan = $('#vectors_tag_scan_stats');
+  
+  // Update stats display with just clickable tag count
+  const statsText = `${suggestions.length} 个标签，${scanStats.processingTimeMs}ms`;
+  statsSpan.text(statsText);
+  
+  // Clear previous suggestions
+  tagList.empty();
+  
+  if (suggestions.length === 0) {
+    container.hide();
+    return;
+  }
+  
+  // Create tag suggestion buttons
+  suggestions.forEach(tag => {
+    // Escape HTML to prevent rendering issues
+    const displayText = $('<div>').text(tag).html();
+    const tagBtn = $(`<button class="menu_button tag-suggestion-btn" title="点击添加到标签提取框"></button>`);
+    tagBtn.text(tag); // Use .text() to prevent HTML parsing
+    
+    tagBtn.on('click', () => {
+      addTagToInput(tag);
+    });
+    
+    tagList.append(tagBtn);
+  });
+  
+  // Show suggestions container
+  container.show();
+}
+
+/**
+ * Adds a tag to the tag input field
+ * @param {string} tag Tag to add
+ */
+function addTagToInput(tag) {
+  const tagInput = $('#vectors_enhanced_chat_tags');
+  const currentValue = tagInput.val().trim();
+  
+  // Add comma if there's existing content
+  const separator = currentValue ? ',' : '';
+  const newValue = currentValue + separator + tag;
+  
+  tagInput.val(newValue);
+  
+  // Trigger change event to save settings
+  tagInput.trigger('input');
+  
+  // Provide feedback
+  toastr.success(`已添加标签: ${tag}`);
+}
+
+/**
+ * Clears tag suggestions from the UI
+ */
+function clearTagSuggestions() {
+  $('#vectors_enhanced_tag_suggestions').hide();
+  $('#vectors_enhanced_tag_list').empty();
+  $('#vectors_tag_scan_stats').text('');
 }
 
 /**
@@ -4439,7 +4817,7 @@ async function toggleMessageRangeVisibility(startIndex, endIndex, hide) {
     await context.reloadCurrentChat();
 
     const action = hide ? '隐藏' : '显示';
-    toastr.success(`已${action}消息 #${start} 到 #${end - 1}`);
+    toastr.success(`已${action}消息 #${start} 到 #${end}`);
   } catch (error) {
     console.error('批量切换消息可见性失败:', error);
     toastr.error('操作失败');

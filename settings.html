@@ -349,6 +349,10 @@
                 <i class="fa-solid fa-lightbulb"></i>
                 <span>标签示例</span>
               </button>
+              <button id="vectors_enhanced_tag_scanner" class="menu_button menu_button_icon" title="扫描当前选择的内容中存在的标签">
+                <i class="fa-solid fa-search"></i>
+                <span>扫描标签</span>
+              </button>
             </div>
             <input
               id="vectors_enhanced_chat_tags"
@@ -356,6 +360,18 @@
               type="text"
               placeholder="例如：content - thinking,analysis"
             />
+            <!-- 标签建议区域 -->
+            <div id="vectors_enhanced_tag_suggestions" class="m-t-0-5" style="display: none;">
+              <div class="flex-container alignItemsCenter m-b-0-5">
+                <small class="text-muted flex1">
+                  <strong>发现的标签 (<span id="vectors_tag_scan_stats"></span>):</strong>
+                </small>
+                <button id="vectors_enhanced_clear_suggestions" class="menu_button menu_button_icon fa-solid fa-times" title="清除建议"></button>
+              </div>
+              <div id="vectors_enhanced_tag_list">
+                <!-- 标签建议将在这里动态生成 -->
+              </div>
+            </div>
             <details class="text-muted margin-bottom-10px">
               <summary><small><strong>支持的标签格式</strong></small></summary>
               <ul>

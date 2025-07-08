@@ -48,6 +48,62 @@
     padding: 0.25rem;
 }
 
+/* Tag suggestion styles */
+#vectors_enhanced_tag_suggestions {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 4px;
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+#vectors_enhanced_tag_list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.tag-suggestion-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.8em !important;
+    padding: 2px 6px !important;
+    margin: 1px;
+    background: var(--SmartThemeQuoteColor) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 3px !important;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tag-suggestion-btn:hover {
+    background: var(--SmartThemeEmColor) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    max-width: none;
+    overflow: visible;
+    z-index: 10;
+    position: relative;
+}
+
+#vectors_enhanced_clear_suggestions {
+    padding: 2px 6px;
+    font-size: 0.8em;
+    margin-left: 0.5rem;
+}
+
+.tag-scan-stats {
+    font-family: monospace;
+    font-size: 0.75em;
+    color: var(--SmartThemeQuoteColor);
+}
+
 .file-list label:hover {
     background-color: var(--SmartThemeBlurTintColor);
 }
