@@ -290,36 +290,88 @@ function overlapChunks(chunk, index, chunks, overlapSize) {
  * @returns {object} Object with mainTag and excludeTags
  */
 function parseTagWithExclusions(tagConfig) {
+  console.debug('解析标签配置:', {
+    原始输入: tagConfig,
+    类型: typeof tagConfig,
+    长度: tagConfig?.length,
+    字符代码: tagConfig ? [...tagConfig].map(c => c.charCodeAt(0)) : null
+  });
+  
   if (!tagConfig.includes(' - ')) {
+    console.debug('没有排除规则，返回主标签:', tagConfig);
     return { mainTag: tagConfig, excludeTags: [] };
   }
 
   const [mainTag, excludePart] = tagConfig.split(' - ');
-  const excludeTags = excludePart
-    .split(',')
-    .map(t => t.trim())
-    .filter(t => t)
-    .map(tag => {
+  console.debug('分离结果:', { 主标签: mainTag, 排除部分: excludePart });
+  
+  // 智能分割排除规则，处理正则表达式中的逗号
+  const excludeTags = [];
+  let currentTag = '';
+  let inRegex = false;
+  
+  for (let i = 0; i < excludePart.length; i++) {
+    const char = excludePart[i];
+    
+    if (char === '/' && !inRegex) {
+      // 开始正则表达式
+      inRegex = true;
+      currentTag += char;
+    } else if (char === '/' && inRegex && excludePart[i-1] !== '\\') {
+      // 结束正则表达式（非转义的斜杠）
+      inRegex = false;
+      currentTag += char;
+      // 继续收集标志位
+      while (i + 1 < excludePart.length && /[gimuy]/.test(excludePart[i + 1])) {
+        i++;
+        currentTag += excludePart[i];
+      }
+    } else if (char === ',' && !inRegex) {
+      // 分隔符，且不在正则表达式内
+      if (currentTag.trim()) {
+        excludeTags.push(currentTag.trim());
+      }
+      currentTag = '';
+    } else {
+      currentTag += char;
+    }
+  }
+  
+  // 添加最后一个标签
+  if (currentTag.trim()) {
+    excludeTags.push(currentTag.trim());
+  }
+  
+  console.debug('智能分割结果:', excludeTags);
+  
+  const parsedExcludeTags = excludeTags.map(tag => {
       // 检测正则表达式格式：/pattern/flags
       const regexMatch = tag.match(/^\/(.+)\/([gimuy]*)$/);
       if (regexMatch) {
-        return {
+        const regexItem = {
           type: 'regex',
           pattern: regexMatch[1],
           flags: regexMatch[2] || 'gi',
         };
+        console.debug('识别正则表达式:', regexItem);
+        return regexItem;
       }
       // 传统标签格式
-      return {
+      const tagItem = {
         type: 'tag',
         name: tag,
       };
+      console.debug('识别标签:', tagItem);
+      return tagItem;
     });
 
-  return {
+  const result = {
     mainTag: mainTag.trim(),
-    excludeTags: excludeTags,
+    excludeTags: parsedExcludeTags,
   };
+  
+  console.debug('解析完成:', result);
+  return result;
 }
 
 /**
@@ -330,39 +382,148 @@ function parseTagWithExclusions(tagConfig) {
  */
 function removeExcludedTags(content, excludeTags) {
   let result = content;
+  
+  console.debug('排除标签处理开始:', {
+    原始内容长度: content.length,
+    排除规则数量: excludeTags.length,
+    排除规则: excludeTags.map(item => ({
+      类型: item.type,
+      内容: item.type === 'regex' ? `/${item.pattern}/${item.flags}` : item.name
+    }))
+  });
 
-  for (const excludeItem of excludeTags) {
+  for (let i = 0; i < excludeTags.length; i++) {
+    const excludeItem = excludeTags[i];
+    const beforeLength = result.length;
+    const beforeContent = result.substring(0, 100) + (result.length > 100 ? '...' : '');
+    
     try {
       if (excludeItem.type === 'regex') {
         // 正则表达式排除
         const regex = new RegExp(excludeItem.pattern, excludeItem.flags);
+        console.debug(`步骤${i+1}: 应用正则 /${excludeItem.pattern}/${excludeItem.flags}`);
+        
+        const matches = result.match(regex);
+        if (matches) {
+          console.debug(`正则匹配到 ${matches.length} 个项目:`, matches.map(m => m.substring(0, 50) + (m.length > 50 ? '...' : '')));
+        } else {
+          console.debug('正则没有匹配到任何内容');
+        }
+        
         result = result.replace(regex, '');
       } else {
         // 传统标签排除
         const tagName = excludeItem.name;
+        let regex;
+        
         if (tagName.includes('<') && tagName.includes('>')) {
           const tagMatch = tagName.match(/<(\w+)(?:\s[^>]*)?>/);
           if (tagMatch) {
             const name = tagMatch[1];
-            const regex = new RegExp(`<${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${name}>`, 'gi');
-            result = result.replace(regex, '');
+            regex = new RegExp(`<${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${name}>`, 'gi');
           }
         } else {
-          const regex = new RegExp(`<${tagName}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${tagName}>`, 'gi');
+          // 先处理大括号格式的标签（需要特殊处理嵌套）
+          result = removeCurlyBraceTags(result, tagName);
+          // 再处理HTML格式的标签
+          regex = new RegExp(`<${tagName}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${tagName}>`, 'gi');
+        }
+        
+        if (regex) {
+          console.debug(`步骤${i+1}: 应用标签排除 "${tagName}", 正则: ${regex.source}`);
+          
+          const matches = result.match(regex);
+          if (matches) {
+            console.debug(`标签匹配到 ${matches.length} 个项目:`, matches.map(m => m.substring(0, 50) + (m.length > 50 ? '...' : '')));
+          } else {
+            console.debug(`标签 "${tagName}" 没有找到匹配项`);
+          }
+          
           result = result.replace(regex, '');
+        } else {
+          console.warn(`无法为标签 "${tagName}" 创建正则表达式`);
         }
       }
+      
+      console.debug(`步骤${i+1}处理结果: ${beforeLength} -> ${result.length} 字符`);
+      if (result.length !== beforeLength) {
+        const afterContent = result.substring(0, 100) + (result.length > 100 ? '...' : '');
+        console.debug('内容变化:', {
+          处理前: beforeContent,
+          处理后: afterContent
+        });
+      }
+      
     } catch (error) {
-      console.warn(`标签排除错误: ${JSON.stringify(excludeItem)}`, error);
+      console.error(`步骤${i+1}处理失败:`, {
+        排除项: excludeItem,
+        错误: error.message
+      });
     }
   }
 
-  return result
-    .replace(/\n\s*\n\s*\n/g, '\n\n')
-    .replace(/^\s+|\s+$/g, '')
-    .replace(/\n\s+/g, '\n')
-    .replace(/\s+\n/g, '\n')
-    .trim();
+  // 统一进行文本清理和归一化
+  console.debug('开始文本清理和归一化...');
+  const beforeCleanup = result.length;
+  
+  const finalResult = result
+    .replace(/\n\s*\n\s*\n/g, '\n\n')  // 合并多个空行为两个
+    .replace(/^\s+|\s+$/g, '')         // 移除首尾空白
+    .replace(/\n\s+/g, '\n')           // 移除行首多余空白
+    .replace(/\s+\n/g, '\n')           // 移除行尾多余空白
+    .trim();                           // 最终trim
+    
+  console.debug('排除标签处理完成:', {
+    清理前长度: beforeCleanup,
+    最终长度: finalResult.length,
+    总体变化: `${content.length} -> ${finalResult.length} 字符`,
+    内容预览: finalResult.substring(0, 150) + (finalResult.length > 150 ? '...' : '')
+  });
+
+  return finalResult;
+}
+
+/**
+ * Removes curly brace tags from text with proper nesting support
+ * @param {string} text Text to process
+ * @param {string} tagName Tag name to remove
+ * @returns {string} Text with specified tags removed
+ */
+function removeCurlyBraceTags(text, tagName) {
+  const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const startPattern = new RegExp(`\\{${escapedTag}\\|`, 'gi');
+  let result = text;
+  let match;
+  
+  while ((match = startPattern.exec(result)) !== null) {
+    const startPos = match.index;
+    const contentStart = startPos + match[0].length;
+    
+    // Find the matching closing brace, accounting for nested braces
+    let braceCount = 1;
+    let pos = contentStart;
+    
+    while (pos < result.length && braceCount > 0) {
+      if (result[pos] === '{') {
+        braceCount++;
+      } else if (result[pos] === '}') {
+        braceCount--;
+      }
+      pos++;
+    }
+    
+    if (braceCount === 0) {
+      // Found the matching closing brace, remove the entire tag
+      result = result.substring(0, startPos) + result.substring(pos);
+      // Reset the regex to start from the beginning
+      startPattern.lastIndex = 0;
+    } else {
+      // No matching closing brace found, stop searching
+      break;
+    }
+  }
+  
+  return result;
 }
 
 /**
@@ -423,6 +584,7 @@ async function scanTextForTags(text, options = {}) {
   const simpleTags = new Set();
   const htmlTags = new Set();
   const complexTags = new Set();
+  const curlyTags = new Set();
   
   // Performance-optimized regex patterns
   const patterns = {
@@ -431,7 +593,9 @@ async function scanTextForTags(text, options = {}) {
     // HTML format tags with attributes: <tag attr="value">content</tag>
     htmlFormat: /<(\w+)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g,
     // Complex nested patterns: <details><summary>text</summary>
-    complex: /<(details|div|section|article)(?:\s[^>]*)?>[\s\S]*?<\/(details|div|section|article)>/g
+    complex: /<(details|div|section|article)(?:\s[^>]*)?>[\s\S]*?<\/(details|div|section|article)>/g,
+    // Curly brace pipe format: {tag|content}
+    curlyBrace: /\{(\w+)\|[\s\S]*?\}/g
   };
 
   let processedChars = 0;
@@ -480,8 +644,17 @@ async function scanTextForTags(text, options = {}) {
       }
     }
     
+    // Scan for curly brace tags
+    const curlyRegex = new RegExp(patterns.curlyBrace.source, patterns.curlyBrace.flags);
+    while ((match = curlyRegex.exec(chunk)) !== null && curlyTags.size < maxTags) {
+      const tagName = match[1].toLowerCase();
+      if (tagName.length >= 2 && tagName.length <= 20 && isValidTagName(tagName)) {
+        curlyTags.add(tagName);
+      }
+    }
+    
     // Early exit if we found enough tags
-    if (simpleTags.size >= maxTags && htmlTags.size >= maxTags) {
+    if (simpleTags.size >= maxTags && htmlTags.size >= maxTags && curlyTags.size >= maxTags) {
       break;
     }
     
@@ -499,13 +672,14 @@ async function scanTextForTags(text, options = {}) {
     simpleTags: Array.from(simpleTags).sort(),
     htmlTags: Array.from(htmlTags).sort(),
     complexTags: Array.from(complexTags).sort(),
+    curlyTags: Array.from(curlyTags).sort(),
     stats: {
       processingTimeMs: Math.round(processingTime),
       processedChars,
       totalChars: text.length,
       chunkCount,
       avgChunkSize: Math.round(processedChars / chunkCount),
-      tagsFound: simpleTags.size + htmlTags.size + complexTags.size
+      tagsFound: simpleTags.size + htmlTags.size + complexTags.size + curlyTags.size
     }
   };
   
@@ -527,11 +701,12 @@ function generateTagSuggestions(scanResult, limit = 20) {
     simpleTags: scanResult.simpleTags.length,
     htmlTags: scanResult.htmlTags.length,
     complexTags: scanResult.complexTags.length,
+    curlyTags: scanResult.curlyTags.length,
     limit: limit
   });
   
-  // Add simple tags (60% of limit)
-  const simpleLimit = Math.floor(limit * 0.6);
+  // Add simple tags (50% of limit)
+  const simpleLimit = Math.floor(limit * 0.5);
   scanResult.simpleTags.slice(0, simpleLimit).forEach(tag => {
     if (isValidTagName(tag) && !usedTags.has(tag)) {
       suggestions.push(tag);
@@ -539,8 +714,18 @@ function generateTagSuggestions(scanResult, limit = 20) {
     }
   });
   
-  // Add HTML format tags (30% of limit)
-  const htmlLimit = Math.floor(limit * 0.3);
+  // Add curly brace tags (25% of limit)
+  const curlyLimit = Math.floor(limit * 0.25);
+  scanResult.curlyTags.slice(0, curlyLimit).forEach(tag => {
+    if (isValidTagName(tag) && !usedTags.has(tag)) {
+      const curlyFormat = `{${tag}|...}`;
+      suggestions.push(curlyFormat);
+      usedTags.add(tag);
+    }
+  });
+  
+  // Add HTML format tags (20% of limit)
+  const htmlLimit = Math.floor(limit * 0.2);
   let htmlAdded = 0;
   scanResult.htmlTags.forEach(tag => {
     if (htmlAdded >= htmlLimit) return;
@@ -592,6 +777,7 @@ function generateTagSuggestions(scanResult, limit = 20) {
     简单标签: scanResult.simpleTags.length,
     HTML标签: scanResult.htmlTags.length,
     复杂标签: scanResult.complexTags.length,
+    大括号标签: scanResult.curlyTags.length,
     最终建议: finalSuggestions.length,
     建议列表: finalSuggestions
   });
@@ -603,6 +789,7 @@ function generateTagSuggestions(scanResult, limit = 20) {
       simpleCount: scanResult.simpleTags.length,
       htmlCount: scanResult.htmlTags.length,
       complexCount: scanResult.complexTags.length,
+      curlyCount: scanResult.curlyTags.length,
       finalCount: finalSuggestions.length
     }
   };
@@ -622,6 +809,30 @@ function extractTagContent(text, tags) {
 
   for (const tagConfig of tags) {
     try {
+      // 如果tagConfig包含逗号但没有排除语法，需要分割处理多个标签
+      if (tagConfig.includes(',') && !tagConfig.includes(' - ')) {
+        // 这是多个简单标签的组合，如 "AFF,people"
+        const simpleTags = tagConfig.split(',').map(t => t.trim()).filter(t => t);
+        console.debug(`处理多个简单标签: ${tagConfig} -> ${simpleTags.join(', ')}`);
+        
+        for (const simpleTag of simpleTags) {
+          // Try multiple formats for each simple tag
+          let tagContent = [];
+          
+          // Try simple HTML format first
+          const htmlContent = extractSimpleTag(text, simpleTag);
+          tagContent.push(...htmlContent);
+          
+          // Try curly brace format
+          const curlyContent = extractCurlyBraceTag(text, simpleTag);
+          tagContent.push(...curlyContent);
+          
+          console.debug(`标签 "${simpleTag}" 提取到 ${tagContent.length} 个内容块 (HTML: ${htmlContent.length}, 大括号: ${curlyContent.length})`);
+          extractedContent.push(...tagContent);
+        }
+        continue;
+      }
+      
       const { mainTag, excludeTags } = parseTagWithExclusions(tagConfig);
 
       // 第一步：提取主标签内容
@@ -635,10 +846,21 @@ function extractTagContent(text, tags) {
         // HTML格式的简单标签：<content></content>
         const simpleContent = extractHtmlFormatTag(text, mainTag);
         mainContent.push(...simpleContent);
+      } else if (mainTag.includes('{') && mainTag.includes('|')) {
+        // 大括号管道格式：{outputstory|...}
+        const tagName = mainTag.replace(/[{}|]/g, '');
+        const curlyContent = extractCurlyBraceTag(text, tagName);
+        mainContent.push(...curlyContent);
       } else {
-        // 原始简单标签：content, thinking
-        const simpleContent = extractSimpleTag(text, mainTag);
-        mainContent.push(...simpleContent);
+        // 原始简单标签：content, thinking - try multiple formats
+        const htmlContent = extractSimpleTag(text, mainTag);
+        mainContent.push(...htmlContent);
+        
+        // Also try curly brace format for simple tags
+        const curlyContent = extractCurlyBraceTag(text, mainTag);
+        mainContent.push(...curlyContent);
+        
+        console.debug(`简单标签 "${mainTag}" 提取结果: HTML格式 ${htmlContent.length} 个, 大括号格式 ${curlyContent.length} 个`);
       }
 
       // 第二步：嵌套标签排除
@@ -769,6 +991,52 @@ function extractSimpleTag(text, tag) {
 }
 
 /**
+ * Extracts content using curly brace pipe format
+ * @param {string} text Text to search in
+ * @param {string} tag Tag name like "outputstory" for format {outputstory|content}
+ * @returns {string[]} Array of extracted content
+ */
+function extractCurlyBraceTag(text, tag) {
+  const extractedContent = [];
+  const escapedTag = escapeRegex(tag);
+  
+  // Find all starting positions of the target tag
+  const startPattern = new RegExp(`\\{${escapedTag}\\|`, 'gi');
+  let match;
+  
+  while ((match = startPattern.exec(text)) !== null) {
+    const startPos = match.index;
+    const contentStart = startPos + match[0].length;
+    
+    // Find the matching closing brace, accounting for nested braces
+    let braceCount = 1;
+    let pos = contentStart;
+    
+    while (pos < text.length && braceCount > 0) {
+      if (text[pos] === '{') {
+        braceCount++;
+      } else if (text[pos] === '}') {
+        braceCount--;
+      }
+      pos++;
+    }
+    
+    if (braceCount === 0) {
+      // Found the matching closing brace
+      const content = text.substring(contentStart, pos - 1);
+      if (content.trim()) {
+        extractedContent.push(content.trim());
+      }
+    }
+    
+    // Continue searching from after this match
+    startPattern.lastIndex = startPos + 1;
+  }
+
+  return extractedContent;
+}
+
+/**
  * Escapes special regex characters in a string
  * @param {string} str String to escape
  * @returns {string} Escaped string
@@ -798,12 +1066,9 @@ async function getVectorizableContent(contentSettings = null) {
 
     // Make end index inclusive by adding 1 to the slice operation
     const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
-    const tagList = tags
-      ? tags
-          .split(',')
-          .map(t => t.trim())
-          .filter(t => t)
-      : [];
+    // 不要在这里分割标签，因为标签可能包含排除语法和正则表达式
+    // 直接使用原始标签字符串，让 extractTagContent 处理
+    const tagList = tags ? [tags.trim()] : [];
 
     messages.forEach((msg, idx) => {
       // 处理隐藏消息
@@ -2031,12 +2296,8 @@ async function previewContent() {
   // 模拟处理过程以获取统计信息
   const blacklist = settings.content_blacklist || [];
   const chatSettings = settings.selected_content.chat;
-  const tags = chatSettings.tags
-    ? chatSettings.tags
-        .split(',')
-        .map(t => t.trim())
-        .filter(t => t)
-    : [];
+  // 不要在这里分割标签，直接使用原始标签字符串
+  const tags = chatSettings.tags ? [chatSettings.tags.trim()] : [];
 
   if (chatSettings.enabled && tags.length > 0) {
     const context = getContext();
@@ -3925,9 +4186,27 @@ function addTagToInput(tag) {
   const tagInput = $('#vectors_enhanced_chat_tags');
   const currentValue = tagInput.val().trim();
   
+  // Process the tag based on its format
+  let processedTag = tag;
+  
+  // If it's a curly brace format like "{outputstory|...}", extract just the tag name
+  if (tag.startsWith('{') && tag.includes('|') && tag.endsWith('}')) {
+    const match = tag.match(/^\{(\w+)\|.*\}$/);
+    if (match) {
+      processedTag = match[1];
+    }
+  }
+  // If it's HTML format like "<tag></tag>", extract just the tag name
+  else if (tag.startsWith('<') && tag.endsWith('>') && tag.includes('</')) {
+    const match = tag.match(/^<(\w+)><\/\1>$/);
+    if (match) {
+      processedTag = match[1];
+    }
+  }
+  
   // Add comma if there's existing content
   const separator = currentValue ? ',' : '';
-  const newValue = currentValue + separator + tag;
+  const newValue = currentValue + separator + processedTag;
   
   tagInput.val(newValue);
   
@@ -3935,7 +4214,7 @@ function addTagToInput(tag) {
   tagInput.trigger('input');
   
   // Provide feedback
-  toastr.success(`已添加标签: ${tag}`);
+  toastr.success(`已添加标签: ${processedTag}`);
 }
 
 /**
