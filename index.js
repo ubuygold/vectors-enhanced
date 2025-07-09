@@ -810,40 +810,52 @@ async function getVectorizableContent(contentSettings = null) {
 
   // Chat messages
   if (selectedContent.chat.enabled && context.chat) {
-    const chatSettings = selectedContent.chat;
-    const start = chatSettings.range?.start || 0;
-    const end = chatSettings.range?.end || -1;
-    const types = chatSettings.types || { user: true, assistant: true };
-    const rules = chatSettings.tag_rules || [];
-    const blacklist = settings.content_blacklist || [];
+        const chatSettings = selectedContent.chat;
+        const types = chatSettings.types || { user: true, assistant: true };
+        const rules = chatSettings.tag_rules || [];
+        const blacklist = settings.content_blacklist || [];
 
-    // Make end index inclusive by adding 1 to the slice operation
-    const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
+        const processMessage = (msg, index) => {
+            if (msg.is_system === true && !chatSettings.include_hidden) return;
+            if (!types.user && msg.is_user) return;
+            if (!types.assistant && !msg.is_user) return;
 
-    messages.forEach((msg, idx) => {
-      // 处理隐藏消息
-      if (msg.is_system === true && !chatSettings.include_hidden) {
-        return; // 跳过隐藏的消息（除非明确要包含）
-      }
+            const extractedText = extractTagContent(substituteParams(msg.mes), rules);
 
-      if (!types.user && msg.is_user) return;
-      if (!types.assistant && !msg.is_user) return;
+            items.push({
+                type: 'chat',
+                text: extractedText,
+                metadata: {
+                    index: index,
+                    is_user: msg.is_user,
+                    name: msg.name,
+                    is_hidden: msg.is_system === true,
+                },
+                selected: true,
+            });
+        };
 
-      const extractedText = extractTagContent(substituteParams(msg.mes), rules);
-
-      items.push({
-        type: 'chat',
-        text: extractedText,
-        metadata: {
-          index: start + idx,
-          is_user: msg.is_user,
-          name: msg.name,
-          is_hidden: msg.is_system === true,
-        },
-        selected: true,
-      });
-    });
-  }
+        // 优先处理 newRanges (用于增量更新)
+        if (chatSettings.newRanges && chatSettings.newRanges.length > 0) {
+            chatSettings.newRanges.forEach(range => {
+                const start = range.start;
+                const end = range.end === -1 ? undefined : range.end + 1;
+                const messages = context.chat.slice(start, end);
+                messages.forEach((msg, idx) => {
+                    processMessage(msg, start + idx);
+                });
+            });
+        }
+        // 回退到处理单个范围
+        else {
+            const start = chatSettings.range?.start || 0;
+            const end = chatSettings.range?.end === -1 ? undefined : (chatSettings.range?.end || 0) + 1;
+            const messages = context.chat.slice(start, end);
+            messages.forEach((msg, idx) => {
+                processMessage(msg, start + idx);
+            });
+        }
+    }
 
   // Files
   if (selectedContent.files.enabled) {
@@ -1024,38 +1036,19 @@ async function generateTaskName(contentSettings, actualItems) {
   console.debug('Vectors: Actual item counts:', itemCounts);
 
   // Chat range - use newRanges if available for accurate naming
-  if (contentSettings.chat && contentSettings.chat.enabled && itemCounts.chat > 0) {
-    const hasNewRanges = contentSettings.chat.newRanges && contentSettings.chat.newRanges.length > 0;
+    const chatItems = actualItems.filter(item => item.type === 'chat');
+    if (chatItems.length > 0) {
+        const indices = chatItems.map(item => item.metadata.index);
+        const minIndex = Math.min(...indices);
+        const maxIndex = Math.max(...indices);
 
-    if (hasNewRanges) {
-      // Use the actual new ranges for naming
-      const rangeStrings = contentSettings.chat.newRanges.map(range => {
-        const start = range.start;
-        const end = range.end;
-        if (start === end) {
-          return `消息 #${start}`;
+        if (minIndex === maxIndex) {
+            parts.push(`消息 #${minIndex}`);
+        } else {
+            parts.push(`消息 #${minIndex}-${maxIndex}`);
         }
-        if (end === -1) {
-          return `消息 #${start} 到最后`;
-        }
-        return `消息 #${start}-${end}`;
-      });
-      parts.push(rangeStrings.join(', '));
-      console.debug('Vectors: Added chat part (newRanges):', parts[parts.length - 1]);
-    } else {
-      // Fallback to single range from the main setting
-      const start = contentSettings.chat.range?.start ?? 0;
-      const end = contentSettings.chat.range?.end ?? -1;
-      if (start === end) {
-        parts.push(`消息 #${start}`);
-      } else if (end === -1) {
-        parts.push(`消息 #${start} 到最后`);
-      } else {
-        parts.push(`消息 #${start}-${end}`);
-      }
-      console.debug('Vectors: Added chat part (single range):', parts[parts.length - 1]);
+        console.debug('Vectors: Added chat part (from actual items):', parts[parts.length - 1]);
     }
-  }
 
   // Files - use actual file count
   if (contentSettings.files && contentSettings.files.enabled && itemCounts.file > 0) {
@@ -1508,38 +1501,18 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
       }
 
       // Handle multiple new ranges
-      if (newRanges.length > 0) {
-        // Store all new ranges for display purposes
+    if (newRanges.length > 0) {
+        // Store all new ranges for display and processing purposes.
+        // Our enhanced getVectorizableContent will now use this array directly.
         newSettings.chat.newRanges = newRanges;
 
-        // For processing, try to merge ranges if they're close together
-        // or use a combined approach
-        if (newRanges.length === 1) {
-          // Single range - use directly
-          newSettings.chat.range = newRanges[0];
-        } else {
-          // Multiple ranges - for now, use the range from smallest start to largest end
-          // This will include some already-processed content, but incremental processing will filter it
-          const starts = newRanges.map(r => r.start);
-          const ends = newRanges.map(r => r.end === -1 ? -1 : r.end).filter(e => e !== -1);
-          const minStart = Math.min(...starts);
-          const maxEnd = ends.length > 0 ? Math.max(...ends) : -1;
-
-          // Check if any range goes to end (-1)
-          const hasEndRange = newRanges.some(r => r.end === -1);
-
-          newSettings.chat.range = {
-            start: minStart,
-            end: hasEndRange ? -1 : maxEnd
-          };
-
-          // Mark this as a multi-range selection for processing
-          newSettings.chat.isMultiRange = true;
-        }
-      } else {
-        // No new content
+        // We no longer create a single, large, incorrect range.
+        // We also don't need to set isMultiRange anymore.
+        // The original `range` property in newSettings will be ignored by the new getVectorizableContent logic.
+    } else {
+        // No new content found for chat messages.
         newSettings.chat.enabled = false;
-      }
+    }
     }
   }
 
@@ -1594,29 +1567,9 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  * @param {string} chatId Chat ID
  * @param {boolean} isIncremental Whether this is incremental vectorization
  */
-async function performVectorization(contentSettings, chatId, isIncremental) {
+async function performVectorization(contentSettings, chatId, isIncremental, items) {
   console.log('Debug: Performing vectorization with settings:', JSON.stringify(contentSettings, null, 2));
-  // Temporarily override settings for content gathering
-  const originalSettings = JSON.parse(JSON.stringify(settings.selected_content));
-  settings.selected_content = contentSettings;
-
   try {
-    let items = await getVectorizableContent(contentSettings);
-
-    // 过滤掉内容为空或只有空白的楼层
-    const originalCount = items.length;
-    items = items.filter(item => item.text && item.text.trim() !== '');
-    const filteredCount = items.length;
-
-    if (filteredCount < originalCount) {
-        console.log(`Vectors: 移除了 ${originalCount - filteredCount} 个空内容的楼层。`);
-    }
-
-    if (items.length === 0) {
-      toastr.warning('未选择要向量化的内容或过滤后内容为空');
-      return;
-    }
-
     // Generate task name
     const context = getContext();
 
@@ -1656,6 +1609,19 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
 
       // Create corrected settings based on actually processed items
       const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
+
+      // Correct chat range based on actual items
+    if (correctedSettings.chat.enabled) {
+        const chatItems = items.filter(item => item.type === 'chat');
+        if (chatItems.length > 0) {
+            const indices = chatItems.map(item => item.metadata.index);
+            correctedSettings.chat.range.start = Math.min(...indices);
+            correctedSettings.chat.range.end = Math.max(...indices);
+        } else {
+            // If no chat items are actually processed, disable it in the saved settings
+            correctedSettings.chat.enabled = false;
+        }
+    }
 
       // Update file list to only include actually processed files
       if (correctedSettings.files.enabled) {
@@ -1830,9 +1796,15 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
     }
-  } finally {
-    // Restore original settings
-    settings.selected_content = originalSettings;
+  } catch (error) {
+      console.error('向量化主流程发生意外错误:', error);
+      toastr.error('向量化处理中发生严重错误，请检查控制台。');
+      // 确保UI状态被重置
+      isVectorizing = false;
+      vectorizationAbortController = null;
+      $('#vectors_enhanced_vectorize').show();
+      $('#vectors_enhanced_abort').hide();
+      hideProgress();
   }
 }
 
@@ -1919,121 +1891,152 @@ async function cleanupInvalidSelections() {
 }
 
 /**
+ * Gets a set of unique identifiers for all items already processed in enabled tasks.
+ * @param {string} chatId Chat ID
+ * @returns {{chat: Set<number>, file: Set<string>, world_info: Set<string>}}
+ */
+function getProcessedItemIdentifiers(chatId) {
+    const identifiers = {
+        chat: new Set(),
+        file: new Set(),
+        world_info: new Set()
+    };
+    const enabledTasks = getChatTasks(chatId).filter(t => t.enabled);
+
+    for (const task of enabledTasks) {
+        const taskSettings = task.settings;
+        if (taskSettings.chat && taskSettings.chat.enabled) {
+            const start = taskSettings.chat.range.start;
+            const end = taskSettings.chat.range.end === -1
+                ? getContext().chat.length - 1
+                : taskSettings.chat.range.end;
+            for (let i = start; i <= end; i++) {
+                identifiers.chat.add(i);
+            }
+        }
+        if (taskSettings.files && taskSettings.files.enabled) {
+            taskSettings.files.selected.forEach(url => identifiers.file.add(url));
+        }
+        if (taskSettings.world_info && taskSettings.world_info.enabled) {
+            Object.values(taskSettings.world_info.selected).flat().forEach(uid => identifiers.world_info.add(uid));
+        }
+    }
+    return identifiers;
+}
+
+/**
+ * Formats an array of chat items into a human-readable range string.
+ * e.g., [0, 1, 5, 6, 7, 10] becomes "#0-#1, #5-#7, #10"
+ * @param {Array<object>} chatItems - Array of chat items, each with metadata.index
+ * @returns {string} A formatted string representing the ranges.
+ */
+function formatRanges(chatItems) {
+    if (!chatItems || chatItems.length === 0) {
+        return '没有新的聊天记录';
+    }
+
+    const indices = chatItems.map(item => item.metadata.index).sort((a, b) => a - b);
+
+    const ranges = [];
+    let start = indices[0];
+    let end = indices[0];
+
+    for (let i = 1; i < indices.length; i++) {
+        if (indices[i] === end + 1) {
+            end = indices[i];
+        } else {
+            ranges.push(start === end ? `#${start}` : `#${start}-${end}`);
+            start = end = indices[i];
+        }
+    }
+    ranges.push(start === end ? `#${start}` : `#${start}-${end}`);
+
+    return `楼层 ${ranges.join('、')}`;
+}
+
+/**
  * Vectorizes selected content
  * @returns {Promise<void>}
  */
 async function vectorizeContent() {
-  delete settings.selected_content.chat.newRanges;
-  if (isVectorizing) {
-    toastr.warning('已有向量化任务在进行中');
-    return;
-  }
-
-  const chatId = getCurrentChatId();
-  if (!chatId) {
-    toastr.error('未选择聊天');
-    return;
-  }
-
-  // Debug: Check current selection state before processing
-  console.debug('Vectors: Current selection state before processing:', {
-    chat: settings.selected_content.chat,
-    files: settings.selected_content.files,
-    world_info: settings.selected_content.world_info
-  });
-
-  // Active cleanup before processing
-  await cleanupInvalidSelections();
-
-  // Analyze overlap with existing tasks
-  const overlapAnalysis = analyzeTaskOverlap(chatId, settings.selected_content);
-
-  if (overlapAnalysis.hasConflicts) {
-    if (overlapAnalysis.hasNewContent) {
-      // Pre-check if incremental settings would have any content
-      const incrementalSettings = createIncrementalSettings(settings.selected_content, chatId, overlapAnalysis.conflicts);
-      const hasActualNewContent = (
-        (incrementalSettings.chat.enabled) ||
-        (incrementalSettings.files.enabled && incrementalSettings.files.selected.length > 0) ||
-        (incrementalSettings.world_info.enabled && Object.keys(incrementalSettings.world_info.selected).length > 0)
-      );
-
-      if (!hasActualNewContent) {
-        // All content is actually covered by existing tasks
-        const conflictMessage = '当前选择的内容中没有需要处理的新增项目';
-        toastr.warning(conflictMessage);
+    if (isVectorizing) {
+        toastr.warning('已有向量化任务在进行中');
         return;
-      }
-
-      // Generate simplified conflict message
-      const duplicatedParts = [];
-      const newParts = [];
-
-      // Process conflicts to extract duplicated items
-      overlapAnalysis.conflicts.forEach(conflict => {
-        if (conflict.type === 'chat_duplicate') {
-          const start = conflict.taskRange.start;
-          const end = conflict.taskRange.end;
-          duplicatedParts.push(`楼层#${start}-#${end === -1 ? '最后' : end}`);
-        } else if (conflict.type === 'chat_partial') {
-          const start = conflict.taskRange.start;
-          const end = conflict.taskRange.end;
-          duplicatedParts.push(`楼层#${start}-#${end === -1 ? '最后' : end}`);
-        } else if (conflict.type === 'files_partial') {
-          duplicatedParts.push(`${conflict.details.length}个文件`);
-        } else if (conflict.type === 'worldinfo_partial') {
-          duplicatedParts.push(`${conflict.details.length}个世界信息条目`);
-        }
-      });
-
-      // Calculate new content
-      if (incrementalSettings.chat.enabled) {
-        // Check if we have multiple new ranges
-        if (incrementalSettings.chat.newRanges && incrementalSettings.chat.newRanges.length > 0) {
-          // Display all new ranges
-          const rangeStrings = incrementalSettings.chat.newRanges.map(range => {
-            const start = range.start;
-            const end = range.end;
-            return `楼层#${start}-#${end === -1 ? '最后' : end}`;
-          });
-          newParts.push(rangeStrings.join('、'));
-        } else {
-          // Fallback to single range
-          const start = incrementalSettings.chat.range?.start || 0;
-          const end = incrementalSettings.chat.range?.end || -1;
-          newParts.push(`楼层#${start}-#${end === -1 ? '最后' : end}`);
-        }
-      }
-      if (incrementalSettings.files.enabled && incrementalSettings.files.selected.length > 0) {
-        newParts.push(`${incrementalSettings.files.selected.length}个新文件`);
-      }
-      if (incrementalSettings.world_info.enabled && Object.keys(incrementalSettings.world_info.selected).length > 0) {
-        const newEntryCount = Object.values(incrementalSettings.world_info.selected).flat().length;
-        newParts.push(`${newEntryCount}个新世界信息条目`);
-      }
-
-      const conflictMessage = `检测到${duplicatedParts.join('、')}已被向量化，是否只处理新增的${newParts.join('、')}？`;
-
-      const userChoice = await callGenericPopup(conflictMessage, POPUP_TYPE.CONFIRM, '', {
-        okButton: '只向量化新增内容',
-        cancelButton: '取消'
-      });
-
-      if (userChoice !== POPUP_RESULT.AFFIRMATIVE) {
-        return;
-      }
-
-      // Use incremental settings
-      await performVectorization(incrementalSettings, chatId, true);
-    } else {
-      const conflictMessage = '当前选择的内容中没有需要处理的新增项目';
-      toastr.warning(conflictMessage);
-      return;
     }
-  } else {
-    // No conflicts, proceed normally
-    await performVectorization(settings.selected_content, chatId, false);
-  }
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+        toastr.error('未选择聊天');
+        return;
+    }
+
+    await cleanupInvalidSelections();
+
+    // 1. Get initial items based on UI selection
+    const initialItems = await getVectorizableContent();
+
+    // 2. Filter out empty items to get "valid" items
+    const validItems = initialItems.filter(item => item.text && item.text.trim() !== '');
+    if (validItems.length === 0) {
+        toastr.warning('未选择要向量化的内容或过滤后内容为空');
+        return;
+    }
+
+    // 3. Get identifiers of already processed items
+    const processedIdentifiers = getProcessedItemIdentifiers(chatId);
+
+    // 4. Filter valid items to get only "new" items
+    const newItems = validItems.filter(item => {
+        switch (item.type) {
+            case 'chat': return !processedIdentifiers.chat.has(item.metadata.index);
+            case 'file': return !processedIdentifiers.file.has(item.metadata.url);
+            case 'world_info': return !processedIdentifiers.world_info.has(item.metadata.uid);
+            default: return true;
+        }
+    });
+
+    // 5. Determine interaction flow based on what was filtered
+    const hasEmptyItems = validItems.length < initialItems.length;
+    const hasProcessedItems = newItems.length < validItems.length;
+
+    let itemsToProcess = newItems;
+    let isIncremental = hasProcessedItems; // Any task with pre-existing items is considered incremental
+
+    if (newItems.length === 0) {
+        toastr.info('所有选定内容均已被向量化，没有需要处理的新项目。');
+        return;
+    }
+
+    if (hasProcessedItems) {
+        const newChatItems = newItems.filter(i => i.type === 'chat');
+        const newFileItems = newItems.filter(i => i.type === 'file');
+        const newWorldInfoItems = newItems.filter(i => i.type === 'world_info');
+
+        const newParts = [];
+        if (newChatItems.length > 0) newParts.push(formatRanges(newChatItems));
+        if (newFileItems.length > 0) newParts.push(`${newFileItems.length}个新文件`);
+        if (newWorldInfoItems.length > 0) newParts.push(`${newWorldInfoItems.length}个新世界信息`);
+
+        const confirm = await callGenericPopup(
+            `检测到部分内容已被处理。是否只处理新增的 ${newParts.join('、')}？`,
+            POPUP_TYPE.CONFIRM,
+            { okButton: '只处理新增', cancelButton: '取消' }
+        );
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) return;
+    }
+    else if (hasEmptyItems) {
+        const confirm = await callGenericPopup(
+            `您选择了 ${initialItems.length} 个项目，但只有 ${validItems.length} 个包含有效内容。是否继续处理这 ${validItems.length} 个项目？`,
+            POPUP_TYPE.CONFIRM,
+            { okButton: '继续', cancelButton: '取消' }
+        );
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) return;
+        // In this case, we process ALL valid items, not just new ones (as there are no "processed" items)
+        itemsToProcess = validItems;
+        isIncremental = false; // This is a new task, not an incremental addition
+    }
+
+    // 6. Perform vectorization with the final, clean set of items
+    await performVectorization(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
 }
 
 /**
@@ -2049,9 +2052,12 @@ async function exportVectors() {
     return;
   }
 
-  const items = await getVectorizableContent();
+  let items = await getVectorizableContent();
+  // Filter out empty items for consistency with vectorization process
+  items = items.filter(item => item.text && item.text.trim() !== '');
+
   if (items.length === 0) {
-    toastr.warning('未选择要导出的内容');
+    toastr.warning('未选择要导出的内容或过滤后内容为空');
     return;
   }
 
@@ -2118,9 +2124,12 @@ async function exportVectors() {
  * @returns {Promise<void>}
  */
 async function previewContent() {
-  const items = await getVectorizableContent();
+  let items = await getVectorizableContent();
+  // Filter out empty items for consistency with vectorization process
+  items = items.filter(item => item.text && item.text.trim() !== '');
+
   if (items.length === 0) {
-    toastr.warning('未选择要预览的内容');
+    toastr.warning('未选择要预览的内容或过滤后内容为空');
     return;
   }
 
