@@ -293,6 +293,7 @@ function overlapChunks(chunk, index, chunks, overlapSize) {
 
 
 /**
+ * @deprecated
  * Removes curly brace tags from text with proper nesting support
  * @param {string} text Text to process
  * @param {string} tagName Tag name to remove
@@ -392,7 +393,7 @@ async function scanTextForTags(text, options = {}) {
     const foundTags = new Set();
     // This regex is designed to find all valid tag names, including nested ones.
     // It captures the tag name from both start tags (<tag>) and end tags (</tag>).
-    const tagRegex = /<(\/|)([a-zA-Z0-9_-]+)([^>]*)>/g;
+    const tagRegex = /<(?:\/|)([a-zA-Z0-9_-]+)(?:[^>]*)>|\{([a-zA-Z0-9_-]+)(?:\||})/g;
 
     let processedChars = 0;
     let chunkCount = 0;
@@ -409,7 +410,8 @@ async function scanTextForTags(text, options = {}) {
 
         let match;
         while ((match = tagRegex.exec(chunk)) !== null && foundTags.size < maxTags) {
-            const tagName = match[2].toLowerCase();
+            // match[1] is for <tag>, match[2] is for {tag}
+            const tagName = (match[1] || match[2]).toLowerCase();
             if (isValidTagName(tagName)) {
                 foundTags.add(tagName);
             }
@@ -500,6 +502,7 @@ function extractTagContent(text, rules) {
             try {
                 if (rule.type === 'include') {
                     results.push(...extractSimpleTag(workingText, rule.value));
+                    results.push(...extractCurlyBraceTag(workingText, rule.value));
                 } else if (rule.type === 'regex_include') {
                     const regex = new RegExp(rule.value, 'gi');
                     const matches = [...workingText.matchAll(regex)];
