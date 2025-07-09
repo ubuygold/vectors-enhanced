@@ -102,7 +102,7 @@ const settings = {
       enabled: false,
       range: { start: 0, end: -1 },
       types: { user: true, assistant: true },
-      tags: '', // comma-separated tag names to extract
+      tag_rules: [], // structured tag rules
       include_hidden: false, // 是否包含隐藏消息
     },
     files: { enabled: false, selected: [] },
@@ -114,6 +114,7 @@ const settings = {
 
   // Vector tasks management
   vector_tasks: {}, // { chatId: [{ taskId, name, timestamp, settings, enabled }] }
+  tag_rules_version: 2,
 };
 
 const moduleWorker = new ModuleWorkerWrapper(synchronizeChat);
@@ -157,14 +158,14 @@ function addVectorTask(chatId, task) {
   const tasks = getChatTasks(chatId);
   tasks.push(task);
   settings.vector_tasks[chatId] = tasks;
-  
+
   // 调试：确认任务被正确添加
   console.debug(`Vectors: 添加任务到 ${chatId}:`, task);
   console.debug(`Vectors: 当前任务列表:`, tasks);
-  
+
   Object.assign(extension_settings.vectors_enhanced, settings);
   saveSettingsDebounced();
-  
+
   // 调试：确认设置被正确保存
   console.debug(`Vectors: 保存后的扩展设置:`, extension_settings.vectors_enhanced.vector_tasks[chatId]);
 }
@@ -208,13 +209,13 @@ async function renameVectorTask(chatId, taskId, currentName) {
   if (newName && newName.trim() && newName.trim() !== currentName) {
     const tasks = getChatTasks(chatId);
     const taskIndex = tasks.findIndex(t => t.taskId === taskId);
-    
+
     if (taskIndex !== -1) {
       tasks[taskIndex].name = newName.trim();
       settings.vector_tasks[chatId] = tasks;
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
-      
+
       // Refresh the task list UI
       await updateTaskList();
       toastr.success('任务已重命名');
@@ -289,199 +290,7 @@ function overlapChunks(chunk, index, chunks, overlapSize) {
  * @param {string} tagConfig Tag configuration string
  * @returns {object} Object with mainTag and excludeTags
  */
-function parseTagWithExclusions(tagConfig) {
-  console.debug('解析标签配置:', {
-    原始输入: tagConfig,
-    类型: typeof tagConfig,
-    长度: tagConfig?.length,
-    字符代码: tagConfig ? [...tagConfig].map(c => c.charCodeAt(0)) : null
-  });
-  
-  if (!tagConfig.includes(' - ')) {
-    console.debug('没有排除规则，返回主标签:', tagConfig);
-    return { mainTag: tagConfig, excludeTags: [] };
-  }
 
-  const [mainTag, excludePart] = tagConfig.split(' - ');
-  console.debug('分离结果:', { 主标签: mainTag, 排除部分: excludePart });
-  
-  // 智能分割排除规则，处理正则表达式中的逗号
-  const excludeTags = [];
-  let currentTag = '';
-  let inRegex = false;
-  
-  for (let i = 0; i < excludePart.length; i++) {
-    const char = excludePart[i];
-    
-    if (char === '/' && !inRegex) {
-      // 开始正则表达式
-      inRegex = true;
-      currentTag += char;
-    } else if (char === '/' && inRegex && excludePart[i-1] !== '\\') {
-      // 结束正则表达式（非转义的斜杠）
-      inRegex = false;
-      currentTag += char;
-      // 继续收集标志位
-      while (i + 1 < excludePart.length && /[gimuy]/.test(excludePart[i + 1])) {
-        i++;
-        currentTag += excludePart[i];
-      }
-    } else if (char === ',' && !inRegex) {
-      // 分隔符，且不在正则表达式内
-      if (currentTag.trim()) {
-        excludeTags.push(currentTag.trim());
-      }
-      currentTag = '';
-    } else {
-      currentTag += char;
-    }
-  }
-  
-  // 添加最后一个标签
-  if (currentTag.trim()) {
-    excludeTags.push(currentTag.trim());
-  }
-  
-  console.debug('智能分割结果:', excludeTags);
-  
-  const parsedExcludeTags = excludeTags.map(tag => {
-      // 检测正则表达式格式：/pattern/flags
-      const regexMatch = tag.match(/^\/(.+)\/([gimuy]*)$/);
-      if (regexMatch) {
-        const regexItem = {
-          type: 'regex',
-          pattern: regexMatch[1],
-          flags: regexMatch[2] || 'gi',
-        };
-        console.debug('识别正则表达式:', regexItem);
-        return regexItem;
-      }
-      // 传统标签格式
-      const tagItem = {
-        type: 'tag',
-        name: tag,
-      };
-      console.debug('识别标签:', tagItem);
-      return tagItem;
-    });
-
-  const result = {
-    mainTag: mainTag.trim(),
-    excludeTags: parsedExcludeTags,
-  };
-  
-  console.debug('解析完成:', result);
-  return result;
-}
-
-/**
- * Removes excluded tags from content
- * @param {string} content Content to process
- * @param {string[]} excludeTags Tags to exclude
- * @returns {string} Content with excluded tags removed
- */
-function removeExcludedTags(content, excludeTags) {
-  let result = content;
-  
-  console.debug('排除标签处理开始:', {
-    原始内容长度: content.length,
-    排除规则数量: excludeTags.length,
-    排除规则: excludeTags.map(item => ({
-      类型: item.type,
-      内容: item.type === 'regex' ? `/${item.pattern}/${item.flags}` : item.name
-    }))
-  });
-
-  for (let i = 0; i < excludeTags.length; i++) {
-    const excludeItem = excludeTags[i];
-    const beforeLength = result.length;
-    const beforeContent = result.substring(0, 100) + (result.length > 100 ? '...' : '');
-    
-    try {
-      if (excludeItem.type === 'regex') {
-        // 正则表达式排除
-        const regex = new RegExp(excludeItem.pattern, excludeItem.flags);
-        console.debug(`步骤${i+1}: 应用正则 /${excludeItem.pattern}/${excludeItem.flags}`);
-        
-        const matches = result.match(regex);
-        if (matches) {
-          console.debug(`正则匹配到 ${matches.length} 个项目:`, matches.map(m => m.substring(0, 50) + (m.length > 50 ? '...' : '')));
-        } else {
-          console.debug('正则没有匹配到任何内容');
-        }
-        
-        result = result.replace(regex, '');
-      } else {
-        // 传统标签排除
-        const tagName = excludeItem.name;
-        let regex;
-        
-        if (tagName.includes('<') && tagName.includes('>')) {
-          const tagMatch = tagName.match(/<(\w+)(?:\s[^>]*)?>/);
-          if (tagMatch) {
-            const name = tagMatch[1];
-            regex = new RegExp(`<${name}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${name}>`, 'gi');
-          }
-        } else {
-          // 先处理大括号格式的标签（需要特殊处理嵌套）
-          result = removeCurlyBraceTags(result, tagName);
-          // 再处理HTML格式的标签
-          regex = new RegExp(`<${tagName}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${tagName}>`, 'gi');
-        }
-        
-        if (regex) {
-          console.debug(`步骤${i+1}: 应用标签排除 "${tagName}", 正则: ${regex.source}`);
-          
-          const matches = result.match(regex);
-          if (matches) {
-            console.debug(`标签匹配到 ${matches.length} 个项目:`, matches.map(m => m.substring(0, 50) + (m.length > 50 ? '...' : '')));
-          } else {
-            console.debug(`标签 "${tagName}" 没有找到匹配项`);
-          }
-          
-          result = result.replace(regex, '');
-        } else {
-          console.warn(`无法为标签 "${tagName}" 创建正则表达式`);
-        }
-      }
-      
-      console.debug(`步骤${i+1}处理结果: ${beforeLength} -> ${result.length} 字符`);
-      if (result.length !== beforeLength) {
-        const afterContent = result.substring(0, 100) + (result.length > 100 ? '...' : '');
-        console.debug('内容变化:', {
-          处理前: beforeContent,
-          处理后: afterContent
-        });
-      }
-      
-    } catch (error) {
-      console.error(`步骤${i+1}处理失败:`, {
-        排除项: excludeItem,
-        错误: error.message
-      });
-    }
-  }
-
-  // 统一进行文本清理和归一化
-  console.debug('开始文本清理和归一化...');
-  const beforeCleanup = result.length;
-  
-  const finalResult = result
-    .replace(/\n\s*\n\s*\n/g, '\n\n')  // 合并多个空行为两个
-    .replace(/^\s+|\s+$/g, '')         // 移除首尾空白
-    .replace(/\n\s+/g, '\n')           // 移除行首多余空白
-    .replace(/\s+\n/g, '\n')           // 移除行尾多余空白
-    .trim();                           // 最终trim
-    
-  console.debug('排除标签处理完成:', {
-    清理前长度: beforeCleanup,
-    最终长度: finalResult.length,
-    总体变化: `${content.length} -> ${finalResult.length} 字符`,
-    内容预览: finalResult.substring(0, 150) + (finalResult.length > 150 ? '...' : '')
-  });
-
-  return finalResult;
-}
 
 /**
  * Removes curly brace tags from text with proper nesting support
@@ -494,15 +303,15 @@ function removeCurlyBraceTags(text, tagName) {
   const startPattern = new RegExp(`\\{${escapedTag}\\|`, 'gi');
   let result = text;
   let match;
-  
+
   while ((match = startPattern.exec(result)) !== null) {
     const startPos = match.index;
     const contentStart = startPos + match[0].length;
-    
+
     // Find the matching closing brace, accounting for nested braces
     let braceCount = 1;
     let pos = contentStart;
-    
+
     while (pos < result.length && braceCount > 0) {
       if (result[pos] === '{') {
         braceCount++;
@@ -511,7 +320,7 @@ function removeCurlyBraceTags(text, tagName) {
       }
       pos++;
     }
-    
+
     if (braceCount === 0) {
       // Found the matching closing brace, remove the entire tag
       result = result.substring(0, startPos) + result.substring(pos);
@@ -522,7 +331,7 @@ function removeCurlyBraceTags(text, tagName) {
       break;
     }
   }
-  
+
   return result;
 }
 
@@ -556,10 +365,10 @@ function isValidTagName(tagName) {
     'form', 'input', 'button', 'select', 'option', 'textarea', 'label',
     'script', 'style', 'meta', 'link', 'title', 'head', 'body', 'html'
   ];
-  
+
   // Must be alphanumeric with possible underscores/hyphens
   const validPattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
-  
+
   return validPattern.test(tagName) && !excludedTags.includes(tagName.toLowerCase());
 }
 
@@ -573,118 +382,62 @@ function isValidTagName(tagName) {
  * @returns {Promise<object>} Object containing found tags and performance stats
  */
 async function scanTextForTags(text, options = {}) {
-  const startTime = performance.now();
-  const {
-    chunkSize = 50000,
-    maxTags = 100,
-    timeoutMs = 5000
-  } = options;
+    const startTime = performance.now();
+    const {
+        chunkSize = 50000,
+        maxTags = 100,
+        timeoutMs = 5000
+    } = options;
 
-  // Use Sets for O(1) lookup performance
-  const simpleTags = new Set();
-  const htmlTags = new Set();
-  const complexTags = new Set();
-  const curlyTags = new Set();
-  
-  // Performance-optimized regex patterns
-  const patterns = {
-    // Simple tags: <tag>content</tag>
-    simple: /<(\w+)>[\s\S]*?<\/\1>/g,
-    // HTML format tags with attributes: <tag attr="value">content</tag>
-    htmlFormat: /<(\w+)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g,
-    // Complex nested patterns: <details><summary>text</summary>
-    complex: /<(details|div|section|article)(?:\s[^>]*)?>[\s\S]*?<\/(details|div|section|article)>/g,
-    // Curly brace pipe format: {tag|content}
-    curlyBrace: /\{(\w+)\|[\s\S]*?\}/g
-  };
+    const foundTags = new Set();
+    // This regex is designed to find all valid tag names, including nested ones.
+    // It captures the tag name from both start tags (<tag>) and end tags (</tag>).
+    const tagRegex = /<(\/|)([a-zA-Z0-9_-]+)([^>]*)>/g;
 
-  let processedChars = 0;
-  let chunkCount = 0;
-  
-  // Process text in chunks to maintain performance
-  for (let i = 0; i < text.length; i += chunkSize) {
-    const chunk = text.slice(i, Math.min(i + chunkSize, text.length));
-    chunkCount++;
-    processedChars += chunk.length;
-    
-    // Check timeout
-    if (performance.now() - startTime > timeoutMs) {
-      console.warn(`Tag scanning timed out after ${timeoutMs}ms, processed ${processedChars} characters`);
-      break;
-    }
-    
-    // Scan for simple tags
-    let match;
-    const simpleRegex = new RegExp(patterns.simple.source, patterns.simple.flags);
-    while ((match = simpleRegex.exec(chunk)) !== null && simpleTags.size < maxTags) {
-      const tagName = match[1].toLowerCase();
-      // Filter reasonable tag names and exclude problematic ones
-      if (tagName.length >= 2 && tagName.length <= 20 && isValidTagName(tagName)) {
-        simpleTags.add(tagName);
-      }
-    }
-    
-    // Scan for HTML format tags
-    const htmlRegex = new RegExp(patterns.htmlFormat.source, patterns.htmlFormat.flags);
-    while ((match = htmlRegex.exec(chunk)) !== null && htmlTags.size < maxTags) {
-      const tagName = match[1].toLowerCase();
-      if (tagName.length >= 2 && tagName.length <= 20 && isValidTagName(tagName)) {
-        htmlTags.add(tagName);
-      }
-    }
-    
-    // Scan for complex tags (limited scope for performance)
-    if (complexTags.size < 20) { // Limit complex tag detection
-      const complexRegex = new RegExp(patterns.complex.source, patterns.complex.flags);
-      while ((match = complexRegex.exec(chunk)) !== null && complexTags.size < 20) {
-        const tagName = match[1].toLowerCase();
-        if (isValidTagName(tagName)) {
-          complexTags.add(tagName);
+    let processedChars = 0;
+    let chunkCount = 0;
+
+    for (let i = 0; i < text.length; i += chunkSize) {
+        const chunk = text.slice(i, Math.min(i + chunkSize, text.length));
+        chunkCount++;
+        processedChars += chunk.length;
+
+        if (performance.now() - startTime > timeoutMs) {
+            console.warn(`Tag scanning timed out after ${timeoutMs}ms`);
+            break;
         }
-      }
+
+        let match;
+        while ((match = tagRegex.exec(chunk)) !== null && foundTags.size < maxTags) {
+            const tagName = match[2].toLowerCase();
+            if (isValidTagName(tagName)) {
+                foundTags.add(tagName);
+            }
+        }
+
+        if (foundTags.size >= maxTags) break;
+
+        if (chunkCount % 5 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
     }
-    
-    // Scan for curly brace tags
-    const curlyRegex = new RegExp(patterns.curlyBrace.source, patterns.curlyBrace.flags);
-    while ((match = curlyRegex.exec(chunk)) !== null && curlyTags.size < maxTags) {
-      const tagName = match[1].toLowerCase();
-      if (tagName.length >= 2 && tagName.length <= 20 && isValidTagName(tagName)) {
-        curlyTags.add(tagName);
-      }
-    }
-    
-    // Early exit if we found enough tags
-    if (simpleTags.size >= maxTags && htmlTags.size >= maxTags && curlyTags.size >= maxTags) {
-      break;
-    }
-    
-    // Yield control to prevent UI blocking
-    if (chunkCount % 5 === 0) {
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
-  }
-  
-  const endTime = performance.now();
-  const processingTime = endTime - startTime;
-  
-  // Convert sets to sorted arrays
-  const result = {
-    simpleTags: Array.from(simpleTags).sort(),
-    htmlTags: Array.from(htmlTags).sort(),
-    complexTags: Array.from(complexTags).sort(),
-    curlyTags: Array.from(curlyTags).sort(),
-    stats: {
-      processingTimeMs: Math.round(processingTime),
-      processedChars,
-      totalChars: text.length,
-      chunkCount,
-      avgChunkSize: Math.round(processedChars / chunkCount),
-      tagsFound: simpleTags.size + htmlTags.size + complexTags.size + curlyTags.size
-    }
-  };
-  
-  console.debug('Tag scanning completed:', result.stats);
-  return result;
+
+    const endTime = performance.now();
+    const processingTime = endTime - startTime;
+
+    const result = {
+        tags: Array.from(foundTags).sort(),
+        stats: {
+            processingTimeMs: Math.round(processingTime),
+            processedChars,
+            totalChars: text.length,
+            chunkCount,
+            tagsFound: foundTags.size
+        }
+    };
+
+    console.debug('Tag scanning completed:', result.stats);
+    return result;
 }
 
 /**
@@ -693,200 +446,101 @@ async function scanTextForTags(text, options = {}) {
  * @param {number} limit Maximum number of suggestions (default: 20)
  * @returns {object} Object with suggestions array and detailed stats
  */
-function generateTagSuggestions(scanResult, limit = 20) {
-  const suggestions = [];
-  const usedTags = new Set(); // Track used tags to avoid duplicates
-  
-  console.debug('标签建议生成:', {
-    simpleTags: scanResult.simpleTags.length,
-    htmlTags: scanResult.htmlTags.length,
-    complexTags: scanResult.complexTags.length,
-    curlyTags: scanResult.curlyTags.length,
-    limit: limit
-  });
-  
-  // Add simple tags (50% of limit)
-  const simpleLimit = Math.floor(limit * 0.5);
-  scanResult.simpleTags.slice(0, simpleLimit).forEach(tag => {
-    if (isValidTagName(tag) && !usedTags.has(tag)) {
-      suggestions.push(tag);
-      usedTags.add(tag);
-    }
-  });
-  
-  // Add curly brace tags (25% of limit)
-  const curlyLimit = Math.floor(limit * 0.25);
-  scanResult.curlyTags.slice(0, curlyLimit).forEach(tag => {
-    if (isValidTagName(tag) && !usedTags.has(tag)) {
-      const curlyFormat = `{${tag}|...}`;
-      suggestions.push(curlyFormat);
-      usedTags.add(tag);
-    }
-  });
-  
-  // Add HTML format tags (20% of limit)
-  const htmlLimit = Math.floor(limit * 0.2);
-  let htmlAdded = 0;
-  scanResult.htmlTags.forEach(tag => {
-    if (htmlAdded >= htmlLimit) return;
-    
-    // Only add valid tags that haven't been used
-    if (isValidTagName(tag)) {
-      const htmlFormat = `<${tag}></${tag}>`;
-      if (!usedTags.has(tag) && !usedTags.has(htmlFormat)) {
-        suggestions.push(htmlFormat);
-        usedTags.add(tag);
-        usedTags.add(htmlFormat);
-        htmlAdded++;
-      }
-    }
-  });
-  
-  // Add complex tags with common patterns (10% of limit)
-  const complexLimit = Math.floor(limit * 0.1);
-  let complexAdded = 0;
-  scanResult.complexTags.forEach(tag => {
-    if (complexAdded >= complexLimit) return;
-    
-    let complexFormat;
-    if (tag === 'details') {
-      // Only add details if we haven't already added it as a simple tag
-      if (!usedTags.has('details') && !usedTags.has('<details></details>')) {
-        complexFormat = '<details><summary>摘要</summary>,</details>';
-      }
-    } else if (isValidTagName(tag)) {
-      // Only add valid tags and avoid duplicates with simple tags
-      if (!usedTags.has(tag)) {
-        complexFormat = `<${tag}></${tag}>`;
-      }
-    }
-    
-    if (complexFormat && !usedTags.has(complexFormat)) {
-      suggestions.push(complexFormat);
-      usedTags.add(complexFormat);
-      usedTags.add(tag); // Mark the base tag as used too
-      complexAdded++;
-    }
-  });
-  
-  // Final deduplication and limit
-  const finalSuggestions = suggestions.slice(0, limit);
-  
-  console.debug('标签建议结果:', {
-    总发现: scanResult.stats.tagsFound,
-    简单标签: scanResult.simpleTags.length,
-    HTML标签: scanResult.htmlTags.length,
-    复杂标签: scanResult.complexTags.length,
-    大括号标签: scanResult.curlyTags.length,
-    最终建议: finalSuggestions.length,
-    建议列表: finalSuggestions
-  });
-  
-  return {
-    suggestions: finalSuggestions,
-    stats: {
-      totalFound: scanResult.stats.tagsFound,
-      simpleCount: scanResult.simpleTags.length,
-      htmlCount: scanResult.htmlTags.length,
-      complexCount: scanResult.complexTags.length,
-      curlyCount: scanResult.curlyTags.length,
-      finalCount: finalSuggestions.length
-    }
-  };
+function generateTagSuggestions(scanResult, limit = 25) {
+    const suggestions = scanResult.tags.slice(0, limit);
+
+    console.debug('标签建议结果:', {
+        总发现: scanResult.stats.tagsFound,
+        最终建议: suggestions.length,
+        建议列表: suggestions
+    });
+
+    return {
+        suggestions: suggestions,
+        stats: {
+            totalFound: scanResult.stats.tagsFound,
+            finalCount: suggestions.length
+        }
+    };
 }
 
 /**
- * Extracts content from specific tags in a message
- * @param {string} text Message text
- * @param {string[]} tags Tags to extract (supports exclusion syntax)
- * @returns {string} Extracted content or original text if no tags specified
+ * Extracts and filters content from text based on a set of rules.
+ * @param {string} text The input text to process.
+ * @param {Array<object>} rules An array of rules for inclusion and exclusion.
+ * @returns {string} The processed content.
  */
-function extractTagContent(text, tags) {
-  if (!tags || tags.length === 0) return text;
-
-  let extractedContent = [];
-  const blacklist = settings.content_blacklist || [];
-
-  for (const tagConfig of tags) {
-    try {
-      // 如果tagConfig包含逗号但没有排除语法，需要分割处理多个标签
-      if (tagConfig.includes(',') && !tagConfig.includes(' - ')) {
-        // 这是多个简单标签的组合，如 "AFF,people"
-        const simpleTags = tagConfig.split(',').map(t => t.trim()).filter(t => t);
-        console.debug(`处理多个简单标签: ${tagConfig} -> ${simpleTags.join(', ')}`);
-        
-        for (const simpleTag of simpleTags) {
-          // Try multiple formats for each simple tag
-          let tagContent = [];
-          
-          // Try simple HTML format first
-          const htmlContent = extractSimpleTag(text, simpleTag);
-          tagContent.push(...htmlContent);
-          
-          // Try curly brace format
-          const curlyContent = extractCurlyBraceTag(text, simpleTag);
-          tagContent.push(...curlyContent);
-          
-          console.debug(`标签 "${simpleTag}" 提取到 ${tagContent.length} 个内容块 (HTML: ${htmlContent.length}, 大括号: ${curlyContent.length})`);
-          extractedContent.push(...tagContent);
-        }
-        continue;
-      }
-      
-      const { mainTag, excludeTags } = parseTagWithExclusions(tagConfig);
-
-      // 第一步：提取主标签内容
-      let mainContent = [];
-
-      if (mainTag.includes(',')) {
-        // 复杂标签配置：<details><summary>摘要</summary>,</details>
-        const complexContent = extractComplexTag(text, mainTag);
-        mainContent.push(...complexContent);
-      } else if (mainTag.includes('<') && mainTag.includes('>')) {
-        // HTML格式的简单标签：<content></content>
-        const simpleContent = extractHtmlFormatTag(text, mainTag);
-        mainContent.push(...simpleContent);
-      } else if (mainTag.includes('{') && mainTag.includes('|')) {
-        // 大括号管道格式：{outputstory|...}
-        const tagName = mainTag.replace(/[{}|]/g, '');
-        const curlyContent = extractCurlyBraceTag(text, tagName);
-        mainContent.push(...curlyContent);
-      } else {
-        // 原始简单标签：content, thinking - try multiple formats
-        const htmlContent = extractSimpleTag(text, mainTag);
-        mainContent.push(...htmlContent);
-        
-        // Also try curly brace format for simple tags
-        const curlyContent = extractCurlyBraceTag(text, mainTag);
-        mainContent.push(...curlyContent);
-        
-        console.debug(`简单标签 "${mainTag}" 提取结果: HTML格式 ${htmlContent.length} 个, 大括号格式 ${curlyContent.length} 个`);
-      }
-
-      // 第二步：嵌套标签排除
-      if (excludeTags.length > 0) {
-        mainContent = mainContent
-          .map(content => removeExcludedTags(content, excludeTags))
-          .filter(content => content.trim()); // 移除空内容
-      }
-
-      // 第三步：黑名单过滤
-      mainContent = mainContent.filter(content => {
-        if (shouldSkipContent(content, blacklist)) {
-          console.debug(`黑名单过滤跳过内容: ${content.substring(0, 50)}...`);
-          return false;
-        }
-        return true;
-      });
-
-      extractedContent.push(...mainContent);
-    } catch (error) {
-      console.warn(`标签配置错误: ${tagConfig}`, error);
-      // 继续处理其他标签，不因为一个错误而中断
+function extractTagContent(text, rules) {
+    if (!rules || rules.length === 0) {
+        return text;
     }
-  }
 
-  return extractedContent.length > 0 ? extractedContent.join('\n\n') : text;
+    const blockExcludeRules = rules.filter(rule => rule.type === 'exclude' && rule.enabled);
+    const includeRules = rules.filter(rule => (rule.type === 'include' || rule.type === 'regex_include') && rule.enabled);
+    const cleanupRules = rules.filter(rule => rule.type === 'regex_exclude' && rule.enabled);
+    const blacklist = settings.content_blacklist || [];
+
+    let workingText = text;
+
+    // Phase 1: Global Block-Level Exclusion
+    for (const rule of blockExcludeRules) {
+        try {
+            const tagRegex = new RegExp(`<${escapeRegex(rule.value)}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${escapeRegex(rule.value)}>`, 'gi');
+            workingText = workingText.replace(tagRegex, '');
+        } catch (error) {
+            console.error(`Error applying block exclusion rule:`, { rule, error });
+        }
+    }
+
+    // Phase 2: Content Extraction
+    let extractedContents = [];
+    if (includeRules.length > 0) {
+        for (const rule of includeRules) {
+            let results = [];
+            try {
+                if (rule.type === 'include') {
+                    results.push(...extractSimpleTag(workingText, rule.value));
+                } else if (rule.type === 'regex_include') {
+                    const regex = new RegExp(rule.value, 'gi');
+                    const matches = [...workingText.matchAll(regex)];
+                    matches.forEach(match => {
+                        if (match[1]) results.push(match[1]);
+                    });
+                }
+            } catch (error) {
+                console.error(`Error applying inclusion rule:`, { rule, error });
+            }
+            results.forEach(content => extractedContents.push(content.trim()));
+        }
+    } else {
+        extractedContents.push(workingText);
+    }
+
+    // Phase 3: Inner Content Cleanup & Blacklist Filtering
+    let finalContents = [];
+    for (let contentBlock of extractedContents) {
+        // Apply regex_exclude rules for cleanup
+        for (const rule of cleanupRules) {
+            try {
+                const regex = new RegExp(rule.value, 'gi');
+                contentBlock = contentBlock.replace(regex, '');
+            } catch (error) {
+                console.error(`Error applying cleanup rule:`, { rule, error });
+            }
+        }
+
+        // Apply blacklist
+        if (!shouldSkipContent(contentBlock, blacklist)) {
+            finalContents.push(contentBlock);
+        }
+    }
+
+    // Join and final cleanup
+    const joinedContent = finalContents.join('\n\n');
+    return joinedContent
+        .replace(/\n\s*\n\s*\n/g, '\n\n')
+        .replace(/^\s+|\s+$/g, '')
+        .trim();
 }
 
 /**
@@ -999,19 +653,19 @@ function extractSimpleTag(text, tag) {
 function extractCurlyBraceTag(text, tag) {
   const extractedContent = [];
   const escapedTag = escapeRegex(tag);
-  
+
   // Find all starting positions of the target tag
   const startPattern = new RegExp(`\\{${escapedTag}\\|`, 'gi');
   let match;
-  
+
   while ((match = startPattern.exec(text)) !== null) {
     const startPos = match.index;
     const contentStart = startPos + match[0].length;
-    
+
     // Find the matching closing brace, accounting for nested braces
     let braceCount = 1;
     let pos = contentStart;
-    
+
     while (pos < text.length && braceCount > 0) {
       if (text[pos] === '{') {
         braceCount++;
@@ -1020,7 +674,7 @@ function extractCurlyBraceTag(text, tag) {
       }
       pos++;
     }
-    
+
     if (braceCount === 0) {
       // Found the matching closing brace
       const content = text.substring(contentStart, pos - 1);
@@ -1028,7 +682,7 @@ function extractCurlyBraceTag(text, tag) {
         extractedContent.push(content.trim());
       }
     }
-    
+
     // Continue searching from after this match
     startPattern.lastIndex = startPos + 1;
   }
@@ -1046,6 +700,92 @@ function escapeRegex(str) {
 }
 
 /**
+ * Gets all raw content for scanning, bypassing tag extraction rules.
+ * @returns {Promise<VectorItem[]>} Array of vector items with raw text
+ */
+async function getRawContentForScanning() {
+  const items = [];
+  const context = getContext();
+  const selectedContent = settings.selected_content;
+
+  // Chat messages
+  if (selectedContent.chat.enabled && context.chat) {
+    const chatSettings = selectedContent.chat;
+    const start = chatSettings.range?.start || 0;
+    const end = chatSettings.range?.end || -1;
+    const types = chatSettings.types || { user: true, assistant: true };
+
+    const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
+
+    messages.forEach((msg, idx) => {
+      if (msg.is_system === true && !chatSettings.include_hidden) {
+        return;
+      }
+      if (!types.user && msg.is_user) return;
+      if (!types.assistant && !msg.is_user) return;
+
+      // Use raw message content, bypassing extractTagContent
+      items.push({
+        type: 'chat',
+        text: substituteParams(msg.mes),
+        metadata: { index: start + idx },
+        selected: true,
+      });
+    });
+  }
+
+  // Files
+  if (selectedContent.files.enabled) {
+    const fileMap = new Map();
+    try {
+      getDataBankAttachments().forEach(file => {
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+      getDataBankAttachmentsForSource('global').forEach(file => {
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+      getDataBankAttachmentsForSource('character').forEach(file => {
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+      getDataBankAttachmentsForSource('chat').forEach(file => {
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+      context.chat.filter(x => x.extra?.file).forEach(msg => {
+        const file = msg.extra.file;
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+    } catch (error) {
+      console.error('Vectors: Error getting files for scanning:', error);
+    }
+
+    const allFiles = Array.from(fileMap.values());
+    for (const file of allFiles) {
+      if (!selectedContent.files.selected.includes(file.url)) continue;
+      try {
+        const text = await getFileAttachment(file.url);
+        if (text && text.trim()) {
+          items.push({ type: 'file', text: text, metadata: { name: file.name }, selected: true });
+        }
+      } catch (error) {
+        console.error(`Vectors: Error processing file for scanning ${file.name}:`, error);
+      }
+    }
+  }
+
+  // World Info
+  if (selectedContent.world_info.enabled) {
+    const entries = await getSortedEntries();
+    for (const entry of entries) {
+      if (!entry.world || !entry.content || entry.disable) continue;
+      const selectedEntries = selectedContent.world_info.selected[entry.world] || [];
+      if (!selectedEntries.includes(entry.uid)) continue;
+      items.push({ type: 'world_info', text: entry.content, metadata: { world: entry.world, uid: entry.uid }, selected: true });
+    }
+  }
+
+  return items;
+}
+/**
  * Gets all vectorizable content based on provided settings
  * @param {object} contentSettings Optional content settings, defaults to global settings
  * @returns {Promise<VectorItem[]>} Array of vector items
@@ -1061,14 +801,11 @@ async function getVectorizableContent(contentSettings = null) {
     const start = chatSettings.range?.start || 0;
     const end = chatSettings.range?.end || -1;
     const types = chatSettings.types || { user: true, assistant: true };
-    const tags = chatSettings.tags || '';
+    const rules = chatSettings.tag_rules || [];
     const blacklist = settings.content_blacklist || [];
 
     // Make end index inclusive by adding 1 to the slice operation
     const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
-    // 不要在这里分割标签，因为标签可能包含排除语法和正则表达式
-    // 直接使用原始标签字符串，让 extractTagContent 处理
-    const tagList = tags ? [tags.trim()] : [];
 
     messages.forEach((msg, idx) => {
       // 处理隐藏消息
@@ -1079,7 +816,7 @@ async function getVectorizableContent(contentSettings = null) {
       if (!types.user && msg.is_user) return;
       if (!types.assistant && !msg.is_user) return;
 
-      const extractedText = extractTagContent(substituteParams(msg.mes), tagList);
+      const extractedText = extractTagContent(substituteParams(msg.mes), rules);
 
       items.push({
         type: 'chat',
@@ -1099,25 +836,25 @@ async function getVectorizableContent(contentSettings = null) {
   if (selectedContent.files.enabled) {
     // 获取所有文件源，使用Map去重（以URL为键）
     const fileMap = new Map();
-    
+
     // 逐个添加不同来源的文件，自动去重
     try {
       getDataBankAttachments().forEach(file => {
         if (file && file.url) fileMap.set(file.url, file);
       });
-      
+
       getDataBankAttachmentsForSource('global').forEach(file => {
         if (file && file.url) fileMap.set(file.url, file);
       });
-      
+
       getDataBankAttachmentsForSource('character').forEach(file => {
         if (file && file.url) fileMap.set(file.url, file);
       });
-      
+
       getDataBankAttachmentsForSource('chat').forEach(file => {
         if (file && file.url) fileMap.set(file.url, file);
       });
-      
+
       context.chat.filter(x => x.extra?.file).forEach(msg => {
         const file = msg.extra.file;
         if (file && file.url) fileMap.set(file.url, file);
@@ -1125,7 +862,7 @@ async function getVectorizableContent(contentSettings = null) {
     } catch (error) {
       console.error('Vectors: Error getting files:', error);
     }
-    
+
     const allFiles = Array.from(fileMap.values());
     console.debug(`Vectors: Total unique files found: ${allFiles.length}`);
     console.debug(`Vectors: Selected files in settings: ${selectedContent.files.selected.length}`, selectedContent.files.selected);
@@ -1158,19 +895,19 @@ async function getVectorizableContent(contentSettings = null) {
         toastr.warning(`文件 "${file.name}" 处理失败: ${error.message}`);
       }
     }
-    
+
     console.debug(`Vectors: Actually processed ${processedFileCount} files out of ${selectedContent.files.selected.length} selected`);
   }
 
   // World Info
   if (selectedContent.world_info.enabled) {
     const entries = await getSortedEntries();
-    
+
     // 调试：显示实际选择的世界信息
     console.debug('Vectors: Selected world info:', selectedContent.world_info.selected);
     const totalSelected = Object.values(selectedContent.world_info.selected).flat().length;
     console.debug(`Vectors: Total selected world info entries: ${totalSelected}`);
-    
+
     let processedWICount = 0;
 
     for (const entry of entries) {
@@ -1190,11 +927,11 @@ async function getVectorizableContent(contentSettings = null) {
         },
         selected: true,
       });
-      
+
       processedWICount++;
       console.debug(`Vectors: Successfully processed world info entry: ${entry.comment || entry.uid} from world ${entry.world}`);
     }
-    
+
     console.debug(`Vectors: Actually processed ${processedWICount} world info entries out of ${totalSelected} selected`);
   }
 
@@ -1205,7 +942,7 @@ async function getVectorizableContent(contentSettings = null) {
     world_info: items.filter(item => item.type === 'world_info').length,
     total: items.length
   };
-  
+
   console.debug('Vectors: Final getVectorizableContent result:', {
     finalCounts,
     settings: {
@@ -1250,7 +987,7 @@ function hideProgress() {
  */
 async function generateTaskName(contentSettings, actualItems) {
   const parts = [];
-  
+
   console.debug('Vectors: generateTaskName input:', {
     contentSettings,
     actualItemsCount: actualItems.length,
@@ -1263,13 +1000,13 @@ async function generateTaskName(contentSettings, actualItems) {
     file: 0,
     world_info: 0
   };
-  
+
   actualItems.forEach(item => {
     if (itemCounts.hasOwnProperty(item.type)) {
       itemCounts[item.type]++;
     }
   });
-  
+
   console.debug('Vectors: Actual item counts:', itemCounts);
 
   // Chat range - use newRanges if available for accurate naming
@@ -1285,7 +1022,7 @@ async function generateTaskName(contentSettings, actualItems) {
           return `消息 #${start}-${end}`;
         }
       });
-      
+
       if (rangeStrings.length === 1) {
         parts.push(rangeStrings[0]);
       } else {
@@ -1351,7 +1088,7 @@ async function updateTaskList() {
     const taskDiv = $('<div class="vector-enhanced-task-item"></div>');
 
     const incrementalBadge = task.isIncremental ? '<span style="background: var(--SmartThemeQuoteColor); color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; margin-left: 0.5rem;">增量</span>' : '';
-    
+
     const checkbox = $(`
             <label class="checkbox_label flex-container alignItemsCenter">
                 <input type="checkbox" ${task.enabled ? 'checked' : ''} />
@@ -1395,6 +1132,79 @@ async function updateTaskList() {
     taskList.append(taskDiv);
   });
 }
+/**
+ * Renders the tag rules UI in the settings panel.
+ */
+function renderTagRulesUI() {
+    const editor = $('#vectors_enhanced_rules_editor');
+    editor.empty();
+
+    // Ensure tag_rules exists and is an array
+    if (!settings.selected_content.chat.tag_rules || !Array.isArray(settings.selected_content.chat.tag_rules)) {
+        settings.selected_content.chat.tag_rules = [];
+    }
+    const rules = settings.selected_content.chat.tag_rules;
+
+    if (rules.length === 0) {
+        editor.append('<div class="text-muted" style="margin: 0.5rem 0;">没有定义任何提取规则。</div>');
+    }
+
+    rules.forEach((rule, index) => {
+        const ruleHtml = `
+            <div class="vector-enhanced-rule-item flex-container alignItemsCenter" data-index="${index}" style="margin-bottom: 0.5rem; gap: 0.5rem;">
+                <select class="rule-type text_pole widthUnset" style="flex: 2;">
+                    <option value="include" ${rule.type === 'include' ? 'selected' : ''}>包含</option>
+                    <option value="exclude" ${rule.type === 'exclude' ? 'selected' : ''}>排除</option>
+                    <option value="regex_exclude" ${rule.type === 'regex_exclude' ? 'selected' : ''}>正则排除</option>
+                </select>
+                <input type="text" class="rule-value text_pole" style="flex: 5;" placeholder="标签名或/表达式/" value="${rule.value || ''}">
+                <label class="checkbox_label" style="flex: 1; white-space: nowrap;">
+                    <input type="checkbox" class="rule-enabled" ${rule.enabled ? 'checked' : ''}>
+                    <span>启用</span>
+                </label>
+                <button class="menu_button menu_button_icon rule-delete" title="删除规则">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        `;
+        editor.append(ruleHtml);
+    });
+
+    // Unbind previous events to prevent duplicates, then bind new ones.
+    editor.off('change', '.rule-type, .rule-value, .rule-enabled').on('change', '.rule-type, .rule-value, .rule-enabled', function() {
+        const ruleDiv = $(this).closest('.vector-enhanced-rule-item');
+        const index = ruleDiv.data('index');
+
+        if (index === undefined || !settings.selected_content.chat.tag_rules[index]) return;
+
+        const rule = settings.selected_content.chat.tag_rules[index];
+
+        if ($(this).hasClass('rule-type')) {
+            rule.type = $(this).val();
+        }
+        if ($(this).hasClass('rule-value')) {
+            rule.value = $(this).val();
+        }
+        if ($(this).hasClass('rule-enabled')) {
+            rule.enabled = $(this).is(':checked');
+        }
+
+        Object.assign(extension_settings.vectors_enhanced, settings);
+        saveSettingsDebounced();
+    });
+
+    editor.off('click', '.rule-delete').on('click', '.rule-delete', function() {
+        const ruleDiv = $(this).closest('.vector-enhanced-rule-item');
+        const index = ruleDiv.data('index');
+
+        if (index !== undefined) {
+            settings.selected_content.chat.tag_rules.splice(index, 1);
+            Object.assign(extension_settings.vectors_enhanced, settings);
+            saveSettingsDebounced();
+            renderTagRulesUI(); // Re-render the UI
+        }
+    });
+}
 
 /**
  * Checks for existing tasks that overlap with current selection
@@ -1406,7 +1216,7 @@ function analyzeTaskOverlap(chatId, currentSettings) {
   const existingTasks = getChatTasks(chatId).filter(t => t.enabled);
   const conflicts = [];
   const newContentSources = [];
-  
+
   console.debug('Vectors: Starting overlap analysis:', {
     chatId,
     existingTaskCount: existingTasks.length,
@@ -1417,7 +1227,7 @@ function analyzeTaskOverlap(chatId, currentSettings) {
       world_info: currentSettings.world_info.enabled ? Object.values(currentSettings.world_info.selected).flat().length : 0
     }
   });
-  
+
   // Check chat message overlap
   if (currentSettings.chat.enabled) {
     const currentStart = currentSettings.chat.range?.start || 0;
@@ -1425,10 +1235,10 @@ function analyzeTaskOverlap(chatId, currentSettings) {
     const currentTags = currentSettings.chat.tags || '';
     const currentTypes = currentSettings.chat.types || { user: true, assistant: true };
     const currentHidden = currentSettings.chat.include_hidden || false;
-    
+
     let hasCompleteMatch = false;
     let hasPartialOverlap = false;
-    
+
     for (const task of existingTasks) {
       const taskChat = task.settings?.chat;
       if (taskChat?.enabled) {
@@ -1437,37 +1247,37 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         const taskTags = taskChat.tags || '';
         const taskTypes = taskChat.types || { user: true, assistant: true };
         const taskHidden = taskChat.include_hidden || false;
-        
+
         // Check if settings are identical
         const sameSettings = (
           taskTags === currentTags &&
           JSON.stringify(taskTypes) === JSON.stringify(currentTypes) &&
           taskHidden === currentHidden
         );
-        
+
         if (sameSettings) {
           // Check for exact match
           const isExactMatch = (taskStart === currentStart && taskEnd === currentEnd);
-          
+
           // Check if current range is completely contained in existing task
           const isContained = (
             taskStart <= currentStart &&
             (taskEnd === -1 || (currentEnd !== -1 && currentEnd <= taskEnd))
           );
-          
+
           // Check for any overlap (more precise logic)
           const hasOverlap = (() => {
             // Handle -1 (end) cases
             const actualCurrentEnd = currentEnd === -1 ? Infinity : currentEnd;
             const actualTaskEnd = taskEnd === -1 ? Infinity : taskEnd;
-            
+
             // Ranges overlap if they intersect
             return (
-              currentStart <= actualTaskEnd && 
+              currentStart <= actualTaskEnd &&
               taskStart <= actualCurrentEnd
             );
           })();
-          
+
           if (isExactMatch || isContained) {
             hasCompleteMatch = true;
             conflicts.push({
@@ -1489,18 +1299,18 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         }
       }
     }
-    
+
     // Only add as new content if there's no complete match
     if (!hasCompleteMatch) {
       newContentSources.push('聊天记录');
     }
   }
-  
+
   // Check file overlap
   if (currentSettings.files.enabled && currentSettings.files.selected.length > 0) {
     const existingFiles = new Set();
     const fileTaskMap = new Map(); // 记录每个文件在哪些任务中
-    
+
     // 收集所有已存在的文件
     for (const task of existingTasks) {
       if (task.settings?.files?.enabled && task.settings.files.selected) {
@@ -1513,7 +1323,7 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         });
       }
     }
-    
+
     console.debug('Vectors: File overlap analysis:', {
       currentSelected: currentSettings.files.selected,
       currentSelectedCount: currentSettings.files.selected.length,
@@ -1525,17 +1335,17 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         files: task.settings?.files?.selected || []
       }))
     });
-    
+
     const newFiles = currentSettings.files.selected.filter(url => !existingFiles.has(url));
     const duplicateFiles = currentSettings.files.selected.filter(url => existingFiles.has(url));
-    
+
     console.debug('Vectors: File analysis result:', {
       newFiles,
       duplicateFiles,
       newFileCount: newFiles.length,
       duplicateFileCount: duplicateFiles.length
     });
-    
+
     if (duplicateFiles.length > 0) {
       conflicts.push({
         type: 'files_partial',
@@ -1547,12 +1357,12 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         }))
       });
     }
-    
+
     if (newFiles.length > 0) {
       newContentSources.push(`${newFiles.length} 个新文件`);
     }
   }
-  
+
   // Check world info overlap
   if (currentSettings.world_info.enabled) {
     const existingEntries = new Set();
@@ -1561,11 +1371,11 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         Object.values(task.settings.world_info.selected).flat().forEach(uid => existingEntries.add(uid));
       }
     }
-    
+
     const currentEntries = Object.values(currentSettings.world_info.selected).flat();
     const newEntries = currentEntries.filter(uid => !existingEntries.has(uid));
     const duplicateEntries = currentEntries.filter(uid => existingEntries.has(uid));
-    
+
     if (duplicateEntries.length > 0) {
       conflicts.push({
         type: 'worldinfo_partial',
@@ -1573,19 +1383,19 @@ function analyzeTaskOverlap(chatId, currentSettings) {
         details: duplicateEntries
       });
     }
-    
+
     if (newEntries.length > 0) {
       newContentSources.push(`${newEntries.length} 个新世界信息条目`);
     }
   }
-  
+
   const result = {
     hasConflicts: conflicts.length > 0,
     conflicts,
     newContentSources,
     hasNewContent: newContentSources.length > 0
   };
-  
+
   console.debug('Vectors: Overlap analysis complete:', {
     result,
     conflictDetails: conflicts.map(c => ({
@@ -1594,7 +1404,7 @@ function analyzeTaskOverlap(chatId, currentSettings) {
       details: c.details || 'no details'
     }))
   });
-  
+
   return result;
 }
 
@@ -1608,10 +1418,10 @@ function analyzeTaskOverlap(chatId, currentSettings) {
 function createIncrementalSettings(currentSettings, chatId, conflicts) {
   const existingTasks = getChatTasks(chatId).filter(t => t.enabled);
   const newSettings = JSON.parse(JSON.stringify(currentSettings));
-  
+
   // Initialize coveredRanges at function scope for debugging
   let coveredRanges = [];
-  
+
   // Handle chat message ranges - calculate new range based on conflicts
   if (newSettings.chat.enabled) {
     const currentStart = currentSettings.chat.range?.start || 0;
@@ -1619,7 +1429,7 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
     const currentTags = currentSettings.chat.tags || '';
     const currentTypes = currentSettings.chat.types || { user: true, assistant: true };
     const currentHidden = currentSettings.chat.include_hidden || false;
-    
+
     // Find all existing covered ranges with same settings
     coveredRanges = [];
     for (const task of existingTasks) {
@@ -1630,20 +1440,20 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
         const taskTags = taskChat.tags || '';
         const taskTypes = taskChat.types || { user: true, assistant: true };
         const taskHidden = taskChat.include_hidden || false;
-        
+
         // Only consider ranges with same settings
         const sameSettings = (
           taskTags === currentTags &&
           JSON.stringify(taskTypes) === JSON.stringify(currentTypes) &&
           taskHidden === currentHidden
         );
-        
+
         if (sameSettings) {
           coveredRanges.push({ start: taskStart, end: taskEnd });
         }
       }
     }
-    
+
     // Calculate the new range that's not covered using a more robust algorithm
     if (coveredRanges.length === 0) {
       // No existing ranges, keep current range
@@ -1651,21 +1461,21 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
     } else {
       // Sort covered ranges by start position
       coveredRanges.sort((a, b) => a.start - b.start);
-      
+
       // Find gaps and uncovered areas
       const newRanges = [];
       let checkStart = currentStart;
       const actualCurrentEnd = currentEnd === -1 ? 999999 : currentEnd; // Use large number for -1
-      
+
       for (const covered of coveredRanges) {
         const coveredStart = covered.start;
         const coveredEnd = covered.end === -1 ? 999999 : covered.end;
-        
+
         // Skip if covered range is completely outside current range
         if (coveredEnd < currentStart || coveredStart > actualCurrentEnd) {
           continue;
         }
-        
+
         // If there's a gap before this covered range
         if (checkStart < coveredStart) {
           const gapEnd = Math.min(actualCurrentEnd, coveredStart - 1);
@@ -1673,21 +1483,21 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
             newRanges.push({ start: checkStart, end: gapEnd === 999999 ? -1 : gapEnd });
           }
         }
-        
+
         // Move checkStart to after this covered range
         checkStart = Math.max(checkStart, coveredEnd + 1);
       }
-      
+
       // Check if there's remaining range after all covered ranges
       if (checkStart <= actualCurrentEnd) {
         newRanges.push({ start: checkStart, end: currentEnd });
       }
-      
+
       // Handle multiple new ranges
       if (newRanges.length > 0) {
         // Store all new ranges for display purposes
         newSettings.chat.newRanges = newRanges;
-        
+
         // For processing, try to merge ranges if they're close together
         // or use a combined approach
         if (newRanges.length === 1) {
@@ -1700,15 +1510,15 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
           const ends = newRanges.map(r => r.end === -1 ? -1 : r.end).filter(e => e !== -1);
           const minStart = Math.min(...starts);
           const maxEnd = ends.length > 0 ? Math.max(...ends) : -1;
-          
+
           // Check if any range goes to end (-1)
           const hasEndRange = newRanges.some(r => r.end === -1);
-          
+
           newSettings.chat.range = {
             start: minStart,
             end: hasEndRange ? -1 : maxEnd
           };
-          
+
           // Mark this as a multi-range selection for processing
           newSettings.chat.isMultiRange = true;
         }
@@ -1718,13 +1528,13 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
       }
     }
   }
-  
+
   console.debug('Vectors: createIncrementalSettings result:', {
     originalChat: currentSettings.chat,
     newChat: newSettings.chat,
     coveredRanges: newSettings.chat.enabled ? coveredRanges : 'N/A'
   });
-  
+
   // Filter out existing files
   if (newSettings.files.enabled) {
     const existingFiles = new Set();
@@ -1738,7 +1548,7 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
       newSettings.files.enabled = false;
     }
   }
-  
+
   // Filter out existing world info
   if (newSettings.world_info.enabled) {
     const existingEntries = new Set();
@@ -1747,19 +1557,19 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
         Object.values(task.settings.world_info.selected).flat().forEach(uid => existingEntries.add(uid));
       }
     }
-    
+
     for (const [world, uids] of Object.entries(newSettings.world_info.selected)) {
       newSettings.world_info.selected[world] = uids.filter(uid => !existingEntries.has(uid));
       if (newSettings.world_info.selected[world].length === 0) {
         delete newSettings.world_info.selected[world];
       }
     }
-    
+
     if (Object.keys(newSettings.world_info.selected).length === 0) {
       newSettings.world_info.enabled = false;
     }
   }
-  
+
   return newSettings;
 }
 
@@ -1773,7 +1583,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
   // Temporarily override settings for content gathering
   const originalSettings = JSON.parse(JSON.stringify(settings.selected_content));
   settings.selected_content = contentSettings;
-  
+
   try {
     const items = await getVectorizableContent(contentSettings);
     if (items.length === 0) {
@@ -1783,7 +1593,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
 
     // Generate task name
     const context = getContext();
-    
+
     // 调试：显示传给generateTaskName的数据
     console.debug('Vectors: Content settings for task name generation:', {
       chat: contentSettings.chat,
@@ -1791,10 +1601,10 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
       world_info: contentSettings.world_info,
       itemCount: items.length
     });
-    
+
     let taskName = await generateTaskName(contentSettings, items);
     console.debug(`Vectors: Generated task name: ${taskName}`);
-    
+
     // Add incremental prefix if needed
     if (isIncremental) {
       taskName = '[增量] ' + taskName;
@@ -1803,7 +1613,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
     // 设置向量化状态
     isVectorizing = true;
     vectorizationAbortController = new AbortController();
-    
+
     // 更新UI状态
     $('#vectors_enhanced_vectorize').hide();
     $('#vectors_enhanced_abort').show();
@@ -1820,14 +1630,14 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
 
       // Create corrected settings based on actually processed items
       const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
-      
+
       // Update file list to only include actually processed files
       if (correctedSettings.files.enabled) {
         const actuallyProcessedFiles = items
           .filter(item => item.type === 'file')
           .map(item => item.metadata.url);
         correctedSettings.files.selected = actuallyProcessedFiles;
-        
+
         console.debug('Vectors: Corrected file settings:', {
           originalSelected: contentSettings.files.selected,
           actuallyProcessed: actuallyProcessedFiles,
@@ -1835,18 +1645,18 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
           actualCount: actuallyProcessedFiles.length
         });
       }
-      
+
       // Update world info list to only include actually processed entries
       if (correctedSettings.world_info.enabled) {
         const actuallyProcessedEntries = items
           .filter(item => item.type === 'world_info')
           .map(item => item.metadata.uid);
-        
+
         // Rebuild world_info.selected based on actually processed entries
         const newWorldInfoSelected = {};
         for (const uid of actuallyProcessedEntries) {
           // Find which world this entry belongs to
-          const originalWorld = Object.keys(contentSettings.world_info.selected).find(world => 
+          const originalWorld = Object.keys(contentSettings.world_info.selected).find(world =>
             contentSettings.world_info.selected[world].includes(uid)
           );
           if (originalWorld) {
@@ -1857,7 +1667,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
           }
         }
         correctedSettings.world_info.selected = newWorldInfoSelected;
-        
+
         console.debug('Vectors: Corrected world info settings:', {
           originalSelected: contentSettings.world_info.selected,
           actuallyProcessed: newWorldInfoSelected
@@ -1949,7 +1759,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
       });
 
       hideProgress();
-      const successMessage = isIncremental ? 
+      const successMessage = isIncremental ?
         `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allChunks.length} 个块` :
         `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allChunks.length} 个块`;
       toastr.success(successMessage, '成功');
@@ -1959,7 +1769,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
     } catch (error) {
       console.error('向量化失败:', error);
       hideProgress();
-      
+
       // Check if it was an intentional abort
       if (error.message === '向量化被用户中断') {
         // 清理已插入的部分数据
@@ -1989,7 +1799,7 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
       // 重置向量化状态
       isVectorizing = false;
       vectorizationAbortController = null;
-      
+
       // 重置UI状态
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
@@ -2005,15 +1815,15 @@ async function performVectorization(contentSettings, chatId, isIncremental) {
  */
 async function cleanupInvalidSelections() {
   console.debug('Vectors: Starting active cleanup of invalid selections');
-  
+
   let hasChanges = false;
-  
+
   // Cleanup world info selections
   if (settings.selected_content.world_info.enabled) {
     const entries = await getSortedEntries();
     const allValidUids = new Set();
     const currentValidWorlds = new Set();
-    
+
     entries.forEach(entry => {
       // Only include entries that are not disabled and have content
       if (entry.world && entry.content && !entry.disable) {
@@ -2021,13 +1831,13 @@ async function cleanupInvalidSelections() {
         currentValidWorlds.add(entry.world);
       }
     });
-    
+
     console.debug('Vectors: Valid world info UIDs:', Array.from(allValidUids));
     console.debug('Vectors: Current valid worlds:', Array.from(currentValidWorlds));
-    
+
     const originalSelected = JSON.parse(JSON.stringify(settings.selected_content.world_info.selected));
     const originalCount = Object.values(originalSelected).flat().length;
-    
+
     // Clean each world's selection
     for (const [world, selectedUids] of Object.entries(settings.selected_content.world_info.selected)) {
       // Remove worlds that don't exist in current context
@@ -2037,7 +1847,7 @@ async function cleanupInvalidSelections() {
         hasChanges = true;
         continue;
       }
-      
+
       const validUids = selectedUids.filter(uid => {
         const isValid = allValidUids.has(uid);
         if (!isValid) {
@@ -2045,7 +1855,7 @@ async function cleanupInvalidSelections() {
         }
         return isValid;
       });
-      
+
       if (validUids.length !== selectedUids.length) {
         hasChanges = true;
         if (validUids.length === 0) {
@@ -2056,10 +1866,10 @@ async function cleanupInvalidSelections() {
         }
       }
     }
-    
+
     const newCount = Object.values(settings.selected_content.world_info.selected).flat().length;
     const removedCount = originalCount - newCount;
-    
+
     if (removedCount > 0) {
       console.debug(`Vectors: Cleaned up ${removedCount} invalid world info selections:`, {
         original: originalSelected,
@@ -2070,9 +1880,9 @@ async function cleanupInvalidSelections() {
       hasChanges = true;
     }
   }
-  
+
   // TODO: Add file cleanup here if needed
-  
+
   if (hasChanges) {
     Object.assign(extension_settings.vectors_enhanced, settings);
     saveSettingsDebounced();
@@ -2097,20 +1907,20 @@ async function vectorizeContent() {
     toastr.error('未选择聊天');
     return;
   }
-  
+
   // Debug: Check current selection state before processing
   console.debug('Vectors: Current selection state before processing:', {
     chat: settings.selected_content.chat,
     files: settings.selected_content.files,
     world_info: settings.selected_content.world_info
   });
-  
+
   // Active cleanup before processing
   await cleanupInvalidSelections();
-  
+
   // Analyze overlap with existing tasks
   const overlapAnalysis = analyzeTaskOverlap(chatId, settings.selected_content);
-  
+
   if (overlapAnalysis.hasConflicts) {
     if (overlapAnalysis.hasNewContent) {
       // Pre-check if incremental settings would have any content
@@ -2120,18 +1930,18 @@ async function vectorizeContent() {
         (incrementalSettings.files.enabled && incrementalSettings.files.selected.length > 0) ||
         (incrementalSettings.world_info.enabled && Object.keys(incrementalSettings.world_info.selected).length > 0)
       );
-      
+
       if (!hasActualNewContent) {
         // All content is actually covered by existing tasks
         const conflictMessage = '当前选择的内容中没有需要处理的新增项目';
         toastr.warning(conflictMessage);
         return;
       }
-      
+
       // Generate simplified conflict message
       const duplicatedParts = [];
       const newParts = [];
-      
+
       // Process conflicts to extract duplicated items
       overlapAnalysis.conflicts.forEach(conflict => {
         if (conflict.type === 'chat_duplicate') {
@@ -2148,7 +1958,7 @@ async function vectorizeContent() {
           duplicatedParts.push(`${conflict.details.length}个世界信息条目`);
         }
       });
-      
+
       // Calculate new content
       if (incrementalSettings.chat.enabled) {
         // Check if we have multiple new ranges
@@ -2174,18 +1984,18 @@ async function vectorizeContent() {
         const newEntryCount = Object.values(incrementalSettings.world_info.selected).flat().length;
         newParts.push(`${newEntryCount}个新世界信息条目`);
       }
-      
+
       const conflictMessage = `检测到${duplicatedParts.join('、')}已被向量化，是否只处理新增的${newParts.join('、')}？`;
-      
+
       const userChoice = await callGenericPopup(conflictMessage, POPUP_TYPE.CONFIRM, '', {
         okButton: '只向量化新增内容',
         cancelButton: '取消'
       });
-      
+
       if (userChoice !== POPUP_RESULT.AFFIRMATIVE) {
         return;
       }
-      
+
       // Use incremental settings
       await performVectorization(incrementalSettings, chatId, true);
     } else {
@@ -2553,12 +2363,12 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     // Get all enabled tasks for this chat
     const allTasks = getChatTasks(chatId);
     const tasks = allTasks.filter(t => t.enabled);
-    
+
     console.debug(`Vectors: Chat ${chatId} has ${allTasks.length} total tasks, ${tasks.length} enabled`);
     allTasks.forEach(task => {
       console.debug(`Vectors: Task "${task.name}" (${task.taskId}) - enabled: ${task.enabled}`);
     });
-    
+
     if (tasks.length === 0) {
       console.debug('Vectors: No enabled tasks for this chat');
       return;
@@ -2569,7 +2379,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     for (const task of tasks) {
       const collectionId = `${chatId}_${task.taskId}`;
       console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
-      
+
       try {
         const results = await queryCollection(collectionId, queryText, settings.max_results || 10);
         console.debug(`Vectors: Query results for task ${task.name}:`, results);
@@ -2596,7 +2406,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           // 如果API只返回了hashes和metadata，从任务保存的文本内容中获取
           else if (results.hashes && results.metadata) {
             console.debug(`Vectors: API returned hashes only, retrieving text from task data`);
-            
+
             // 首先尝试从缓存获取（性能最优）
             const cachedData = cachedVectors.get(collectionId);
             if (cachedData && cachedData.items) {
@@ -2644,7 +2454,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                 try {
                   const vectorTexts = await getVectorTexts(collectionId, results.hashes);
                   console.debug(`Vectors: Retrieved ${vectorTexts.length} texts from files`);
-                  
+
                   if (vectorTexts && vectorTexts.length > 0) {
                     vectorTexts.forEach((item, index) => {
                       if (item.text) {
@@ -2769,18 +2579,18 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     // 显示查询结果通知（统一处理，无论是否有结果）
     if (settings.show_query_notification) {
       const currentTime = Date.now();
-      
+
       // 防重复通知：检查冷却时间
       if (currentTime - lastNotificationTime < NOTIFICATION_COOLDOWN) {
         console.debug('Vectors: Notification skipped due to cooldown');
         return;
       }
-      
+
       const totalResults = topResults.length;
-      
+
       let message = `查询到${totalResults}个结果`;
       message += totalResults > 0 ? '，已注入' : '';
-      
+
       // 详细模式：显示来源分布
       if (settings.detailed_notification && totalResults > 0) {
         const sourceStats = {
@@ -2788,7 +2598,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           file: groupedResults.file?.length || 0,
           world_info: groupedResults.world_info?.length || 0
         };
-        
+
         if (sourceStats.chat || sourceStats.file || sourceStats.world_info) {
           const sources = [];
           if (sourceStats.chat) sources.push(`聊天记录${sourceStats.chat}条`);
@@ -2797,10 +2607,10 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           message += `\n来源：${sources.join('，')}`;
         }
       }
-      
+
       const toastType = totalResults > 0 ? 'info' : 'warning';
       toastr[toastType](message, '向量查询结果', { timeOut: 3000 });
-      
+
       // 更新最后通知时间
       lastNotificationTime = currentTime;
     }
@@ -3125,16 +2935,16 @@ async function updateFileList() {
 
   const context = getContext();
   console.debug('Vectors: Context:', context);
-  
+
   let allFiles = [];
-  
+
   try {
     const dataBankFiles = getDataBankAttachments();
     const globalFiles = getDataBankAttachmentsForSource('global');
     const characterFiles = getDataBankAttachmentsForSource('character');
     const chatFiles = getDataBankAttachmentsForSource('chat');
     const extraFiles = context.chat?.filter(x => x.extra?.file).map(x => x.extra.file) || [];
-    
+
     console.debug('Vectors: File sources:', {
       dataBank: dataBankFiles.length,
       global: globalFiles.length,
@@ -3142,7 +2952,7 @@ async function updateFileList() {
       chat: chatFiles.length,
       extra: extraFiles.length
     });
-    
+
     // 去重复：使用URL作为唯一键
     const fileMap = new Map();
     [...dataBankFiles, ...globalFiles, ...characterFiles, ...chatFiles, ...extraFiles].forEach(file => {
@@ -3150,18 +2960,18 @@ async function updateFileList() {
         fileMap.set(file.url, file);
       }
     });
-    
+
     allFiles = Array.from(fileMap.values());
-    
+
     console.debug('Vectors: Total files after deduplication:', allFiles.length);
-    
+
     // Clean up invalid file selections (files that no longer exist)
     const allFileUrls = new Set(allFiles.map(f => f.url));
     const originalSelected = [...settings.selected_content.files.selected];
-    settings.selected_content.files.selected = settings.selected_content.files.selected.filter(url => 
+    settings.selected_content.files.selected = settings.selected_content.files.selected.filter(url =>
       allFileUrls.has(url)
     );
-    
+
     const removedCount = originalSelected.length - settings.selected_content.files.selected.length;
     if (removedCount > 0) {
       console.debug(`Vectors: Cleaned up ${removedCount} invalid file selections:`, {
@@ -3169,7 +2979,7 @@ async function updateFileList() {
         cleaned: settings.selected_content.files.selected,
         removed: originalSelected.filter(url => !allFileUrls.has(url))
       });
-      
+
       // Save the cleaned settings
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
@@ -3188,7 +2998,7 @@ async function updateFileList() {
   // Group files by source - use the deduplicated files
   const dataBankUrls = new Set(getDataBankAttachments().map(f => f.url));
   const chatFileUrls = new Set((context.chat?.filter(x => x.extra?.file).map(x => x.extra.file) || []).map(f => f.url));
-  
+
   const dataBankFiles = allFiles.filter(file => dataBankUrls.has(file.url));
   const chatFiles = allFiles.filter(file => chatFileUrls.has(file.url) && !dataBankUrls.has(file.url));
 
@@ -3282,10 +3092,10 @@ async function updateWorldInfoList() {
   const allValidUids = new Set();
   const currentValidWorlds = new Set(Object.keys(grouped));
   Object.values(grouped).flat().forEach(entry => allValidUids.add(entry.uid));
-  
+
   let hasChanges = false;
   const originalSelected = JSON.parse(JSON.stringify(settings.selected_content.world_info.selected));
-  
+
   // Clean each world's selection
   for (const [world, selectedUids] of Object.entries(settings.selected_content.world_info.selected)) {
     // Remove worlds that don't exist in current context
@@ -3295,7 +3105,7 @@ async function updateWorldInfoList() {
       hasChanges = true;
       continue;
     }
-    
+
     const validUids = selectedUids.filter(uid => allValidUids.has(uid));
     if (validUids.length !== selectedUids.length) {
       hasChanges = true;
@@ -3306,20 +3116,20 @@ async function updateWorldInfoList() {
       }
     }
   }
-  
+
   if (hasChanges) {
     const currentSelected = JSON.parse(JSON.stringify(settings.selected_content.world_info.selected));
     const originalCount = Object.values(originalSelected).flat().length;
     const currentCount = Object.values(currentSelected).flat().length;
     const removedCount = originalCount - currentCount;
-    
+
     console.debug(`Vectors: Cleaned up ${removedCount} invalid world info selections:`, {
       original: originalSelected,
       cleaned: currentSelected,
       originalCount,
       currentCount
     });
-    
+
     // Save the cleaned settings
     Object.assign(extension_settings.vectors_enhanced, settings);
     saveSettingsDebounced();
@@ -3432,6 +3242,52 @@ const onChatEvent = debounce(async () => {
   await updateTaskList();
 }, debounce_timeout.relaxed);
 
+/**
+ * Migrates old tag settings to the new structured format.
+ * This is a one-time migration that runs if the old `tags` property is found.
+ */
+function migrateTagSettings() {
+  // Check if migration is needed by detecting the presence of the old 'tags' property.
+  if (settings.selected_content?.chat?.hasOwnProperty('tags')) {
+    console.log('[Vectors] Tag settings migrated to new format.');
+
+    const oldTags = settings.selected_content.chat.tags;
+    const newRules = [];
+
+    if (typeof oldTags === 'string' && oldTags.trim()) {
+      // Example: "content - thinking" becomes [{type:'include', value:'content'}, {type:'exclude', value:'thinking'}]
+      const parts = oldTags.split(' - ');
+      const includePart = parts[0].trim();
+      const excludePart = parts.length > 1 ? parts[1].trim() : '';
+
+      if (includePart) {
+        includePart.split(',').forEach(tag => {
+          const trimmedTag = tag.trim();
+          if (trimmedTag) {
+            newRules.push({ type: 'include', value: trimmedTag, enabled: true });
+          }
+        });
+      }
+
+      if (excludePart) {
+        excludePart.split(',').forEach(tag => {
+          const trimmedTag = tag.trim();
+          if (trimmedTag) {
+            newRules.push({ type: 'exclude', value: trimmedTag, enabled: true });
+          }
+        });
+      }
+    }
+
+    // Assign the new rules and clean up old properties
+    settings.selected_content.chat.tag_rules = newRules;
+    delete settings.selected_content.chat.tags;
+    settings.tag_rules_version = 2;
+
+    // Settings will be saved later in the initialization process.
+  }
+}
+
 jQuery(async () => {
   // 使用独立的设置键避免冲突
   const SETTINGS_KEY = 'vectors_enhanced';
@@ -3442,7 +3298,10 @@ jQuery(async () => {
 
   // 深度合并设置，确保所有必需的属性都存在
   Object.assign(settings, extension_settings[SETTINGS_KEY]);
-  
+
+  // 在设置加载后运行迁移
+  migrateTagSettings();
+
   // 调试：输出加载的设置
   console.debug('Vectors: 从扩展设置加载的数据:', extension_settings[SETTINGS_KEY]);
   console.debug('Vectors: 合并后的设置:', settings);
@@ -3725,6 +3584,9 @@ jQuery(async () => {
       if (settings.selected_content.world_info.enabled) {
         await updateWorldInfoList();
       }
+
+      // Initial render of the tag rules UI
+      renderTagRulesUI();
     });
 
   // Chat settings handlers - 确保所有属性都存在
@@ -3777,14 +3639,7 @@ jQuery(async () => {
       saveSettingsDebounced();
     });
 
-  // Tags input
-  $('#vectors_enhanced_chat_tags')
-    .val(chatTags)
-    .on('input', () => {
-      settings.selected_content.chat.tags = String($('#vectors_enhanced_chat_tags').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
+  // Tags input - REMOVED
 
   // Include hidden messages checkbox
   $('#vectors_enhanced_chat_include_hidden')
@@ -3813,7 +3668,7 @@ jQuery(async () => {
   toggleSettings();
   updateContentSelection();
   updateChatSettings();
-  
+
   // 初始化通知详细选项的显示状态
   $('#vectors_enhanced_notification_details').toggle(settings.show_query_notification);
 
@@ -3836,6 +3691,9 @@ jQuery(async () => {
   if (settings.selected_content.world_info.enabled) {
     await updateWorldInfoList();
   }
+
+  // Initial render of the tag rules UI
+  renderTagRulesUI();
 
   // Initialize task list
   await updateTaskList();
@@ -3986,11 +3844,53 @@ jQuery(async () => {
     await scanAndSuggestTags();
   });
 
+  // 添加新规则按钮事件
+  $('#vectors_enhanced_add_rule').on('click', () => {
+      if (!settings.selected_content.chat.tag_rules) {
+          settings.selected_content.chat.tag_rules = [];
+      }
+      settings.selected_content.chat.tag_rules.push({
+          type: 'include',
+          value: '',
+          enabled: true,
+      });
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+      renderTagRulesUI();
+  });
+
   // 清除标签建议按钮事件
   $('#vectors_enhanced_clear_suggestions').on('click', () => {
     clearTagSuggestions();
   });
 
+// 排除小CoT按钮事件
+  $('#vectors_enhanced_exclude_cot').on('click', () => {
+    if (!settings.selected_content.chat.tag_rules) {
+        settings.selected_content.chat.tag_rules = [];
+    }
+
+    const cotRule = {
+        type: 'regex_exclude',
+        value: '<!--[\\s\\S]*?-->',
+        enabled: true,
+    };
+
+    const alreadyExists = settings.selected_content.chat.tag_rules.some(
+        rule => rule.type === cotRule.type && rule.value === cotRule.value
+    );
+
+    if (alreadyExists) {
+        toastr.info('已存在排除HTML注释的规则。');
+        return;
+    }
+
+    settings.selected_content.chat.tag_rules.push(cotRule);
+    Object.assign(extension_settings.vectors_enhanced, settings);
+    saveSettingsDebounced();
+    renderTagRulesUI();
+    toastr.success('已添加规则：排除HTML注释');
+  });
   // 初始化隐藏消息信息显示
   updateHiddenMessagesInfo();
 
@@ -4045,25 +3945,25 @@ async function initializeDebugModule() {
       window.location.search.includes('debug=true') ||
       localStorage.getItem('vectors_debug_enabled') === 'true'
     );
-    
+
     if (!shouldLoadDebug) {
       console.debug('[Vectors] Debug module not loaded (not in debug environment)');
       return;
     }
-    
+
     console.log('[Vectors] Loading debug module...');
-    
+
     // 动态导入调试模块
     const { createDebugger } = await import('./debug/debugger.js');
-    
+
     // 创建API接口对象
     const debugAPI = createDebugAPI();
-    
+
     // 创建并初始化调试器
     const debuggerInstance = await createDebugger(debugAPI);
-    
+
     console.log('[Vectors] Debug module loaded successfully');
-    
+
   } catch (error) {
     console.warn('[Vectors] Failed to load debug module (this is normal in production):', error.message);
   }
@@ -4073,68 +3973,59 @@ async function initializeDebugModule() {
  * Scans current selected content for tags and displays suggestions
  */
 async function scanAndSuggestTags() {
-  const scanBtn = $('#vectors_enhanced_tag_scanner');
-  const originalText = scanBtn.find('span').text();
-  
-  // Helper function to restore button state
-  const restoreButtonState = () => {
-    scanBtn.prop('disabled', false);
-    scanBtn.find('span').text(originalText);
-    scanBtn.find('i').removeClass('fa-spinner fa-spin').addClass('fa-search');
-  };
-  
-  try {
-    // Show loading state
-    scanBtn.prop('disabled', true);
-    scanBtn.find('span').text('扫描中...');
-    scanBtn.find('i').removeClass('fa-search').addClass('fa-spinner fa-spin');
+    const scanBtn = $('#vectors_enhanced_tag_scanner');
+    const originalText = scanBtn.find('span').text();
 
-    // Collect content from current selection
-    const content = await getVectorizableContent();
-    if (!content || content.length === 0) {
-      toastr.warning('没有选择任何内容进行扫描');
-      restoreButtonState();
-      return;
-    }
-
-    // Combine all text for scanning
-    const combinedText = content.map(item => item.text).join('\n\n');
-    if (combinedText.length === 0) {
-      toastr.warning('选择的内容为空');
-      restoreButtonState();
-      return;
-    }
-
-    console.log(`开始扫描标签，总文本长度: ${combinedText.length} 字符`);
-
-    // Perform tag scanning with performance optimization
-    const scanOptions = {
-      chunkSize: 50000, // 50KB chunks for good performance
-      maxTags: 100,     // Limit total tags for UI performance
-      timeoutMs: 5000   // 5 second timeout for very large texts
+    const restoreButtonState = () => {
+        scanBtn.prop('disabled', false);
+        scanBtn.find('span').text(originalText);
+        scanBtn.find('i').removeClass('fa-spinner fa-spin').addClass('fa-search');
     };
 
-    const scanResult = await scanTextForTags(combinedText, scanOptions);
+    try {
+        scanBtn.prop('disabled', true);
+        scanBtn.find('span').text('扫描中...');
+        scanBtn.find('i').removeClass('fa-search').addClass('fa-spinner fa-spin');
 
-    // Generate and display suggestions
-    const suggestionResult = generateTagSuggestions(scanResult, 25);
-    displayTagSuggestions(suggestionResult.suggestions, scanResult.stats, suggestionResult.stats);
+        // Use the new function to get raw content
+        const content = await getRawContentForScanning();
+        if (!content || content.length === 0) {
+            toastr.warning('没有选择任何内容进行扫描');
+            return;
+        }
 
-    console.log(`标签扫描完成，发现 ${scanResult.stats.tagsFound} 个标签，生成 ${suggestionResult.suggestions.length} 个建议，耗时 ${scanResult.stats.processingTimeMs}ms`);
-    
-    if (suggestionResult.suggestions.length > 0) {
-      toastr.success(`发现 ${suggestionResult.suggestions.length} 个可用标签`);
-    } else {
-      toastr.info('未发现可提取的标签');
+        const combinedText = content.map(item => item.text).join('\n\n');
+        if (combinedText.length === 0) {
+            toastr.warning('选择的内容为空');
+            return;
+        }
+
+        console.log(`开始扫描标签，总文本长度: ${combinedText.length} 字符`);
+
+        const scanOptions = {
+            chunkSize: 50000,
+            maxTags: 100,
+            timeoutMs: 5000
+        };
+
+        const scanResult = await scanTextForTags(combinedText, scanOptions);
+        const suggestionResult = generateTagSuggestions(scanResult);
+        displayTagSuggestions(suggestionResult.suggestions, scanResult.stats);
+
+        console.log(`标签扫描完成，发现 ${scanResult.stats.tagsFound} 个标签，生成 ${suggestionResult.suggestions.length} 个建议，耗时 ${scanResult.stats.processingTimeMs}ms`);
+
+        if (suggestionResult.suggestions.length > 0) {
+            toastr.success(`发现 ${suggestionResult.suggestions.length} 个可用标签`);
+        } else {
+            toastr.info('未发现可提取的标签');
+        }
+
+    } catch (error) {
+        console.error('标签扫描失败:', error);
+        toastr.error('标签扫描失败: ' + error.message);
+    } finally {
+        restoreButtonState();
     }
-
-  } catch (error) {
-    console.error('标签扫描失败:', error);
-    toastr.error('标签扫描失败: ' + error.message);
-  } finally {
-    // Always restore button state
-    restoreButtonState();
-  }
 }
 
 /**
@@ -4143,78 +4034,73 @@ async function scanAndSuggestTags() {
  * @param {object} scanStats Scanning performance stats
  * @param {object} suggestionStats Suggestion generation stats (optional, for debugging)
  */
-function displayTagSuggestions(suggestions, scanStats, suggestionStats = null) {
+function displayTagSuggestions(suggestions, scanStats) {
   const container = $('#vectors_enhanced_tag_suggestions');
   const tagList = $('#vectors_enhanced_tag_list');
   const statsSpan = $('#vectors_tag_scan_stats');
-  
+
   // Update stats display with just clickable tag count
   const statsText = `${suggestions.length} 个标签，${scanStats.processingTimeMs}ms`;
   statsSpan.text(statsText);
-  
+
   // Clear previous suggestions
   tagList.empty();
-  
+
   if (suggestions.length === 0) {
     container.hide();
     return;
   }
-  
+
   // Create tag suggestion buttons
   suggestions.forEach(tag => {
     // Escape HTML to prevent rendering issues
     const displayText = $('<div>').text(tag).html();
     const tagBtn = $(`<button class="menu_button tag-suggestion-btn" title="点击添加到标签提取框"></button>`);
     tagBtn.text(tag); // Use .text() to prevent HTML parsing
-    
+
     tagBtn.on('click', () => {
-      addTagToInput(tag);
+      addScannedTagAsRule(tag);
     });
-    
+
     tagList.append(tagBtn);
   });
-  
+
   // Show suggestions container
   container.show();
 }
 
 /**
- * Adds a tag to the tag input field
- * @param {string} tag Tag to add
+ * Adds a scanned tag as a new 'include' rule.
+ * @param {string} tag The scanned tag to add as a rule.
  */
-function addTagToInput(tag) {
-  const tagInput = $('#vectors_enhanced_chat_tags');
-  const currentValue = tagInput.val().trim();
-  
-  // Process the tag based on its format
-  let processedTag = tag;
-  
-  // If it's a curly brace format like "{outputstory|...}", extract just the tag name
-  if (tag.startsWith('{') && tag.includes('|') && tag.endsWith('}')) {
-    const match = tag.match(/^\{(\w+)\|.*\}$/);
-    if (match) {
-      processedTag = match[1];
+function addScannedTagAsRule(tag) {
+    if (!settings.selected_content.chat.tag_rules || !Array.isArray(settings.selected_content.chat.tag_rules)) {
+        settings.selected_content.chat.tag_rules = [];
     }
-  }
-  // If it's HTML format like "<tag></tag>", extract just the tag name
-  else if (tag.startsWith('<') && tag.endsWith('>') && tag.includes('</')) {
-    const match = tag.match(/^<(\w+)><\/\1>$/);
-    if (match) {
-      processedTag = match[1];
+
+    const ruleValue = tag; // The new scanner provides clean tag names directly
+
+    const alreadyExists = settings.selected_content.chat.tag_rules.some(
+        rule => rule.type === 'include' && rule.value === ruleValue
+    );
+
+    if (alreadyExists) {
+        toastr.info(`规则 "包含: ${ruleValue}" 已存在。`);
+        return;
     }
-  }
-  
-  // Add comma if there's existing content
-  const separator = currentValue ? ',' : '';
-  const newValue = currentValue + separator + processedTag;
-  
-  tagInput.val(newValue);
-  
-  // Trigger change event to save settings
-  tagInput.trigger('input');
-  
-  // Provide feedback
-  toastr.success(`已添加标签: ${processedTag}`);
+
+    const newRule = {
+        type: 'include',
+        value: ruleValue,
+        enabled: true,
+    };
+    settings.selected_content.chat.tag_rules.push(newRule);
+
+    Object.assign(extension_settings.vectors_enhanced, settings);
+    saveSettingsDebounced();
+    renderTagRulesUI();
+
+    toastr.success(`已添加新规则: "包含: ${ruleValue}"`);
 }
 
 /**
@@ -4234,60 +4120,60 @@ function createDebugAPI() {
   return {
     // jQuery 访问
     jQuery: $,
-    
+
     // 设置管理
     getSettings: () => settings,
     extension_settings: extension_settings,
     saveSettingsDebounced: saveSettingsDebounced,
-    
+
     // 聊天管理
     getCurrentChatId: getCurrentChatId,
     getChatTasks: getChatTasks,
-    
+
     // 内容访问
     getSortedEntries: getSortedEntries,
     getHiddenMessages: getHiddenMessages,
-    
+
     // 核心功能
     cleanupInvalidSelections: cleanupInvalidSelections,
     updateWorldInfoList: updateWorldInfoList,
     updateTaskList: updateTaskList,
     analyzeTaskOverlap: analyzeTaskOverlap,
-    
+
     // UI更新
     updateMasterSwitchState: updateMasterSwitchState,
     updateChatSettings: updateChatSettings,
     updateFileList: updateFileList,
     updateHiddenMessagesInfo: updateHiddenMessagesInfo,
-    
+
     // 消息管理
     toggleMessageVisibility: toggleMessageVisibility,
     toggleMessageRangeVisibility: toggleMessageRangeVisibility,
-    
+
     // 向量操作（如果可用）
     getSavedHashes: typeof getSavedHashes !== 'undefined' ? getSavedHashes : null,
     purgeVectorIndex: typeof purgeVectorIndex !== 'undefined' ? purgeVectorIndex : null,
-    
+
     // 缓存访问（只读）
     cachedVectors: cachedVectors,
-    
+
     // 通知系统
     toastr: typeof toastr !== 'undefined' ? toastr : null,
-    
+
     // 事件系统
     eventSource: eventSource,
     event_types: event_types,
-    
+
     // 调试注册（如果可用）
     registerDebugFunction: typeof registerDebugFunction !== 'undefined' ? registerDebugFunction : null,
-    
+
     // 上下文访问
     getContext: getContext,
-    
+
     // 工具函数
     generateTaskId: generateTaskId,
     extractTagContent: extractTagContent,
-    
+
     // 模块信息
     MODULE_NAME: MODULE_NAME,
     EXTENSION_PROMPT_TAG: EXTENSION_PROMPT_TAG
@@ -4303,22 +4189,22 @@ function createDebugAPI() {
 /*
 async function debugVectorStatus() {
   console.log('=== 向量状态调试 ===');
-  
+
   const chatId = getCurrentChatId();
   if (!chatId) {
     console.log('错误：未选择聊天');
     toastr.error('未选择聊天');
     return;
   }
-  
+
   console.log(`当前聊天ID: ${chatId}`);
-  
+
   // 检查任务列表
   const allTasks = getChatTasks(chatId);
   const enabledTasks = allTasks.filter(t => t.enabled);
-  
+
   console.log(`总任务数: ${allTasks.length}, 启用任务数: ${enabledTasks.length}`);
-  
+
   allTasks.forEach((task, index) => {
     console.log(`任务 ${index + 1}:`);
     console.log(`  - 名称: ${task.name}`);
@@ -4327,7 +4213,7 @@ async function debugVectorStatus() {
     console.log(`  - 时间: ${new Date(task.timestamp).toLocaleString()}`);
     console.log(`  - Collection ID: ${chatId}_${task.taskId}`);
   });
-  
+
   // 检查向量数据
   for (const task of allTasks) {
     const collectionId = `${chatId}_${task.taskId}`;
@@ -4342,16 +4228,16 @@ async function debugVectorStatus() {
       console.log(`  - 错误: ${error.message}`);
     }
   }
-  
+
   // 检查缓存
   console.log(`\n缓存状态:`);
   console.log(`  - 缓存项数量: ${cachedVectors.size}`);
   for (const [key, value] of cachedVectors.entries()) {
     console.log(`  - ${key}: ${value.items?.length || 0} 个项目, 时间: ${new Date(value.timestamp).toLocaleString()}`);
   }
-  
+
   console.log('=== 调试完成 ===');
-  
+
   toastr.info(`任务: ${allTasks.length}个 (${enabledTasks.length}个启用), 详情见控制台`, '向量状态检查');
 }
 */
@@ -4442,12 +4328,12 @@ async function debugSlashCommands() {
 /*
 function debugContentSelection() {
   console.log('=== 内容选择状态调试 ===');
-  
+
   console.log('全局设置状态:', {
     master_enabled: settings.master_enabled,
     selected_content: settings.selected_content
   });
-  
+
   // 调试聊天设置
   const chatSettings = settings.selected_content.chat;
   console.log('聊天记录设置:', {
@@ -4457,7 +4343,7 @@ function debugContentSelection() {
     tags: chatSettings.tags,
     include_hidden: chatSettings.include_hidden
   });
-  
+
   // 调试文件设置
   const filesSettings = settings.selected_content.files;
   console.log('文件设置:', {
@@ -4465,7 +4351,7 @@ function debugContentSelection() {
     selected_count: filesSettings.selected.length,
     selected_files: filesSettings.selected
   });
-  
+
   // 调试世界信息设置
   const wiSettings = settings.selected_content.world_info;
   console.log('世界信息设置:', {
@@ -4474,22 +4360,22 @@ function debugContentSelection() {
     total_entries: Object.values(wiSettings.selected).flat().length,
     detailed_selection: wiSettings.selected
   });
-  
+
   // 调试UI元素状态
   console.log('UI元素状态:');
   console.log('- 聊天启用复选框:', $('#vectors_enhanced_chat_enabled').prop('checked'));
   console.log('- 文件启用复选框:', $('#vectors_enhanced_files_enabled').prop('checked'));
   console.log('- 世界信息启用复选框:', $('#vectors_enhanced_wi_enabled').prop('checked'));
-  
+
   // 调试隐藏消息
   const hiddenMessages = getHiddenMessages();
   console.log('隐藏消息状态:', {
     count: hiddenMessages.length,
     messages: hiddenMessages
   });
-  
+
   console.log('=== 调试完成 ===');
-  
+
   toastr.info(`内容选择状态已输出到控制台\n聊天:${chatSettings.enabled}, 文件:${filesSettings.enabled}, 世界信息:${wiSettings.enabled}`, '内容选择调试');
 }
 */
@@ -4500,26 +4386,26 @@ function debugContentSelection() {
 /*
 async function clearWorldInfoSelection() {
   console.log('=== 清除世界信息选择 ===');
-  
+
   const beforeState = JSON.stringify(settings.selected_content.world_info.selected);
   console.log('清除前的选择状态:', beforeState);
-  
+
   // 清除所有世界信息选择
   settings.selected_content.world_info.selected = {};
   settings.selected_content.world_info.enabled = false;
-  
+
   // 保存设置
   Object.assign(extension_settings.vectors_enhanced, settings);
   saveSettingsDebounced();
-  
+
   // 更新UI
   $('#vectors_enhanced_wi_enabled').prop('checked', false);
   updateContentSelection();
   await updateWorldInfoList();
-  
+
   console.log('清除后的选择状态:', JSON.stringify(settings.selected_content.world_info.selected));
   console.log('=== 清除完成 ===');
-  
+
   toastr.success('已清除所有世界信息选择状态', '清除完成');
 }
 */
@@ -4530,14 +4416,14 @@ async function clearWorldInfoSelection() {
 /*
 function debugFileOverlap() {
   console.log('=== 文件重复检测深度调试 ===');
-  
+
   const chatId = getCurrentChatId();
   if (!chatId) {
     console.log('错误：未选择聊天');
     toastr.error('未选择聊天');
     return;
   }
-  
+
   // 获取当前设置
   const currentSettings = settings.selected_content;
   console.log('当前文件选择设置:', {
@@ -4545,16 +4431,16 @@ function debugFileOverlap() {
     selected: currentSettings.files.selected,
     selectedCount: currentSettings.files.selected.length
   });
-  
+
   // 获取所有任务
   const allTasks = getChatTasks(chatId);
   const enabledTasks = allTasks.filter(t => t.enabled);
-  
+
   console.log('任务状态:', {
     totalTasks: allTasks.length,
     enabledTasks: enabledTasks.length
   });
-  
+
   // 详细分析每个任务的文件
   enabledTasks.forEach((task, index) => {
     console.log(`\\n任务 ${index + 1}: "${task.name}"`);
@@ -4567,13 +4453,13 @@ function debugFileOverlap() {
       console.log('- 没有文件或文件未启用');
     }
   });
-  
+
   // 运行重复检测分析
   console.log('\\n=== 运行重复检测分析 ===');
   if (currentSettings.files.enabled && currentSettings.files.selected.length > 0) {
     const overlapAnalysis = analyzeTaskOverlap(chatId, currentSettings);
     console.log('重复检测结果:', overlapAnalysis);
-    
+
     // 手动验证
     console.log('\\n=== 手动验证 ===');
     const existingFiles = new Set();
@@ -4585,22 +4471,22 @@ function debugFileOverlap() {
         });
       }
     });
-    
+
     console.log('所有现有文件URL:', Array.from(existingFiles));
     console.log('当前选择的文件URL:', currentSettings.files.selected);
-    
+
     const actualDuplicates = currentSettings.files.selected.filter(url => existingFiles.has(url));
     const actualNew = currentSettings.files.selected.filter(url => !existingFiles.has(url));
-    
+
     console.log('实际重复文件:', actualDuplicates);
     console.log('实际新文件:', actualNew);
     console.log('重复数量验证:', actualDuplicates.length);
   } else {
     console.log('当前未启用文件或未选择文件');
   }
-  
+
   console.log('=== 调试完成 ===');
-  
+
   toastr.info('文件重复检测调试信息已输出到控制台', '调试完成');
 }
 */
@@ -4611,7 +4497,7 @@ function debugFileOverlap() {
 /*
 function debugUiSync() {
   console.log('=== UI同步状态调试 ===');
-  
+
   // 检查文件UI状态
   console.log('\\n=== 文件选择状态 ===');
   console.log('设置中的文件选择:', {
@@ -4619,31 +4505,31 @@ function debugUiSync() {
     selected: settings.selected_content.files.selected,
     count: settings.selected_content.files.selected.length
   });
-  
+
   // 检查UI中实际勾选的文件
   const checkedFiles = [];
   $('#vectors_enhanced_files_list input[type="checkbox"]:checked').each(function() {
     checkedFiles.push($(this).val());
   });
-  
+
   console.log('UI中勾选的文件:', {
     checkedFiles,
     count: checkedFiles.length
   });
-  
+
   // 比较差异
   const settingsSet = new Set(settings.selected_content.files.selected);
   const uiSet = new Set(checkedFiles);
-  
+
   const onlyInSettings = settings.selected_content.files.selected.filter(url => !uiSet.has(url));
   const onlyInUI = checkedFiles.filter(url => !settingsSet.has(url));
-  
+
   console.log('同步状态分析:', {
     isSync: onlyInSettings.length === 0 && onlyInUI.length === 0,
     onlyInSettings: onlyInSettings,
     onlyInUI: onlyInUI
   });
-  
+
   // 检查世界信息状态
   console.log('\\n=== 世界信息选择状态 ===');
   console.log('设置中的世界信息选择:', {
@@ -4651,27 +4537,27 @@ function debugUiSync() {
     selected: settings.selected_content.world_info.selected,
     totalCount: Object.values(settings.selected_content.world_info.selected).flat().length
   });
-  
+
   const checkedWI = [];
   $('#vectors_enhanced_wi_list input[type="checkbox"]:checked').each(function() {
     if (!$(this).hasClass('world-select-all')) {
       checkedWI.push($(this).val());
     }
   });
-  
+
   console.log('UI中勾选的世界信息:', {
     checkedWI,
     count: checkedWI.length
   });
-  
+
   // 比较世界信息差异
   const settingsWI = Object.values(settings.selected_content.world_info.selected).flat();
   const settingsWISet = new Set(settingsWI);
   const uiWISet = new Set(checkedWI);
-  
+
   const onlyInSettingsWI = settingsWI.filter(uid => !uiWISet.has(uid));
   const onlyInUIWI = checkedWI.filter(uid => !settingsWISet.has(uid));
-  
+
   console.log('世界信息同步状态:', {
     isSync: onlyInSettingsWI.length === 0 && onlyInUIWI.length === 0,
     onlyInSettings: onlyInSettingsWI,
@@ -4679,7 +4565,7 @@ function debugUiSync() {
     settingsCount: settingsWI.length,
     uiCount: checkedWI.length
   });
-  
+
   // 检查聊天设置
   console.log('\\n=== 聊天设置状态 ===');
   console.log('设置中的聊天配置:', settings.selected_content.chat);
@@ -4692,9 +4578,9 @@ function debugUiSync() {
     include_hidden: $('#vectors_enhanced_chat_include_hidden').prop('checked'),
     tags: $('#vectors_enhanced_chat_tags').val()
   });
-  
+
   console.log('=== 调试完成 ===');
-  
+
   const syncIssues = onlyInSettings.length + onlyInUI.length + onlyInSettingsWI.length + onlyInUIWI.length;
   toastr.info(`UI同步检查完成，发现 ${syncIssues} 个不同步项目，详情见控制台`, 'UI同步调试');
 }
@@ -4706,14 +4592,14 @@ function debugUiSync() {
 /*
 async function debugWorldInfoDeep() {
   console.log('=== 深度世界信息调试 ===');
-  
+
   const chatId = getCurrentChatId();
   console.log('当前聊天ID:', chatId);
-  
+
   // 获取所有世界信息条目
   const allEntries = await getSortedEntries();
   console.log(`\\n总共获取到 ${allEntries.length} 个世界信息条目`);
-  
+
   // 按来源分组分析
   const sourceAnalysis = {
     global: [],
@@ -4721,7 +4607,7 @@ async function debugWorldInfoDeep() {
     chat: [],
     other: []
   };
-  
+
   allEntries.forEach(entry => {
     // 分析条目来源（这个可能需要根据实际的world-info.js实现调整）
     if (entry.world) {
@@ -4737,7 +4623,7 @@ async function debugWorldInfoDeep() {
       }
     }
   });
-  
+
   console.log('\\n=== 按来源分析 ===');
   Object.entries(sourceAnalysis).forEach(([source, entries]) => {
     console.log(`${source.toUpperCase()}: ${entries.length} 个条目`);
@@ -4745,7 +4631,7 @@ async function debugWorldInfoDeep() {
       console.log(`  - ${entry.world}: ${entry.comment || entry.uid} (disabled: ${entry.disable})`);
     });
   });
-  
+
   // 分析所有世界
   const worldGroups = {};
   allEntries.forEach(entry => {
@@ -4754,27 +4640,27 @@ async function debugWorldInfoDeep() {
     }
     worldGroups[entry.world].push(entry);
   });
-  
+
   console.log('\\n=== 按世界分组 ===');
   Object.entries(worldGroups).forEach(([world, entries]) => {
     const enabledCount = entries.filter(e => !e.disable).length;
     const totalCount = entries.length;
     console.log(`${world}: ${enabledCount}/${totalCount} 个启用条目`);
-    
+
     entries.forEach(entry => {
       const status = entry.disable ? '❌禁用' : '✅启用';
       const hasContent = entry.content ? '有内容' : '❌无内容';
       console.log(`  - ${status} ${hasContent} ${entry.comment || entry.uid}`);
     });
   });
-  
+
   // 分析当前设置
   console.log('\\n=== 当前设置分析 ===');
   console.log('设置中的世界信息选择:', settings.selected_content.world_info.selected);
-  
+
   Object.entries(settings.selected_content.world_info.selected).forEach(([world, uids]) => {
     console.log(`\\n世界 "${world}": 选择了 ${uids.length} 个条目`);
-    
+
     uids.forEach(uid => {
       const entry = allEntries.find(e => e.uid === uid);
       if (entry) {
@@ -4786,7 +4672,7 @@ async function debugWorldInfoDeep() {
       }
     });
   });
-  
+
   // 分析UI显示的内容
   console.log('\\n=== UI显示分析 ===');
   const visibleWorlds = new Set();
@@ -4794,20 +4680,20 @@ async function debugWorldInfoDeep() {
     const worldName = $(this).find('.wi-world-name').text();
     visibleWorlds.add(worldName);
   });
-  
+
   console.log('UI中显示的世界:', Array.from(visibleWorlds));
-  
+
   // 找出差异
   const settingsWorlds = new Set(Object.keys(settings.selected_content.world_info.selected));
   const onlyInSettings = Array.from(settingsWorlds).filter(w => !visibleWorlds.has(w));
   const onlyInUI = Array.from(visibleWorlds).filter(w => !settingsWorlds.has(w));
-  
+
   console.log('\\n=== 差异分析 ===');
   console.log('只在设置中存在的世界:', onlyInSettings);
   console.log('只在UI中显示的世界:', onlyInUI);
-  
+
   console.log('=== 调试完成 ===');
-  
+
   toastr.info('深度世界信息调试完成，详情见控制台', '调试完成');
 }
 
@@ -4877,13 +4763,13 @@ async function showTagExamples() {
     if (!response.ok) {
       throw new Error('无法加载标签示例文件');
     }
-    
+
     const rawContent = await response.text();
     const content = rawContent
       // 首先清理整个文件的末尾空白和奇怪字符
       .replace(/\s+$/, '')        // 去除文件末尾所有空白
       .replace(/[^\x00-\x7F\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g, ''); // 保留ASCII、中文、标点
-    
+
     // HTML转义函数
     function escapeHtml(text) {
       return text
@@ -4893,8 +4779,8 @@ async function showTagExamples() {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
     }
-    
-    // 将Markdown转换为HTML  
+
+    // 将Markdown转换为HTML
     // 先用占位符保护代码块
     const codeBlocks = [];
     let htmlContent = content
@@ -4953,12 +4839,12 @@ async function showTagExamples() {
         .replace(`__CODEBLOCK_HTML_${index}__`, codeBlock)
         .replace(`__CODEBLOCK_${index}__`, codeBlock);
     });
-    
+
     const html = `
       <div class="tag-examples-popup" style="
-        max-height: 75vh; 
-        overflow-y: auto; 
-        text-align: left; 
+        max-height: 75vh;
+        overflow-y: auto;
+        text-align: left;
         line-height: 1.7;
         font-size: 1em;
         padding: 1.5rem;
@@ -4981,13 +4867,13 @@ async function showTagExamples() {
         ${htmlContent}
       </div>
     `;
-    
+
     await callGenericPopup(html, POPUP_TYPE.TEXT, '', {
       okButton: '关闭',
       wide: true,
       large: true,
     });
-    
+
   } catch (error) {
     console.error('显示标签示例失败:', error);
     toastr.error('无法加载标签示例: ' + error.message);
