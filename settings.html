@@ -28,7 +28,7 @@
 
       <details class="flex-container flexFlowColumn m-t-0-5">
         <summary><strong>向量化参数</strong></summary>
-        
+
         <div class="flex-container flexFlowColumn m-t-0-5">
           <label for="vectors_source"> 向量化源 </label>
           <select id="vectors_enhanced_source" class="text_pole">
@@ -342,24 +342,31 @@
 
           <div class="flex-container flexFlowColumn m-t-0-5">
             <div class="flex-container alignItemsCenter">
-              <label for="vectors_chat_tags" class="flex1">
-                <small>标签提取（支持排除语法，留空提取全部内容）</small>
+              <label class="flex1">
+                <small><strong>标签提取规则</strong></small>
               </label>
-              <button id="vectors_enhanced_tag_examples" class="menu_button menu_button_icon" title="查看标签提取示例">
-                <i class="fa-solid fa-lightbulb"></i>
-                <span>标签示例</span>
-              </button>
-              <button id="vectors_enhanced_tag_scanner" class="menu_button menu_button_icon" title="扫描当前选择的内容中存在的标签">
-                <i class="fa-solid fa-search"></i>
-                <span>扫描标签</span>
+              <button id="vectors_enhanced_tag_examples" class="menu_button menu_button_icon" title="查看标签提取功能的使用方法和示例" style="padding: 0.2rem 0.4rem; font-size: 0.8em;">
+                  <i class="fa-solid fa-lightbulb"></i>
+                  <span>查看示例</span>
               </button>
             </div>
-            <input
-              id="vectors_enhanced_chat_tags"
-              class="text_pole"
-              type="text"
-              placeholder="例如：content - thinking,analysis"
-            />
+            <div id="vectors_enhanced_rules_editor">
+              <!-- 规则编辑器将在这里动态生成 -->
+            </div>
+            <div class="flex-container m-t-0-5" style="gap: 0.5rem;">
+                <button id="vectors_enhanced_add_rule" class="menu_button menu_button_icon">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>添加新规则</span>
+                </button>
+                <button id="vectors_enhanced_tag_scanner" class="menu_button menu_button_icon" title="扫描当前选择的内容中存在的标签以作为规则建议">
+                    <i class="fa-solid fa-search"></i>
+                    <span>扫描标签</span>
+                </button>
+                <button id="vectors_enhanced_exclude_cot" class="menu_button menu_button_icon" title="快速添加一条正则规则，用于排除HTML注释格式的思维链（CoT）">
+                    <i class="fa-solid fa-comment-slash"></i>
+                    <span>排除小CoT</span>
+                </button>
+            </div>
             <!-- 标签建议区域 -->
             <div id="vectors_enhanced_tag_suggestions" class="m-t-0-5" style="display: none;">
               <div class="flex-container alignItemsCenter m-b-0-5">
@@ -372,33 +379,6 @@
                 <!-- 标签建议将在这里动态生成 -->
               </div>
             </div>
-            <details class="text-muted margin-bottom-10px">
-              <summary><small><strong>支持的标签格式</strong></small></summary>
-              <ul>
-                <li>
-                  <small><strong>简单标签：</strong> context,thinking （提取 &lt;context&gt;...&lt;/context&gt; 和
-                  &lt;thinking&gt;...&lt;/thinking&gt;）</small>
-                </li>
-                <li>
-                  <small><strong>复杂条件：</strong> &lt;details&gt;&lt;summary&gt;摘要&lt;/summary&gt;,&lt;/details&gt;
-                  （提取复杂标签嵌套中的内容）</small>
-                </li>
-                <li>
-                  <small><strong>排除语法：</strong> content - thinking,analysis
-                  （提取content块中除其中的thinking和analysis块内的所有内容）</small>
-                </li>
-                <li>
-                  <small><strong>正则表达式排除：</strong> content - /&lt;!--[\\s\\S]*?--&gt;/gi （使用正则表达式排除HTML注释）</small>
-                </li>
-                <li>
-                  <small><strong>混合使用：</strong> content - thinking,/&lt;!--.*?--&gt;/,analysis
-                  （可以组合标签和正则表达式排除）</small>
-                </li>
-              </ul>
-              <p>
-                <small><strong>注意：</strong>排除语法中的 " - " 用于分隔主标签和要排除的内容，正则表达式格式为 /pattern/flags</small>
-              </p>
-            </details>
           </div>
 
           <!-- 内容过滤黑名单 -->

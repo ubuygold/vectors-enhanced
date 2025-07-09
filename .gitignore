@@ -1,0 +1,11 @@
+
+```
+# 忽略特定的文档文件
+CLAUDE.md
+```
+.claude/
+.kilocode/
+
+
+# SuperAgent context folder
+SuperAgent/
