@@ -360,11 +360,11 @@
     .content-settings {
         margin-left: 0.5rem;
     }
-    
+
     .vectors-enhanced-actions {
         flex-direction: column;
     }
-    
+
     .vectors-enhanced-actions button {
         max-width: 100%;
     }
@@ -453,4 +453,21 @@
     display: block;
     margin-top: 0.25rem;
     font-size: 0.85em;
+}
+/* Custom UI Tweaks for titles and info text */
+.vectors-enhanced-subsection-title {
+    font-size: 1.15em;
+    font-weight: bold;
+    color: var(--SmartThemeBodyColor);
+}
+
+#vectors_enhanced_hidden_info .text-muted strong {
+    font-size: 0.85em;
+    font-weight: normal;
+    color: var(--SmartThemeEmColor);
+}
+
+#vectors_enhanced_rules_editor .text-muted {
+    font-size: 0.85em;
+    color: var(--SmartThemeEmColor);
 }

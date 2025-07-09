@@ -82,7 +82,16 @@ const settings = {
   show_query_notification: false, // 是否显示查询结果通知
   detailed_notification: false, // 是否显示详细通知（来源分布）
 
-  // Injection settings
+  // Rerank settings
+  rerank_enabled: false,
+  rerank_url: 'https://api.siliconflow.cn/v1/rerank',
+  rerank_apiKey: '',
+  rerank_model: 'Pro/BAAI/bge-reranker-v2-m3',
+  rerank_top_n: 20,
+  rerank_hybrid_alpha: 0.7, // Rerank score weight
+  rerank_success_notify: true, // 是否显示Rerank成功通知
+
+   // Injection settings
   template: '<must_know>以下是从相关背景知识库，包含重要的上下文、设定或细节：\n{{text}}</must_know>',
   position: extension_prompt_types.IN_PROMPT,
   depth: 2,
@@ -124,6 +133,7 @@ let syncBlocked = false;
 // 防重复通知机制
 let lastNotificationTime = 0;
 const NOTIFICATION_COOLDOWN = 5000; // 5秒冷却时间
+let lastRerankNotifyTime = 0;
 
 // 向量化状态管理
 let isVectorizing = false;
@@ -989,6 +999,7 @@ function hideProgress() {
  * @returns {Promise<string>} Task name
  */
 async function generateTaskName(contentSettings, actualItems) {
+  console.log('Debug: Generating task name with settings:', JSON.stringify(contentSettings, null, 2));
   const parts = [];
 
   console.debug('Vectors: generateTaskName input:', {
@@ -1014,30 +1025,30 @@ async function generateTaskName(contentSettings, actualItems) {
 
   // Chat range - use newRanges if available for accurate naming
   if (contentSettings.chat && contentSettings.chat.enabled && itemCounts.chat > 0) {
-    if (contentSettings.chat.newRanges && contentSettings.chat.newRanges.length > 0) {
+    const hasNewRanges = contentSettings.chat.newRanges && contentSettings.chat.newRanges.length > 0;
+
+    if (hasNewRanges) {
       // Use the actual new ranges for naming
       const rangeStrings = contentSettings.chat.newRanges.map(range => {
         const start = range.start;
         const end = range.end;
+        if (start === end) {
+          return `消息 #${start}`;
+        }
         if (end === -1) {
           return `消息 #${start} 到最后`;
-        } else {
-          return `消息 #${start}-${end}`;
         }
+        return `消息 #${start}-${end}`;
       });
-
-      if (rangeStrings.length === 1) {
-        parts.push(rangeStrings[0]);
-      } else {
-        // Multiple ranges - format them nicely
-        parts.push(rangeStrings.join(', '));
-      }
-      console.debug('Vectors: Added chat part (multi-range):', parts[parts.length - 1]);
+      parts.push(rangeStrings.join(', '));
+      console.debug('Vectors: Added chat part (newRanges):', parts[parts.length - 1]);
     } else {
-      // Fallback to single range
-      const start = contentSettings.chat.range?.start || 0;
-      const end = contentSettings.chat.range?.end || -1;
-      if (end === -1) {
+      // Fallback to single range from the main setting
+      const start = contentSettings.chat.range?.start ?? 0;
+      const end = contentSettings.chat.range?.end ?? -1;
+      if (start === end) {
+        parts.push(`消息 #${start}`);
+      } else if (end === -1) {
         parts.push(`消息 #${start} 到最后`);
       } else {
         parts.push(`消息 #${start}-${end}`);
@@ -1573,6 +1584,7 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
     }
   }
 
+  console.log('Debug: Incremental settings created:', JSON.stringify(newSettings, null, 2));
   return newSettings;
 }
 
@@ -1583,14 +1595,25 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  * @param {boolean} isIncremental Whether this is incremental vectorization
  */
 async function performVectorization(contentSettings, chatId, isIncremental) {
+  console.log('Debug: Performing vectorization with settings:', JSON.stringify(contentSettings, null, 2));
   // Temporarily override settings for content gathering
   const originalSettings = JSON.parse(JSON.stringify(settings.selected_content));
   settings.selected_content = contentSettings;
 
   try {
-    const items = await getVectorizableContent(contentSettings);
+    let items = await getVectorizableContent(contentSettings);
+
+    // 过滤掉内容为空或只有空白的楼层
+    const originalCount = items.length;
+    items = items.filter(item => item.text && item.text.trim() !== '');
+    const filteredCount = items.length;
+
+    if (filteredCount < originalCount) {
+        console.log(`Vectors: 移除了 ${originalCount - filteredCount} 个空内容的楼层。`);
+    }
+
     if (items.length === 0) {
-      toastr.warning('未选择要向量化的内容');
+      toastr.warning('未选择要向量化的内容或过滤后内容为空');
       return;
     }
 
@@ -1900,6 +1923,7 @@ async function cleanupInvalidSelections() {
  * @returns {Promise<void>}
  */
 async function vectorizeContent() {
+  delete settings.selected_content.chat.newRanges;
   if (isVectorizing) {
     toastr.warning('已有向量化任务在进行中');
     return;
@@ -2378,7 +2402,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     }
 
     // Query all enabled tasks
-    const allResults = [];
+    let allResults = [];
     for (const task of tasks) {
       const collectionId = `${chatId}_${task.taskId}`;
       console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
@@ -2488,6 +2512,68 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       }
     }
 
+    // Rerank results if enabled
+    if (settings.rerank_enabled && allResults.length > 0) {
+        console.debug('Vectors: Reranking enabled. Starting rerank process...');
+        try {
+            const documentsToRerank = allResults.map(x => ({
+                text: x.text,
+                index: x.original_index
+            }));
+
+            const rerankResponse = await fetch(settings.rerank_url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${settings.rerank_apiKey}`
+                },
+                body: JSON.stringify({
+                    query: queryText,
+                    documents: documentsToRerank.map(x => x.text),
+                    model: settings.rerank_model,
+                    "top_n": settings.rerank_top_n,
+                })
+            });
+
+            if (!rerankResponse.ok) {
+                throw new Error(`Rerank API failed: ${rerankResponse.statusText}`);
+            }
+
+            const rerankedData = await rerankResponse.json();
+            console.debug('Vectors: Rerank API response:', rerankedData);
+
+            // Combine scores and sort
+            const alpha = settings.rerank_hybrid_alpha;
+            allResults = allResults.map(result => {
+                const rerankedResult = rerankedData.results.find(r => r.index === result.original_index);
+                const relevanceScore = rerankedResult ? rerankedResult.relevance_score : 0;
+
+                // Calculate hybrid score
+                const hybridScore = relevanceScore * alpha + result.score * (1 - alpha);
+
+                return {
+                    ...result,
+                    hybrid_score: hybridScore,
+                    rerank_score: relevanceScore,
+                };
+            });
+
+            // Sort by the new hybrid score
+            allResults.sort((a, b) => (b.hybrid_score || 0) - (a.hybrid_score || 0));
+            console.debug('Vectors: Results after reranking and hybrid scoring:', allResults.slice(0, 10));
+
+         } catch (error) {
+             console.error('Vectors: Reranking failed. Falling back to original similarity search.', error);
+            toastr.error('Rerank失败，使用原始搜索结果。');
+            // If rerank fails, sort by original score
+            allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+        }
+    } else {
+        // If reranking is not enabled, sort by original score
+        allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+    }
+
+
     // 初始化变量
     let topResults = [];
     let groupedResults = {};
@@ -2499,9 +2585,9 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     } else {
       console.debug(`Vectors: Found ${allResults.length} total results`);
 
-      // Sort by score and take top results
-      allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-      topResults = allResults.slice(0, settings.max_results || 10);
+      // take top results
+      const finalResultCount = settings.rerank_enabled ? settings.rerank_top_n : settings.max_results;
+      topResults = allResults.slice(0, finalResultCount || 10);
 
       console.debug(`Vectors: Using top ${topResults.length} results`);
 
@@ -2589,17 +2675,22 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         return;
       }
 
-      const totalResults = topResults.length;
+      const recalledCount = allResults.length; // 召回的总数
+      const finalCount = topResults.length;    // 最终注入的数量
 
-      let message = `查询到${totalResults}个结果`;
-      message += totalResults > 0 ? '，已注入' : '';
+      let message;
+      if (settings.rerank_enabled && finalCount > 0) {
+        message = `查询到 ${recalledCount} 个块，重排后注入 ${finalCount} 个块。`;
+      } else {
+        message = `查询到 ${finalCount} 个块` + (finalCount > 0 ? '，已注入。' : '。');
+      }
 
       // 详细模式：显示来源分布
-      if (settings.detailed_notification && totalResults > 0) {
+      if (settings.detailed_notification && finalCount > 0) {
         const sourceStats = {
           chat: groupedResults.chat?.length || 0,
           file: groupedResults.file?.length || 0,
-          world_info: groupedResults.world_info?.length || 0
+          world_info: groupedResults.world_info?.length || 0,
         };
 
         if (sourceStats.chat || sourceStats.file || sourceStats.world_info) {
@@ -2611,7 +2702,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         }
       }
 
-      const toastType = totalResults > 0 ? 'info' : 'warning';
+      const toastType = finalCount > 0 ? 'info' : 'warning';
       toastr[toastType](message, '向量查询结果', { timeOut: 3000 });
 
       // 更新最后通知时间
@@ -3320,7 +3411,12 @@ jQuery(async () => {
     settings.selected_content.chat.include_hidden = false;
   }
 
-  // 确保所有必需的结构都存在
+  // 确保rerank成功通知设置存在
+  if (settings.rerank_success_notify === undefined) {
+    settings.rerank_success_notify = true;
+  }
+
+   // 确保所有必需的结构都存在
   if (!settings.selected_content.chat.range) {
     settings.selected_content.chat.range = { start: 0, end: -1 };
   }
@@ -3474,8 +3570,55 @@ jQuery(async () => {
       saveSettingsDebounced();
     });
 
-  // 显示查询结果通知设置
-  $('#vectors_enhanced_show_query_notification')
+  // Rerank settings handlers
+  $('#vectors_enhanced_rerank_enabled').prop('checked', settings.rerank_enabled).on('input', function() {
+      settings.rerank_enabled = $(this).prop('checked');
+
+    // --- 新增逻辑开始 ---
+    if (settings.rerank_enabled) {
+        // 如果 Rerank 被启用，确保向量查询也被启用
+        $('#vectors_enhanced_enabled').prop('checked', true);
+        settings.enabled = true;
+    }
+    // --- 新增逻辑结束 ---
+
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+  $('#vectors_enhanced_rerank_url').val(settings.rerank_url).on('input', function() {
+      settings.rerank_url = $(this).val();
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+  $('#vectors_enhanced_rerank_apiKey').val(settings.rerank_apiKey).on('input', function() {
+      settings.rerank_apiKey = $(this).val();
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+  $('#vectors_enhanced_rerank_model').val(settings.rerank_model).on('input', function() {
+      settings.rerank_model = $(this).val();
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+   $('#vectors_enhanced_rerank_top_n').val(settings.rerank_top_n).on('input', function() {
+      settings.rerank_top_n = Number($(this).val());
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+  $('#vectors_enhanced_rerank_hybrid_alpha').val(settings.rerank_hybrid_alpha).on('input', function() {
+      settings.rerank_hybrid_alpha = Number($(this).val());
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+
+  $('#vectors_enhanced_rerank_success_notify').prop('checked', settings.rerank_success_notify).on('input', function() {
+      settings.rerank_success_notify = $(this).prop('checked');
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+  });
+
+   // 显示查询结果通知设置
+   $('#vectors_enhanced_show_query_notification')
     .prop('checked', settings.show_query_notification)
     .on('input', () => {
       settings.show_query_notification = $('#vectors_enhanced_show_query_notification').prop('checked');

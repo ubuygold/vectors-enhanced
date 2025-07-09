@@ -166,6 +166,41 @@
       </details>
 
       <hr />
+<!-- Rerank 设置 -->
+      <details>
+        <summary><strong>Rerank 设置</strong></summary>
+        <label class="checkbox_label" for="vectors_enhanced_rerank_enabled" title="启用/禁用Rerank模型对搜索结果进行重排序">
+          <input id="vectors_enhanced_rerank_enabled" type="checkbox" />
+          <span>启用 Rerank</span>
+        </label>
+        <label class="checkbox_label" for="vectors_enhanced_rerank_success_notify" title="在Rerank成功时显示通知">
+          <input id="vectors_enhanced_rerank_success_notify" type="checkbox" />
+          <span>显示 Rerank 成功通知</span>
+        </label>
+        <div class="flex-container flexFlowColumn m-t-0-5">
+            <label for="vectors_enhanced_rerank_url">Rerank API URL</label>
+            <input id="vectors_enhanced_rerank_url" class="text_pole" type="text" placeholder="例如：https://api.siliconflow.cn/v1/rerank">
+
+            <label for="vectors_enhanced_rerank_apiKey">Rerank API Key</label>
+            <input id="vectors_enhanced_rerank_apiKey" class="text_pole" type="password" placeholder="输入您的API Key">
+
+            <label for="vectors_enhanced_rerank_model">Rerank 模型</label>
+            <input id="vectors_enhanced_rerank_model" class="text_pole" type="text" placeholder="例如：Pro/BAAI/bge-reranker-v2-m3">
+
+            <div class="flex-container">
+              <div class="flex1" title="在Rerank前，从向量搜索中获取的候选项数量">
+                  <label for="vectors_enhanced_rerank_top_n"><small>Rerank Top N</small></label>
+                  <input id="vectors_enhanced_rerank_top_n" type="number" class="text_pole" min="1" max="100">
+              </div>
+              <div class="flex1" title="混合分数中Rerank分数的权重 (0-1)">
+                  <label for="vectors_enhanced_rerank_hybrid_alpha"><small>混合权重</small></label>
+                  <input id="vectors_enhanced_rerank_hybrid_alpha" type="number" class="text_pole" min="0" max="1" step="0.1">
+              </div>
+            </div>
+        </div>
+      </details>
+
+      <hr />
 
       <!-- 注入设置 -->
       <details>
@@ -306,8 +341,8 @@
             class="flex-container flexFlowColumn m-t-1"
             style="border-top: 1px dashed var(--SmartThemeQuoteColor); padding-top: 0.5rem"
           >
-            <label>
-              <small><strong>隐藏消息管理</strong></small>
+            <label class="vectors-enhanced-subsection-title">
+              <small>隐藏消息管理</small>
             </label>
 
             <small class="text-muted margin-bottom-10px"> 勾选"包含隐藏消息"后，隐藏的消息也会被包含在向量化中 </small>
@@ -342,8 +377,8 @@
 
           <div class="flex-container flexFlowColumn m-t-0-5">
             <div class="flex-container alignItemsCenter">
-              <label class="flex1">
-                <small><strong>标签提取规则</strong></small>
+              <label class="flex1 vectors-enhanced-subsection-title">
+                <small>标签提取规则</small>
               </label>
               <button id="vectors_enhanced_tag_examples" class="menu_button menu_button_icon" title="查看标签提取功能的使用方法和示例" style="padding: 0.2rem 0.4rem; font-size: 0.8em;">
                   <i class="fa-solid fa-lightbulb"></i>
@@ -383,7 +418,7 @@
 
           <!-- 内容过滤黑名单 -->
           <div class="flex-container flexFlowColumn m-t-0-5">
-            <label for="vectors_content_blacklist">
+            <label for="vectors_content_blacklist" class="vectors-enhanced-subsection-title">
               <small>内容过滤黑名单（一行一个关键词或短语）</small>
             </label>
             <textarea
