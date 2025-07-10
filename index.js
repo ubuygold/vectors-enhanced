@@ -820,7 +820,16 @@ async function getVectorizableContent(contentSettings = null) {
             if (!types.user && msg.is_user) return;
             if (!types.assistant && !msg.is_user) return;
 
-            const extractedText = extractTagContent(substituteParams(msg.mes), rules);
+            // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
+            // 如果是，则不应用标签提取规则，直接使用原始文本
+            let extractedText;
+            if (index === 0 || msg.is_user === true) {
+                // 首楼或用户楼层：使用完整的原始文本，不应用标签提取规则
+                extractedText = substituteParams(msg.mes);
+            } else {
+                // 其他楼层：应用标签提取规则
+                extractedText = extractTagContent(substituteParams(msg.mes), rules);
+            }
 
             items.push({
                 type: 'chat',
@@ -1955,6 +1964,35 @@ function formatRanges(chatItems) {
 }
 
 /**
+ * 格式化消息项的楼层范围（用于向量化弹窗）
+ * 例如：[5, 6, 7, 10] 变成 "5-7层、10层"
+ * @param {Array<object>} messageItems - 消息项数组，每个项包含 metadata.index
+ * @returns {string} 格式化的楼层范围字符串
+ */
+function formatMessageRanges(messageItems) {
+    if (!messageItems || messageItems.length === 0) {
+        return '无';
+    }
+
+    const indices = messageItems.map(item => item.metadata.index).sort((a, b) => a - b);
+    const ranges = [];
+    let start = indices[0];
+    let end = indices[0];
+
+    for (let i = 1; i < indices.length; i++) {
+        if (indices[i] === end + 1) {
+            end = indices[i];
+        } else {
+            ranges.push(start === end ? `${start}层` : `${start}-${end}层`);
+            start = end = indices[i];
+        }
+    }
+    ranges.push(start === end ? `${start}层` : `${start}-${end}层`);
+
+    return ranges.join('、');
+}
+
+/**
  * Vectorizes selected content
  * @returns {Promise<void>}
  */
@@ -2024,8 +2062,40 @@ async function vectorizeContent() {
         if (confirm !== POPUP_RESULT.AFFIRMATIVE) return;
     }
     else if (hasEmptyItems) {
+        // 分析有效项目的详细信息
+        const validChatItems = validItems.filter(item => item.type === 'chat');
+        const validFileItems = validItems.filter(item => item.type === 'file');
+        const validWorldInfoItems = validItems.filter(item => item.type === 'world_info');
+
+        // 按消息类型分组聊天项目
+        const userMessages = validChatItems.filter(item => item.metadata.is_user === true);
+        const aiMessages = validChatItems.filter(item => item.metadata.is_user === false);
+
+        // 格式化楼层信息
+        let detailParts = [];
+
+        if (userMessages.length > 0) {
+            const userRanges = formatMessageRanges(userMessages);
+            detailParts.push(`用户消息（${userRanges}）`);
+        }
+
+        if (aiMessages.length > 0) {
+            const aiRanges = formatMessageRanges(aiMessages);
+            detailParts.push(`AI消息（${aiRanges}）`);
+        }
+
+        if (validFileItems.length > 0) {
+            detailParts.push(`${validFileItems.length}个文件`);
+        }
+
+        if (validWorldInfoItems.length > 0) {
+            detailParts.push(`${validWorldInfoItems.length}条世界信息`);
+        }
+
+        const detailText = detailParts.length > 0 ? `\n\n包含：${detailParts.join('、')}` : '';
+
         const confirm = await callGenericPopup(
-            `您选择了 ${initialItems.length} 个项目，但只有 ${validItems.length} 个包含有效内容。是否继续处理这 ${validItems.length} 个项目？`,
+            `您选择了 ${initialItems.length} 个项目，但只有 ${validItems.length} 个包含有效内容。${detailText}\n\n是否继续处理这 ${validItems.length} 个项目？`,
             POPUP_TYPE.CONFIRM,
             { okButton: '继续', cancelButton: '取消' }
         );

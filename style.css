@@ -253,6 +253,9 @@
     font-size: 1.1em;
     flex-shrink: 0;
     border-radius: 8px 8px 0 0; /* 顶部圆角 */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .preview-section-content {
