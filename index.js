@@ -1170,6 +1170,7 @@ function renderTagRulesUI() {
             <div class="vector-enhanced-rule-item flex-container alignItemsCenter" data-index="${index}" style="margin-bottom: 0.5rem; gap: 0.5rem;">
                 <select class="rule-type text_pole widthUnset" style="flex: 2;">
                     <option value="include" ${rule.type === 'include' ? 'selected' : ''}>包含</option>
+                    <option value="regex_include" ${rule.type === 'regex_include' ? 'selected' : ''}>正则包含</option>
                     <option value="exclude" ${rule.type === 'exclude' ? 'selected' : ''}>排除</option>
                     <option value="regex_exclude" ${rule.type === 'regex_exclude' ? 'selected' : ''}>正则排除</option>
                 </select>
