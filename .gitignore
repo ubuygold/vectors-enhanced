@@ -1,11 +1,26 @@
+# Node modules
+node_modules/
 
-```
-# 忽略特定的文档文件
-CLAUDE.md
-```
-.claude/
-.kilocode/
+# Build output
+dist/
+*.map
 
+# Logs
+*.log
+npm-debug.log*
 
-# SuperAgent context folder
-SuperAgent/
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp

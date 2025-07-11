@@ -1,3 +1,4 @@
+
 import {
   eventSource,
   event_types,
@@ -34,6 +35,11 @@ import {
   waitUntilCondition,
 } from '../../../utils.js';
 import { getSortedEntries } from '../../../world-info.js';
+import { splitTextIntoChunks as splitTextIntoChunksUtil } from './src/utils/textChunking.js';
+import { shouldSkipContent, escapeRegex, isValidTagName } from './src/utils/contentFilter.js';
+import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlFormatTag, extractCurlyBraceTag } from './src/utils/tagExtractor.js';
+import { scanTextForTags, generateTagSuggestions } from './src/utils/tagScanner.js';
+import { updateContentSelection as updateContentSelectionNew, updateMasterSwitchState as updateMasterSwitchStateNew, toggleSettings as toggleSettingsNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew } from './src/ui/domUtils.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -243,56 +249,14 @@ function getFileCollectionId(fileUrl) {
 }
 
 /**
- * Gets the chunk delimiters for splitting text.
- * @returns {string[]} Array of chunk delimiters
- */
-function getChunkDelimiters() {
-  const delimiters = ['\n\n', '\n', ' ', ''];
-  if (settings.force_chunk_delimiter) {
-    delimiters.unshift(settings.force_chunk_delimiter);
-  }
-  return delimiters;
-}
-
-/**
- * Splits text into chunks with optional overlap.
+ * Wrapper function for splitTextIntoChunks to maintain backward compatibility
  * @param {string} text Text to split
  * @param {number} chunkSize Size of each chunk
  * @param {number} overlapPercent Overlap percentage
  * @returns {string[]} Array of text chunks
  */
 function splitTextIntoChunks(text, chunkSize, overlapPercent) {
-  const delimiters = getChunkDelimiters();
-  const overlapSize = Math.round((chunkSize * overlapPercent) / 100);
-  const adjustedChunkSize = overlapSize > 0 ? chunkSize - overlapSize : chunkSize;
-
-  const chunks = splitRecursive(text, adjustedChunkSize, delimiters);
-
-  if (overlapSize > 0) {
-    return chunks.map((chunk, index) => overlapChunks(chunk, index, chunks, overlapSize));
-  }
-
-  return chunks;
-}
-
-/**
- * Modifies text chunks to include overlap with adjacent chunks.
- * @param {string} chunk Current item
- * @param {number} index Current index
- * @param {string[]} chunks List of chunks
- * @param {number} overlapSize Size of the overlap
- * @returns {string} Overlapped chunks
- */
-function overlapChunks(chunk, index, chunks, overlapSize) {
-  const halfOverlap = Math.floor(overlapSize / 2);
-  const nextChunk = chunks[index + 1];
-  const prevChunk = chunks[index - 1];
-
-  const nextOverlap = trimToEndSentence(nextChunk?.substring(0, halfOverlap)) || '';
-  const prevOverlap = trimToStartSentence(prevChunk?.substring(prevChunk.length - halfOverlap)) || '';
-  const overlappedChunk = [prevOverlap, chunk, nextOverlap].filter(x => x).join(' ');
-
-  return overlappedChunk;
+  return splitTextIntoChunksUtil(text, chunkSize, overlapPercent, settings.force_chunk_delimiter);
 }
 
 /**
@@ -302,415 +266,14 @@ function overlapChunks(chunk, index, chunks, overlapSize) {
  */
 
 
-/**
- * @deprecated
- * Removes curly brace tags from text with proper nesting support
- * @param {string} text Text to process
- * @param {string} tagName Tag name to remove
- * @returns {string} Text with specified tags removed
- */
-function removeCurlyBraceTags(text, tagName) {
-  const escapedTag = tagName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const startPattern = new RegExp(`\\{${escapedTag}\\|`, 'gi');
-  let result = text;
-  let match;
+// Note: Content filtering functions have been moved to src/utils/contentFilter.js
+// These are wrapper functions for backward compatibility
 
-  while ((match = startPattern.exec(result)) !== null) {
-    const startPos = match.index;
-    const contentStart = startPos + match[0].length;
 
-    // Find the matching closing brace, accounting for nested braces
-    let braceCount = 1;
-    let pos = contentStart;
 
-    while (pos < result.length && braceCount > 0) {
-      if (result[pos] === '{') {
-        braceCount++;
-      } else if (result[pos] === '}') {
-        braceCount--;
-      }
-      pos++;
-    }
 
-    if (braceCount === 0) {
-      // Found the matching closing brace, remove the entire tag
-      result = result.substring(0, startPos) + result.substring(pos);
-      // Reset the regex to start from the beginning
-      startPattern.lastIndex = 0;
-    } else {
-      // No matching closing brace found, stop searching
-      break;
-    }
-  }
-
-  return result;
-}
-
-/**
- * Checks if content should be skipped based on blacklist
- * @param {string} text Content to check
- * @param {string[]} blacklist Array of blacklist keywords
- * @returns {boolean} True if content should be skipped
- */
-function shouldSkipContent(text, blacklist) {
-  if (!blacklist || blacklist.length === 0) return false;
-
-  const lowerText = text.toLowerCase();
-  return blacklist.some(keyword => {
-    const lowerKeyword = keyword.trim().toLowerCase();
-    return lowerKeyword && lowerText.includes(lowerKeyword);
-  });
-}
-
-/**
- * Validates if a tag name is suitable for extraction
- * @param {string} tagName Tag name to validate
- * @returns {boolean} True if tag name is valid
- */
-function isValidTagName(tagName) {
-  // Exclude common HTML formatting tags that might be empty or problematic
-  const excludedTags = [
-    'font', 'span', 'div', 'p', 'br', 'hr', 'img', 'a', 'b', 'i', 'u', 's',
-    'em', 'strong', 'small', 'big', 'sub', 'sup', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'table', 'tr', 'td', 'th', 'tbody', 'thead', 'tfoot', 'ul', 'ol', 'li',
-    'form', 'input', 'button', 'select', 'option', 'textarea', 'label',
-    'script', 'style', 'meta', 'link', 'title', 'head', 'body', 'html'
-  ];
-
-  // Must be alphanumeric with possible underscores/hyphens
-  const validPattern = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
-
-  return validPattern.test(tagName) && !excludedTags.includes(tagName.toLowerCase());
-}
-
-/**
- * Efficiently scans large text for available tags with performance optimization
- * @param {string} text Large text content to scan (can be hundreds of thousands of characters)
- * @param {object} options Scanning options
- * @param {number} options.chunkSize Size of text chunks to process (default: 50000)
- * @param {number} options.maxTags Maximum number of unique tags to find (default: 100)
- * @param {number} options.timeoutMs Maximum processing time in milliseconds (default: 5000)
- * @returns {Promise<object>} Object containing found tags and performance stats
- */
-async function scanTextForTags(text, options = {}) {
-    const startTime = performance.now();
-    const {
-        chunkSize = 50000,
-        maxTags = 100,
-        timeoutMs = 5000
-    } = options;
-
-    const foundTags = new Set();
-    // This regex is designed to find all valid tag names, including nested ones.
-    // It captures the tag name from both start tags (<tag>) and end tags (</tag>).
-    const tagRegex = /<(?:\/|)([a-zA-Z0-9_-]+)(?:[^>]*)>|\{([a-zA-Z0-9_-]+)(?:\||})/g;
-
-    let processedChars = 0;
-    let chunkCount = 0;
-
-    for (let i = 0; i < text.length; i += chunkSize) {
-        const chunk = text.slice(i, Math.min(i + chunkSize, text.length));
-        chunkCount++;
-        processedChars += chunk.length;
-
-        if (performance.now() - startTime > timeoutMs) {
-            console.warn(`Tag scanning timed out after ${timeoutMs}ms`);
-            break;
-        }
-
-        let match;
-        while ((match = tagRegex.exec(chunk)) !== null && foundTags.size < maxTags) {
-            // match[1] is for <tag>, match[2] is for {tag}
-            const tagName = (match[1] || match[2]).toLowerCase();
-            if (isValidTagName(tagName)) {
-                foundTags.add(tagName);
-            }
-        }
-
-        if (foundTags.size >= maxTags) break;
-
-        if (chunkCount % 5 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-    }
-
-    const endTime = performance.now();
-    const processingTime = endTime - startTime;
-
-    const result = {
-        tags: Array.from(foundTags).sort(),
-        stats: {
-            processingTimeMs: Math.round(processingTime),
-            processedChars,
-            totalChars: text.length,
-            chunkCount,
-            tagsFound: foundTags.size
-        }
-    };
-
-    console.debug('Tag scanning completed:', result.stats);
-    return result;
-}
-
-/**
- * Generates tag suggestions based on scanned content
- * @param {object} scanResult Result from scanTextForTags
- * @param {number} limit Maximum number of suggestions (default: 20)
- * @returns {object} Object with suggestions array and detailed stats
- */
-function generateTagSuggestions(scanResult, limit = 25) {
-    const suggestions = scanResult.tags.slice(0, limit);
-
-    console.debug('标签建议结果:', {
-        总发现: scanResult.stats.tagsFound,
-        最终建议: suggestions.length,
-        建议列表: suggestions
-    });
-
-    return {
-        suggestions: suggestions,
-        stats: {
-            totalFound: scanResult.stats.tagsFound,
-            finalCount: suggestions.length
-        }
-    };
-}
-
-/**
- * Extracts and filters content from text based on a set of rules.
- * @param {string} text The input text to process.
- * @param {Array<object>} rules An array of rules for inclusion and exclusion.
- * @returns {string} The processed content.
- */
-function extractTagContent(text, rules) {
-    if (!rules || rules.length === 0) {
-        return text;
-    }
-
-    const blockExcludeRules = rules.filter(rule => rule.type === 'exclude' && rule.enabled);
-    const includeRules = rules.filter(rule => (rule.type === 'include' || rule.type === 'regex_include') && rule.enabled);
-    const cleanupRules = rules.filter(rule => rule.type === 'regex_exclude' && rule.enabled);
-    const blacklist = settings.content_blacklist || [];
-
-    let workingText = text;
-
-    // Phase 1: Global Block-Level Exclusion
-    for (const rule of blockExcludeRules) {
-        try {
-            const tagRegex = new RegExp(`<${escapeRegex(rule.value)}(?:\\s[^>]*)?>[\\s\\S]*?<\\/${escapeRegex(rule.value)}>`, 'gi');
-            workingText = workingText.replace(tagRegex, '');
-        } catch (error) {
-            console.error(`Error applying block exclusion rule:`, { rule, error });
-        }
-    }
-
-    // Phase 2: Content Extraction
-    let extractedContents = [];
-    if (includeRules.length > 0) {
-        for (const rule of includeRules) {
-            let results = [];
-            try {
-                if (rule.type === 'include') {
-                    results.push(...extractSimpleTag(workingText, rule.value));
-                    results.push(...extractCurlyBraceTag(workingText, rule.value));
-                } else if (rule.type === 'regex_include') {
-                    const regex = new RegExp(rule.value, 'gi');
-                    const matches = [...workingText.matchAll(regex)];
-                    matches.forEach(match => {
-                        if (match[1]) results.push(match[1]);
-                    });
-                }
-            } catch (error) {
-                console.error(`Error applying inclusion rule:`, { rule, error });
-            }
-            results.forEach(content => extractedContents.push(content.trim()));
-        }
-    } else {
-        extractedContents.push(workingText);
-    }
-
-    // Phase 3: Inner Content Cleanup & Blacklist Filtering
-    let finalContents = [];
-    for (let contentBlock of extractedContents) {
-        // Apply regex_exclude rules for cleanup
-        for (const rule of cleanupRules) {
-            try {
-                const regex = new RegExp(rule.value, 'gi');
-                contentBlock = contentBlock.replace(regex, '');
-            } catch (error) {
-                console.error(`Error applying cleanup rule:`, { rule, error });
-            }
-        }
-
-        // Apply blacklist
-        if (!shouldSkipContent(contentBlock, blacklist)) {
-            finalContents.push(contentBlock);
-        }
-    }
-
-    // Join and final cleanup
-    const joinedContent = finalContents.join('\n\n');
-    return joinedContent
-        .replace(/\n\s*\n\s*\n/g, '\n\n')
-        .replace(/^\s+|\s+$/g, '')
-        .trim();
-}
-
-/**
- * Extracts content using complex tag configuration
- * @param {string} text Text to search in
- * @param {string} tag Complex tag configuration like "<details><summary>摘要</summary>,</details>"
- * @returns {string[]} Array of extracted content
- */
-function extractComplexTag(text, tag) {
-  const parts = tag.split(',');
-  if (parts.length !== 2) {
-    throw new Error(`复杂标签配置格式错误，应该包含一个逗号: ${tag}`);
-  }
-
-  const startPattern = parts[0].trim(); // "<details><summary>摘要</summary>"
-  const endPattern = parts[1].trim(); // "</details>"
-
-  // 提取结束标签名
-  const endTagMatch = endPattern.match(/<\/(\w+)>/);
-  if (!endTagMatch) {
-    throw new Error(`无法解析结束标签: ${endPattern}`);
-  }
-  const endTagName = endTagMatch[1]; // "details"
-
-  // 构建匹配正则，提取中间内容
-  const regex = new RegExp(`${escapeRegex(startPattern)}([\\s\\S]*?)<\\/${endTagName}>`, 'gi');
-
-  const extractedContent = [];
-  const matches = [...text.matchAll(regex)];
-
-  matches.forEach(match => {
-    if (match[1]) {
-      // 提取中间的所有内容，包括HTML标签
-      extractedContent.push(match[1].trim());
-    }
-  });
-
-  return extractedContent;
-}
-
-/**
- * Extracts content using HTML format tag
- * @param {string} text Text to search in
- * @param {string} tag HTML format tag like "<content></content>"
- * @returns {string[]} Array of extracted content
- */
-function extractHtmlFormatTag(text, tag) {
-  // 提取标签名，处理可能的属性
-  const tagMatch = tag.match(/<(\w+)(?:\s[^>]*)?>/);
-  if (!tagMatch) {
-    throw new Error(`无法解析HTML格式标签: ${tag}`);
-  }
-  const tagName = tagMatch[1];
-
-  const extractedContent = [];
-  const regex = new RegExp(`<${tagName}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tagName}>`, 'gi');
-  const matches = [...text.matchAll(regex)];
-
-  matches.forEach(match => {
-    if (match[1]) {
-      extractedContent.push(match[1].trim());
-    }
-  });
-
-  // 检查是否有未闭合的标签
-  const openTags = (text.match(new RegExp(`<${tagName}(?:\\s[^>]*)?>`, 'gi')) || []).length;
-  const closeTags = (text.match(new RegExp(`<\\/${tagName}>`, 'gi')) || []).length;
-
-  if (openTags > closeTags) {
-    console.warn(`警告: 发现 ${openTags - closeTags} 个未闭合的 <${tagName}> 标签`);
-  }
-
-  return extractedContent;
-}
-
-/**
- * Extracts content using simple tag name
- * @param {string} text Text to search in
- * @param {string} tag Simple tag name like "content" or "thinking"
- * @returns {string[]} Array of extracted content
- */
-function extractSimpleTag(text, tag) {
-  const extractedContent = [];
-  const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'gi');
-  const matches = [...text.matchAll(regex)];
-
-  matches.forEach(match => {
-    if (match[1]) {
-      extractedContent.push(match[1].trim());
-    }
-  });
-
-  // 检查是否有未闭合的标签
-  const openTags = (text.match(new RegExp(`<${tag}>`, 'gi')) || []).length;
-  const closeTags = (text.match(new RegExp(`<\\/${tag}>`, 'gi')) || []).length;
-
-  if (openTags > closeTags) {
-    console.warn(`警告: 发现 ${openTags - closeTags} 个未闭合的 <${tag}> 标签`);
-  }
-
-  return extractedContent;
-}
-
-/**
- * Extracts content using curly brace pipe format
- * @param {string} text Text to search in
- * @param {string} tag Tag name like "outputstory" for format {outputstory|content}
- * @returns {string[]} Array of extracted content
- */
-function extractCurlyBraceTag(text, tag) {
-  const extractedContent = [];
-  const escapedTag = escapeRegex(tag);
-
-  // Find all starting positions of the target tag
-  const startPattern = new RegExp(`\\{${escapedTag}\\|`, 'gi');
-  let match;
-
-  while ((match = startPattern.exec(text)) !== null) {
-    const startPos = match.index;
-    const contentStart = startPos + match[0].length;
-
-    // Find the matching closing brace, accounting for nested braces
-    let braceCount = 1;
-    let pos = contentStart;
-
-    while (pos < text.length && braceCount > 0) {
-      if (text[pos] === '{') {
-        braceCount++;
-      } else if (text[pos] === '}') {
-        braceCount--;
-      }
-      pos++;
-    }
-
-    if (braceCount === 0) {
-      // Found the matching closing brace
-      const content = text.substring(contentStart, pos - 1);
-      if (content.trim()) {
-        extractedContent.push(content.trim());
-      }
-    }
-
-    // Continue searching from after this match
-    startPattern.lastIndex = startPos + 1;
-  }
-
-  return extractedContent;
-}
-
-/**
- * Escapes special regex characters in a string
- * @param {string} str String to escape
- * @returns {string} Escaped string
- */
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// Note: escapeRegex has been moved to src/utils/contentFilter.js
+// This is a wrapper function for backward compatibility
 
 /**
  * Gets all raw content for scanning, bypassing tag extraction rules.
@@ -997,20 +560,14 @@ async function getVectorizableContent(contentSettings = null) {
  * @param {number} total Total items
  * @param {string} message Progress message
  */
-function updateProgress(current, total, message) {
-  const percent = Math.round((current / total) * 100);
-  $('#vectors_enhanced_progress').show();
-  $('#vectors_enhanced_progress .progress-bar-inner').css('width', `${percent}%`);
-  $('#vectors_enhanced_progress .progress-text').text(`${message} (${current}/${total})`);
-}
 
 /**
  * Hides progress display
  */
 function hideProgress() {
-  $('#vectors_enhanced_progress').hide();
-  $('#vectors_enhanced_progress .progress-bar-inner').css('width', '0%');
-  $('#vectors_enhanced_progress .progress-text').text('准备中...');
+  // Wrapper for validation
+  console.log('Calling new hideProgress function from domUtils.js');
+  hideProgressNew();
 }
 
 /**
@@ -1615,7 +1172,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     try {
       const progressMessage = isIncremental ? '增量向量化开始...' : '向量化开始...';
       toastr.info(progressMessage, '处理中');
-      updateProgress(0, items.length, '准备向量化');
+      updateProgressNew(0, items.length, '准备向量化');
 
       // Create corrected settings based on actually processed items
       const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
@@ -1712,11 +1269,11 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         });
 
         processedItems++;
-        updateProgress(processedItems, items.length, '正在处理内容');
+        updateProgressNew(processedItems, items.length, '正在处理内容');
       }
 
       // Insert vectors in batches
-      updateProgress(0, allChunks.length, '正在插入向量');
+      updateProgressNew(0, allChunks.length, '正在插入向量');
       const batchSize = 50;
       for (let i = 0; i < allChunks.length; i += batchSize) {
         // 检查是否被中断
@@ -1727,7 +1284,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         const batch = allChunks.slice(i, Math.min(i + batchSize, allChunks.length));
         await insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
         vectorsInserted = true; // 标记已有向量插入
-        updateProgress(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
+        updateProgressNew(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
       }
 
       // 可选：为大量内容优化存储
@@ -3055,48 +2612,18 @@ async function purgeVectorIndex(collectionId) {
  * Updates UI based on settings
  */
 function toggleSettings() {
-  $('#vectors_enhanced_vllm_settings').toggle(settings.source === 'vllm');
-  $('#vectors_enhanced_ollama_settings').toggle(settings.source === 'ollama');
-  $('#vectors_enhanced_local_settings').toggle(settings.source === 'transformers');
-  $('#vectors_enhanced_transformers_settings').toggle(settings.source === 'transformers');
+  // Wrapper for validation
+  console.log('Calling new toggleSettings function from domUtils.js');
+  toggleSettingsNew(settings);
 }
 
 /**
  * Updates UI state based on master switch
  */
-function updateMasterSwitchState() {
-  const isEnabled = settings.master_enabled;
-
-  // 控制主要设置区域的显示/隐藏
-  $('#vectors_enhanced_main_settings').toggle(isEnabled);
-  $('#vectors_enhanced_content_settings').toggle(isEnabled);
-  $('#vectors_enhanced_tasks_settings').toggle(isEnabled);
-  $('#vectors_enhanced_actions_settings').toggle(isEnabled);
-
-  // 如果禁用，还需要禁用所有输入控件（作为额外保护）
-  const settingsContainer = $('#vectors_enhanced_container');
-  settingsContainer
-    .find('input, select, textarea, button')
-    .not('#vectors_enhanced_master_enabled')
-    .prop('disabled', !isEnabled);
-
-  // 更新视觉效果
-  if (isEnabled) {
-    settingsContainer.removeClass('vectors-disabled');
-  } else {
-    settingsContainer.addClass('vectors-disabled');
-  }
-}
 
 /**
  * Updates content selection UI
  */
-function updateContentSelection() {
-  // This will be called when settings change to update the UI
-  $('#vectors_enhanced_chat_settings').toggle(settings.selected_content.chat.enabled);
-  $('#vectors_enhanced_files_settings').toggle(settings.selected_content.files.enabled);
-  $('#vectors_enhanced_wi_settings').toggle(settings.selected_content.world_info.enabled);
-}
 
 /**
  * Updates the file list UI
@@ -3463,6 +2990,7 @@ function migrateTagSettings() {
 }
 
 jQuery(async () => {
+
   // 使用独立的设置键避免冲突
   const SETTINGS_KEY = 'vectors_enhanced';
 
@@ -3515,17 +3043,18 @@ jQuery(async () => {
   $('#extensions_settings2').append(template);
 
   // Initialize master switch first
-  $('#vectors_enhanced_master_enabled')
-    .prop('checked', settings.master_enabled)
-    .on('change', function () {
-      settings.master_enabled = $(this).prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      updateMasterSwitchState();
-    });
+$('#vectors_enhanced_master_enabled')
+  .prop('checked', settings.master_enabled)
+  .on('change', function () {
+    settings.master_enabled = $(this).prop('checked');
+    Object.assign(extension_settings.vectors_enhanced, settings);
+
+    saveSettingsDebounced();
+    updateMasterSwitchStateNew(settings);
+  });
 
   // Initialize master switch state
-  updateMasterSwitchState();
+  updateMasterSwitchStateNew(settings);
 
   // Initialize UI elements
   $('#vectors_enhanced_source')
@@ -3785,7 +3314,7 @@ jQuery(async () => {
       settings.selected_content.chat.enabled = $('#vectors_enhanced_chat_enabled').prop('checked');
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
-      updateContentSelection();
+      updateContentSelectionNew(settings);
     });
 
   $('#vectors_enhanced_files_enabled')
@@ -3794,7 +3323,7 @@ jQuery(async () => {
       settings.selected_content.files.enabled = $('#vectors_enhanced_files_enabled').prop('checked');
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
-      updateContentSelection();
+      updateContentSelectionNew(settings);
       if (settings.selected_content.files.enabled) {
         await updateFileList();
       }
@@ -3806,7 +3335,7 @@ jQuery(async () => {
       settings.selected_content.world_info.enabled = $('#vectors_enhanced_wi_enabled').prop('checked');
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
-      updateContentSelection();
+      updateContentSelectionNew(settings);
       if (settings.selected_content.world_info.enabled) {
         await updateWorldInfoList();
       }
@@ -3892,7 +3421,7 @@ jQuery(async () => {
 
   // Initialize UI
   toggleSettings();
-  updateContentSelection();
+  updateContentSelectionNew(settings);
   updateChatSettings();
 
   // 初始化通知详细选项的显示状态
@@ -4367,7 +3896,7 @@ function createDebugAPI() {
     analyzeTaskOverlap: analyzeTaskOverlap,
 
     // UI更新
-    updateMasterSwitchState: updateMasterSwitchState,
+    updateMasterSwitchState: () => updateMasterSwitchStateNew(settings),
     updateChatSettings: updateChatSettings,
     updateFileList: updateFileList,
     updateHiddenMessagesInfo: updateHiddenMessagesInfo,
@@ -4626,7 +4155,7 @@ async function clearWorldInfoSelection() {
 
   // 更新UI
   $('#vectors_enhanced_wi_enabled').prop('checked', false);
-  updateContentSelection();
+  updateContentSelectionNew(settings);
   await updateWorldInfoList();
 
   console.log('清除后的选择状态:', JSON.stringify(settings.selected_content.world_info.selected));
