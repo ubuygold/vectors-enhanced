@@ -264,7 +264,7 @@
     - 主开关能控制所有设置项的显示/隐藏。
   - **回滚策略**: 将函数代码从 `domUtils.js` 移回 `index.js`。
 
-- [ ] **重构列表渲染函数**
+- [x] **重构列表渲染函数**
   - **涉及函数**: `updateTaskList`, `renderTagRulesUI`, `updateFileList`, `updateWorldInfoList`, `updateChatSettings`。
   - **描述**: 这些函数通过拼接HTML字符串来动态生成列表，非常脆弱且难以阅读。
   - **迁移策略**:

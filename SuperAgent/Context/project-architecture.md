@@ -30,6 +30,11 @@ vectors-enhanced/
 │   ├── ui/            # UI相关模块 (新增)
 │   │   ├── domUtils.js  # DOM操作工具 (新增)
 │   │   └── components/  # 可复用UI组件 (新增)
+│   │       ├── ChatSettings.js      # 聊天设置UI组件 (新增)
+│   │       ├── TagRulesEditor.js    # 标签规则编辑器UI组件 (新增)
+│   │       ├── TaskList.js          # 任务列表UI组件 (新增)
+│   │       ├── FileList.js          # 文件列表UI组件 (新增)
+│   │       ├── WorldInfoList.js     # 世界信息列表UI组件 (新增)
 │   │       └── README.md
 │   ├── legacy/        # 将被重构的旧代码
 │   │   └── README.md

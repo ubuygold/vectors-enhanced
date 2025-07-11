@@ -40,6 +40,11 @@ import { shouldSkipContent, escapeRegex, isValidTagName } from './src/utils/cont
 import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlFormatTag, extractCurlyBraceTag } from './src/utils/tagExtractor.js';
 import { scanTextForTags, generateTagSuggestions } from './src/utils/tagScanner.js';
 import { updateContentSelection as updateContentSelectionNew, updateMasterSwitchState as updateMasterSwitchStateNew, toggleSettings as toggleSettingsNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew } from './src/ui/domUtils.js';
+import { updateChatSettings } from './src/ui/components/ChatSettings.js';
+import { renderTagRulesUI } from './src/ui/components/TagRulesEditor.js';
+import { updateTaskList } from './src/ui/components/TaskList.js';
+import { updateFileList } from './src/ui/components/FileList.js';
+import { updateWorldInfoList } from './src/ui/components/WorldInfoList.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -233,7 +238,7 @@ async function renameVectorTask(chatId, taskId, currentName) {
       saveSettingsDebounced();
 
       // Refresh the task list UI
-      await updateTaskList();
+      await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
       toastr.success('任务已重命名');
     }
   }
@@ -639,145 +644,6 @@ async function generateTaskName(contentSettings, actualItems) {
   const finalName = `${parts.join(', ')} (${time})`;
   console.debug('Vectors: Final task name:', finalName);
   return finalName;
-}
-
-/**
- * Updates the task list UI
- */
-async function updateTaskList() {
-  const chatId = getCurrentChatId();
-  if (!chatId) return;
-
-  const tasks = getChatTasks(chatId);
-  const taskList = $('#vectors_enhanced_task_list');
-  taskList.empty();
-
-  if (tasks.length === 0) {
-    taskList.append('<div class="text-muted">没有向量化任务</div>');
-    return;
-  }
-
-  tasks.forEach((task, index) => {
-    const taskDiv = $('<div class="vector-enhanced-task-item"></div>');
-
-    const incrementalBadge = task.isIncremental ? '<span style="background: var(--SmartThemeQuoteColor); color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; margin-left: 0.5rem;">增量</span>' : '';
-
-    const checkbox = $(`
-            <label class="checkbox_label flex-container alignItemsCenter">
-                <input type="checkbox" ${task.enabled ? 'checked' : ''} />
-                <span class="flex1">
-                    <strong>${task.name}</strong>${incrementalBadge}
-                    <small class="text-muted"> - ${new Date(task.timestamp).toLocaleString('zh-CN')}</small>
-                </span>
-            </label>
-        `);
-
-    checkbox.find('input').on('change', function () {
-      task.enabled = this.checked;
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-    const renameBtn = $(`<button class="menu_button menu_button_icon" title="重命名此任务">
-            <i class="fa-solid fa-edit"></i>
-        </button>`);
-
-    renameBtn.on('click', async () => {
-      await renameVectorTask(chatId, task.taskId, task.name);
-    });
-
-    const deleteBtn = $(`<button class="menu_button menu_button_icon" title="删除此任务">
-            <i class="fa-solid fa-trash"></i>
-        </button>`);
-
-    deleteBtn.on('click', async () => {
-      const confirm = await callGenericPopup('确定要删除这个向量化任务吗？', POPUP_TYPE.CONFIRM);
-      if (confirm === POPUP_RESULT.AFFIRMATIVE) {
-        await removeVectorTask(chatId, task.taskId);
-        await updateTaskList();
-        toastr.success('任务已删除');
-      }
-    });
-
-    taskDiv.append(checkbox);
-    taskDiv.append(renameBtn);
-    taskDiv.append(deleteBtn);
-    taskList.append(taskDiv);
-  });
-}
-/**
- * Renders the tag rules UI in the settings panel.
- */
-function renderTagRulesUI() {
-    const editor = $('#vectors_enhanced_rules_editor');
-    editor.empty();
-
-    // Ensure tag_rules exists and is an array
-    if (!settings.selected_content.chat.tag_rules || !Array.isArray(settings.selected_content.chat.tag_rules)) {
-        settings.selected_content.chat.tag_rules = [];
-    }
-    const rules = settings.selected_content.chat.tag_rules;
-
-    if (rules.length === 0) {
-        editor.append('<div class="text-muted" style="margin: 0.5rem 0;">没有定义任何提取规则。</div>');
-    }
-
-    rules.forEach((rule, index) => {
-        const ruleHtml = `
-            <div class="vector-enhanced-rule-item flex-container alignItemsCenter" data-index="${index}" style="margin-bottom: 0.5rem; gap: 0.5rem;">
-                <select class="rule-type text_pole widthUnset" style="flex: 2;">
-                    <option value="include" ${rule.type === 'include' ? 'selected' : ''}>包含</option>
-                    <option value="regex_include" ${rule.type === 'regex_include' ? 'selected' : ''}>正则包含</option>
-                    <option value="exclude" ${rule.type === 'exclude' ? 'selected' : ''}>排除</option>
-                    <option value="regex_exclude" ${rule.type === 'regex_exclude' ? 'selected' : ''}>正则排除</option>
-                </select>
-                <input type="text" class="rule-value text_pole" style="flex: 5;" placeholder="标签名或/表达式/" value="${rule.value || ''}">
-                <label class="checkbox_label" style="flex: 1; white-space: nowrap;">
-                    <input type="checkbox" class="rule-enabled" ${rule.enabled ? 'checked' : ''}>
-                    <span>启用</span>
-                </label>
-                <button class="menu_button menu_button_icon rule-delete" title="删除规则">
-                    <i class="fa-solid fa-trash"></i>
-                </button>
-            </div>
-        `;
-        editor.append(ruleHtml);
-    });
-
-    // Unbind previous events to prevent duplicates, then bind new ones.
-    editor.off('change', '.rule-type, .rule-value, .rule-enabled').on('change', '.rule-type, .rule-value, .rule-enabled', function() {
-        const ruleDiv = $(this).closest('.vector-enhanced-rule-item');
-        const index = ruleDiv.data('index');
-
-        if (index === undefined || !settings.selected_content.chat.tag_rules[index]) return;
-
-        const rule = settings.selected_content.chat.tag_rules[index];
-
-        if ($(this).hasClass('rule-type')) {
-            rule.type = $(this).val();
-        }
-        if ($(this).hasClass('rule-value')) {
-            rule.value = $(this).val();
-        }
-        if ($(this).hasClass('rule-enabled')) {
-            rule.enabled = $(this).is(':checked');
-        }
-
-        Object.assign(extension_settings.vectors_enhanced, settings);
-        saveSettingsDebounced();
-    });
-
-    editor.off('click', '.rule-delete').on('click', '.rule-delete', function() {
-        const ruleDiv = $(this).closest('.vector-enhanced-rule-item');
-        const index = ruleDiv.data('index');
-
-        if (index !== undefined) {
-            settings.selected_content.chat.tag_rules.splice(index, 1);
-            Object.assign(extension_settings.vectors_enhanced, settings);
-            saveSettingsDebounced();
-            renderTagRulesUI(); // Re-render the UI
-        }
-    });
 }
 
 /**
@@ -1324,7 +1190,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       toastr.success(successMessage, '成功');
 
       // Refresh task list UI
-      await updateTaskList();
+      await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
     } catch (error) {
       console.error('向量化失败:', error);
       hideProgress();
@@ -2625,312 +2491,11 @@ function toggleSettings() {
  * Updates content selection UI
  */
 
-/**
- * Updates the file list UI
- */
-async function updateFileList() {
-  console.debug('Vectors: Updating file list...');
-  const fileList = $('#vectors_enhanced_files_list');
-  console.debug('Vectors: File list element found:', fileList.length > 0);
-  fileList.empty();
 
-  const context = getContext();
-  console.debug('Vectors: Context:', context);
-
-  let allFiles = [];
-
-  try {
-    const dataBankFiles = getDataBankAttachments();
-    const globalFiles = getDataBankAttachmentsForSource('global');
-    const characterFiles = getDataBankAttachmentsForSource('character');
-    const chatFiles = getDataBankAttachmentsForSource('chat');
-    const extraFiles = context.chat?.filter(x => x.extra?.file).map(x => x.extra.file) || [];
-
-    console.debug('Vectors: File sources:', {
-      dataBank: dataBankFiles.length,
-      global: globalFiles.length,
-      character: characterFiles.length,
-      chat: chatFiles.length,
-      extra: extraFiles.length
-    });
-
-    // 去重复：使用URL作为唯一键
-    const fileMap = new Map();
-    [...dataBankFiles, ...globalFiles, ...characterFiles, ...chatFiles, ...extraFiles].forEach(file => {
-      if (file && file.url) {
-        fileMap.set(file.url, file);
-      }
-    });
-
-    allFiles = Array.from(fileMap.values());
-
-    console.debug('Vectors: Total files after deduplication:', allFiles.length);
-
-    // Clean up invalid file selections (files that no longer exist)
-    const allFileUrls = new Set(allFiles.map(f => f.url));
-    const originalSelected = [...settings.selected_content.files.selected];
-    settings.selected_content.files.selected = settings.selected_content.files.selected.filter(url =>
-      allFileUrls.has(url)
-    );
-
-    const removedCount = originalSelected.length - settings.selected_content.files.selected.length;
-    if (removedCount > 0) {
-      console.debug(`Vectors: Cleaned up ${removedCount} invalid file selections:`, {
-        original: originalSelected,
-        cleaned: settings.selected_content.files.selected,
-        removed: originalSelected.filter(url => !allFileUrls.has(url))
-      });
-
-      // Save the cleaned settings
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    }
-  } catch (error) {
-    console.error('Vectors: Error getting files:', error);
-    fileList.append('<div class="text-muted">获取文件列表时出错</div>');
-    return;
-  }
-
-  if (allFiles.length === 0) {
-    fileList.append('<div class="text-muted">没有可用文件</div>');
-    return;
-  }
-
-  // Group files by source - use the deduplicated files
-  const dataBankUrls = new Set(getDataBankAttachments().map(f => f.url));
-  const chatFileUrls = new Set((context.chat?.filter(x => x.extra?.file).map(x => x.extra.file) || []).map(f => f.url));
-
-  const dataBankFiles = allFiles.filter(file => dataBankUrls.has(file.url));
-  const chatFiles = allFiles.filter(file => chatFileUrls.has(file.url) && !dataBankUrls.has(file.url));
-
-  if (dataBankFiles.length > 0) {
-    fileList.append('<div class="file-group-header">数据库文件</div>');
-    dataBankFiles.forEach(file => {
-      const isChecked = settings.selected_content.files.selected.includes(file.url);
-      const checkbox = $(`
-                <label class="checkbox_label flex-container alignItemsCenter" title="${file.name}">
-                    <input type="checkbox" value="${file.url}" ${isChecked ? 'checked' : ''} />
-                    <span class="flex1 text-overflow-ellipsis">${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>
-                </label>
-            `);
-
-      checkbox.find('input').on('change', function () {
-        if (this.checked) {
-          if (!settings.selected_content.files.selected.includes(file.url)) {
-            settings.selected_content.files.selected.push(file.url);
-          }
-        } else {
-          settings.selected_content.files.selected = settings.selected_content.files.selected.filter(
-            url => url !== file.url,
-          );
-        }
-        Object.assign(extension_settings.vectors_enhanced, settings);
-        saveSettingsDebounced();
-      });
-
-      fileList.append(checkbox);
-    });
-  }
-
-  if (chatFiles.length > 0) {
-    if (dataBankFiles.length > 0) fileList.append('<hr class="m-t-0-5 m-b-0-5">');
-    fileList.append('<div class="file-group-header">聊天附件</div>');
-    chatFiles.forEach(file => {
-      const isChecked = settings.selected_content.files.selected.includes(file.url);
-      const checkbox = $(`
-                <label class="checkbox_label flex-container alignItemsCenter" title="${file.name}">
-                    <input type="checkbox" value="${file.url}" ${isChecked ? 'checked' : ''} />
-                    <span class="flex1 text-overflow-ellipsis">${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>
-                </label>
-            `);
-
-      checkbox.find('input').on('change', function () {
-        if (this.checked) {
-          if (!settings.selected_content.files.selected.includes(file.url)) {
-            settings.selected_content.files.selected.push(file.url);
-          }
-        } else {
-          settings.selected_content.files.selected = settings.selected_content.files.selected.filter(
-            url => url !== file.url,
-          );
-        }
-        Object.assign(extension_settings.vectors_enhanced, settings);
-        saveSettingsDebounced();
-      });
-
-      fileList.append(checkbox);
-    });
-  }
-}
-
-/**
- * Updates the World Info list UI
- */
-async function updateWorldInfoList() {
-  const entries = await getSortedEntries();
-  const wiList = $('#vectors_enhanced_wi_list');
-  wiList.empty();
-
-  if (!entries || entries.length === 0) {
-    wiList.append('<div class="text-muted">没有可用的世界信息条目</div>');
-    return;
-  }
-
-  // Group entries by world
-  const grouped = {};
-  entries.forEach(entry => {
-    if (!entry.world || entry.disable || !entry.content) return;
-    if (!grouped[entry.world]) grouped[entry.world] = [];
-    grouped[entry.world].push(entry);
-  });
-
-  if (Object.keys(grouped).length === 0) {
-    wiList.append('<div class="text-muted">未找到有效的世界信息条目</div>');
-    return;
-  }
-
-  // Clean up invalid world info selections (entries that no longer exist or worlds not in current context)
-  const allValidUids = new Set();
-  const currentValidWorlds = new Set(Object.keys(grouped));
-  Object.values(grouped).flat().forEach(entry => allValidUids.add(entry.uid));
-
-  let hasChanges = false;
-  const originalSelected = JSON.parse(JSON.stringify(settings.selected_content.world_info.selected));
-
-  // Clean each world's selection
-  for (const [world, selectedUids] of Object.entries(settings.selected_content.world_info.selected)) {
-    // Remove worlds that don't exist in current context
-    if (!currentValidWorlds.has(world)) {
-      console.debug(`Vectors: Removing world "${world}" - not available in current context`);
-      delete settings.selected_content.world_info.selected[world];
-      hasChanges = true;
-      continue;
-    }
-
-    const validUids = selectedUids.filter(uid => allValidUids.has(uid));
-    if (validUids.length !== selectedUids.length) {
-      hasChanges = true;
-      if (validUids.length === 0) {
-        delete settings.selected_content.world_info.selected[world];
-      } else {
-        settings.selected_content.world_info.selected[world] = validUids;
-      }
-    }
-  }
-
-  if (hasChanges) {
-    const currentSelected = JSON.parse(JSON.stringify(settings.selected_content.world_info.selected));
-    const originalCount = Object.values(originalSelected).flat().length;
-    const currentCount = Object.values(currentSelected).flat().length;
-    const removedCount = originalCount - currentCount;
-
-    console.debug(`Vectors: Cleaned up ${removedCount} invalid world info selections:`, {
-      original: originalSelected,
-      cleaned: currentSelected,
-      originalCount,
-      currentCount
-    });
-
-    // Save the cleaned settings
-    Object.assign(extension_settings.vectors_enhanced, settings);
-    saveSettingsDebounced();
-  }
-
-  for (const [world, worldEntries] of Object.entries(grouped)) {
-    const worldDiv = $('<div class="wi-world-group"></div>');
-
-    // 世界名称和全选复选框
-    const selectedEntries = settings.selected_content.world_info.selected[world] || [];
-    const allChecked = worldEntries.length > 0 && worldEntries.every(e => selectedEntries.includes(e.uid));
-
-    const worldHeader = $(`
-            <div class="wi-world-header flex-container alignItemsCenter">
-                <label class="checkbox_label flex1">
-                    <input type="checkbox" class="world-select-all" data-world="${world}" ${
-      allChecked ? 'checked' : ''
-    } />
-                    <span class="wi-world-name">${world}</span>
-                </label>
-            </div>
-        `);
-
-    // 全选复选框事件
-    worldHeader.find('.world-select-all').on('change', function () {
-      const isChecked = this.checked;
-
-      if (isChecked) {
-        settings.selected_content.world_info.selected[world] = worldEntries.map(e => e.uid);
-      } else {
-        delete settings.selected_content.world_info.selected[world];
-      }
-
-      // 更新所有子条目
-      worldDiv.find('.wi-entry input').prop('checked', isChecked);
-
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-    worldDiv.append(worldHeader);
-
-    // 条目列表
-    worldEntries.forEach(entry => {
-      const isChecked = selectedEntries.includes(entry.uid);
-
-      const checkbox = $(`
-                <label class="checkbox_label wi-entry flex-container alignItemsCenter">
-                    <input type="checkbox" value="${entry.uid}" data-world="${world}" ${isChecked ? 'checked' : ''} />
-                    <span class="flex1">${entry.comment || '(无注释)'}</span>
-                </label>
-            `);
-
-      checkbox.find('input').on('change', function () {
-        if (!settings.selected_content.world_info.selected[world]) {
-          settings.selected_content.world_info.selected[world] = [];
-        }
-
-        if (this.checked) {
-          if (!settings.selected_content.world_info.selected[world].includes(entry.uid)) {
-            settings.selected_content.world_info.selected[world].push(entry.uid);
-          }
-        } else {
-          settings.selected_content.world_info.selected[world] = settings.selected_content.world_info.selected[
-            world
-          ].filter(id => id !== entry.uid);
-        }
-
-        // 更新全选复选框状态
-        const allChecked = worldEntries.every(e =>
-          settings.selected_content.world_info.selected[world]?.includes(e.uid),
-        );
-        worldHeader.find('.world-select-all').prop('checked', allChecked);
-
-        // Clean up empty world arrays
-        if (settings.selected_content.world_info.selected[world].length === 0) {
-          delete settings.selected_content.world_info.selected[world];
-        }
-
-        Object.assign(extension_settings.vectors_enhanced, settings);
-        saveSettingsDebounced();
-      });
-
-      worldDiv.append(checkbox);
-    });
-
-    wiList.append(worldDiv);
-  }
-}
 
 /**
  * Updates chat message range settings
  */
-function updateChatSettings() {
-  const context = getContext();
-  const messageCount = context.chat?.length || 0;
-
-  $('#vectors_enhanced_chat_start').attr('max', messageCount);
-  $('#vectors_enhanced_chat_end').attr('min', -1).attr('max', messageCount);
-}
 
 // Event handlers
 const onChatEvent = debounce(async () => {
@@ -2940,7 +2505,7 @@ const onChatEvent = debounce(async () => {
   // Update UI lists when chat changes
   await updateFileList();
   updateChatSettings();
-  await updateTaskList();
+  await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
 }, debounce_timeout.relaxed);
 
 /**
@@ -3451,7 +3016,7 @@ $('#vectors_enhanced_master_enabled')
   renderTagRulesUI();
 
   // Initialize task list
-  await updateTaskList();
+  await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
 
   // Initialize hidden messages info
   updateHiddenMessagesInfo();
@@ -3475,7 +3040,7 @@ $('#vectors_enhanced_master_enabled')
     saveSettingsDebounced();
   });
   eventSource.on(event_types.CHAT_CHANGED, async () => {
-    await updateTaskList();
+    await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
     updateHiddenMessagesInfo();
     // Auto-cleanup invalid world info selections when switching chats
     if (settings.selected_content.world_info.enabled) {
@@ -3892,7 +3457,7 @@ function createDebugAPI() {
     // 核心功能
     cleanupInvalidSelections: cleanupInvalidSelections,
     updateWorldInfoList: updateWorldInfoList,
-    updateTaskList: updateTaskList,
+    updateTaskList: (getChatTasks, renameVectorTask, removeVectorTask) => updateTaskList(getChatTasks, renameVectorTask, removeVectorTask),
     analyzeTaskOverlap: analyzeTaskOverlap,
 
     // UI更新
