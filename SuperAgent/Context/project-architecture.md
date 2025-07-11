@@ -26,6 +26,7 @@ vectors-enhanced/
 │   │   ├── contentFilter.js  # 内容过滤工具 (新增)
 │   │   ├── tagExtractor.js  # 标签提取核心模块 (新增)
 │   │   ├── tagScanner.js  # 标签扫描模块 (新增)
+│   │   ├── tagParser.js   # 标签解析工具 (新增)
 │   │   └── README.md
 │   ├── ui/            # UI相关模块 (新增)
 │   │   ├── domUtils.js  # DOM操作工具 (新增)
@@ -36,6 +37,7 @@ vectors-enhanced/
 │   │       ├── FileList.js          # 文件列表UI组件 (新增)
 │   │       ├── WorldInfoList.js     # 世界信息列表UI组件 (新增)
 │   │       ├── TagUI.js             # 标签相关UI逻辑管理 (新增)
+│   │       ├── MessageUI.js         # 消息相关UI逻辑管理 (新增)
 │   │       └── README.md
 │   ├── legacy/        # 将被重构的旧代码
 │   │   └── README.md
@@ -117,11 +119,13 @@ index.js
 ### UI 模块 (新增)
 - **src/ui/domUtils.js**: 封装所有DOM操作，旨在将UI逻辑与业务逻辑分离。目前已包含 `updateContentSelection`, `updateMasterSwitchState`, `toggleSettings`, `hideProgress`, `updateProgress` 等函数。
 - **src/ui/components/**: 存放可复用的UI组件。
+  - **MessageUI.js**: 管理与消息显示相关的UI逻辑，如隐藏消息提示、内容预览弹窗等。
 
 ### 辅助模块
 - **webllm.js**: WebLLM引擎的简单封装
 - **debug/**: 开发调试工具集
 - **src/utils/tagScanner.js**: 包含 `scanTextForTags` 函数，负责在UI中扫描和识别文本中的标签，以便进行高亮或其他界面操作。
+- **src/utils/tagParser.js**: 提供解析标签配置的工具函数，特别是处理带有排除规则的复杂标签字符串（例如 "include,tags - exclude,tags"）。
 
 ## 待解决的架构问题
 1. **单一职责违反**: index.js承担了过多职责

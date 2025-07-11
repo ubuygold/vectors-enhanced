@@ -470,3 +470,179 @@ function updateProgress(current, total, message) {
 - `SuperAgent/Context/project-architecture.md`: 添加了 `TagUI.js` 组件并更新了依赖关系图。
 
 **结果**: 成功将标签UI相关函数模块化到 `TagUI.js`，提升了代码的组织性和可维护性，并修复了迁移过程中发现的导入错误。
+
+---
+## 迭代 #8
+**开始时间**: 2025-07-12 05:54
+**请求**: 创建一个新的UI组件文件 `src/ui/components/MessageUI.js`
+**响应**: 我将创建该文件并添加初始导出结构。
+
+### 操作 8.1
+**时间**: 05:54:13
+**描述**: 创建 `MessageUI.js` 文件。
+**创建文件 `src/ui/components/MessageUI.js`**:
+```javascript
+// src/ui/components/MessageUI.js
+
+export const MessageUI = {
+  // 函数将在这里添加
+};
+```
+
+**结果**: 成功创建了 `src/ui/components/MessageUI.js` 文件，为后续迁移消息相关UI函数做好了准备。
+
+---
+## 迭代 #9
+**开始时间**: 2025-07-12 06:57
+**请求**: 迁移 `previewContent` 的辅助函数
+**响应**: 我将 `parseTagWithExclusions` 和 `removeExcludedTags` 函数迁移到 `src/utils/tagParser.js`
+
+### 操作 9.1
+**时间**: 06:57:54
+**描述**: 搜索 `parseTagWithExclusions` 的定义，发现它只被调用但未定义。
+
+### 操作 9.2
+**时间**: 06:58:08
+**描述**: 创建 `src/utils/tagParser.js` 并根据上下文重新实现了 `parseTagWithExclusions` 和 `removeExcludedTags` 函数。
+**创建文件 `src/utils/tagParser.js`**:
+```javascript
+/**
+ * Parses a tag configuration string that may include exclusions.
+ * The format is "include,tags - exclude,tags".
+ * @param {string} tagConfig - The tag configuration string.
+ * @returns {{mainTag: string, excludeTags: string[]}} An object with the main tag string and an array of exclusion tags.
+ */
+export function parseTagWithExclusions(tagConfig) {
+  if (!tagConfig || typeof tagConfig !== 'string') {
+    return { mainTag: '', excludeTags: [] };
+  }
+
+  const parts = tagConfig.split(' - ');
+  const mainTag = (parts[0] || '').trim();
+  const excludePart = (parts[1] || '').trim();
+
+  const excludeTags = excludePart ? excludePart.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  return { mainTag, excludeTags };
+}
+
+/**
+ * Removes content within specified excluded tags from a given text.
+ * This function is designed to handle simple, non-nested tags.
+ * @param {string} content - The original content.
+ * @param {string[]} excludeTags - An array of tags to remove.
+ * @returns {string} The content with excluded tags removed.
+ */
+export function removeExcludedTags(content, excludeTags) {
+  if (!content || !excludeTags || excludeTags.length === 0) {
+    return content;
+  }
+
+  let processedContent = content;
+  for (const tag of excludeTags) {
+    // Regex to find <tag>...</tag> and remove it.
+    // It's a simple regex and might not handle all edge cases like nested or self-closing tags perfectly.
+    const regex = new RegExp(`<${tag}>[\\s\\S]*?<\\/${tag}>`, 'g');
+    processedContent = processedContent.replace(regex, '');
+  }
+
+  return processedContent;
+}
+```
+
+### 操作 9.3
+**时间**: 06:58:18
+**描述**: 在 `index.js` 顶部添加了对 `tagParser.js` 中函数的导入。
+**`index.js` 中的变更**:
+```diff
+<<<<<<< SEARCH
+:start_line:42
+-------
+// (no previous import from tagParser)
+=======
+import { parseTagWithExclusions, removeExcludedTags } from './src/utils/tagParser.js';
+>>>>>>> REPLACE
+```
+
+### 操作 9.4
+**时间**: 06:59:23
+**描述**: 更新了 `SuperAgent/Context/project-architecture.md` 以反映新文件。
+
+---
+## 迭代 #10
+**开始时间**: 2025-07-12 07:02
+**请求**: 更新项目文档以反映“迁移消息相关UI函数”的完成
+**响应**: 我将更新 `refactoring-todo-list.md`、`project-architecture.md` 和 `iterations-log.md` 以反映重构任务的完成。
+
+### 操作 10.1
+**时间**: 07:02:26
+**描述**: 更新 `refactoring-todo-list.md`，将“迁移消息相关UI函数”标记为已完成。
+**`refactoring-todo-list.md` 中的变更**:
+```diff
+<<<<<<< SEARCH
+:start_line:293
+-------
+- [ ] **迁移消息相关UI函数**
+=======
+- [x] **迁移消息相关UI函数**
+>>>>>>> REPLACE
+```
+
+### 操作 10.2
+**时间**: 07:02:54
+**描述**: 更新 `SuperAgent/Context/project-architecture.md`，添加对 `MessageUI.js` 和 `tagParser.js` 的描述。
+**`SuperAgent/Context/project-architecture.md` 中的变更**:
+```diff
+<<<<<<< SEARCH
+:start_line:28
+-------
+  │   │   ├── tagScanner.js  # 标签扫描模块 (新增)
+  │   │   └── README.md
+  │   ├── ui/            # UI相关模块 (新增)
+  │   │   ├── domUtils.js  # DOM操作工具 (新增)
+  │   │   └── components/  # 可复用UI组件 (新增)
+  │   │       ├── ChatSettings.js      # 聊天设置UI组件 (新增)
+  │   │       ├── TagRulesEditor.js    # 标签规则编辑器UI组件 (新增)
+  │   │       ├── TaskList.js          # 任务列表UI组件 (新增)
+  │   │       ├── FileList.js          # 文件列表UI组件 (新增)
+  │   │       ├── WorldInfoList.js     # 世界信息列表UI组件 (新增)
+  │   │       ├── TagUI.js             # 标签相关UI逻辑管理 (新增)
+  │   │       └── README.md
+=======
+  │   │   ├── tagScanner.js  # 标签扫描模块 (新增)
+  │   │   ├── tagParser.js   # 标签解析工具 (新增)
+  │   │   └── README.md
+  │   ├── ui/            # UI相关模块 (新增)
+  │   │   ├── domUtils.js  # DOM操作工具 (新增)
+  │   │   └── components/  # 可复用UI组件 (新增)
+  │   │       ├── ChatSettings.js      # 聊天设置UI组件 (新增)
+  │   │       ├── TagRulesEditor.js    # 标签规则编辑器UI组件 (新增)
+  │   │       ├── TaskList.js          # 任务列表UI组件 (新增)
+  │   │       ├── FileList.js          # 文件列表UI组件 (新增)
+  │   │       ├── WorldInfoList.js     # 世界信息列表UI组件 (新增)
+  │   │       ├── TagUI.js             # 标签相关UI逻辑管理 (新增)
+  │   │       ├── MessageUI.js         # 消息相关UI逻辑管理 (新增)
+  │   │       └── README.md
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+:start_line:121
+-------
+- **src/ui/components/**: 存放可复用的UI组件。
+
+### 辅助模块
+- **webllm.js**: WebLLM引擎的简单封装
+- **debug/**: 开发调试工具集
+- **src/utils/tagScanner.js**: 包含 `scanTextForTags` 函数，负责在UI中扫描和识别文本中的标签，以便进行高亮或其他界面操作。
+=======
+- **src/ui/components/**: 存放可复用的UI组件。
+  - **MessageUI.js**: 管理与消息显示相关的UI逻辑，如隐藏消息提示、内容预览弹窗等。
+
+### 辅助模块
+- **webllm.js**: WebLLM引擎的简单封装
+- **debug/**: 开发调试工具集
+- **src/utils/tagScanner.js**: 包含 `scanTextForTags` 函数，负责在UI中扫描和识别文本中的标签，以便进行高亮或其他界面操作。
+- **src/utils/tagParser.js**: 提供解析标签配置的工具函数，特别是处理带有排除规则的复杂标签字符串（例如 "include,tags - exclude,tags"）。
+>>>>>>> REPLACE
+```
+
+**结果**: 所有相关文档均已更新，以反映“迁移消息相关UI函数”重构任务的完成。

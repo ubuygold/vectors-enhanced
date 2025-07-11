@@ -290,7 +290,7 @@
     - 标签示例弹窗能正常显示格式化的内容。
   - **回滚策略**: 将函数移回 `index.js`。
 
-- [ ] **迁移消息相关UI函数**
+- [x] **迁移消息相关UI函数**
   - **涉及函数**: `updateHiddenMessagesInfo`, `showHiddenMessages`, `previewContent`。
   - **描述**: 这些函数处理消息显示相关的UI逻辑。
   - **迁移策略**:
@@ -382,6 +382,18 @@
   - **回滚计划**:
     - 保留旧的实现作为备份。
     - 使用功能开关快速切换新旧实现。
+
+    ### Phase 3.5: 统一消息过滤逻辑 (新发现的技术债)
+
+- **问题**: `getHiddenMessages` 函数（用于UI）与 `getVectorizableContent` 内的隐藏消息过滤逻辑（用于数据提取）存在功能重复。两者都依赖 `msg.is_system === true` 来判断，但实现方式不同，违反了DRY原则。
+- **目标**: 创建一个统一的、可复用的消息工具函数模块，作为单一事实来源（Single Source of Truth）。
+- **子任务**:
+  - [ ] **创建 `src/utils/chatUtils.js`**: 创建一个新的工具模块。
+  - [ ] **实现核心过滤函数**: 在 `chatUtils.js` 中实现一个核心的 `getMessages(options)` 函数。该函数应能根据传入的 `{ includeHidden, types, range }` 等选项，返回符合条件的消息数组。
+  - [ ] **重构UI层**: 重构 `src/ui/components/MessageUI.js` 中的代码，移除内部的 `getHiddenMessages`，改为调用新的 `chatUtils.getMessages()`。
+  - [ ] **重构数据提取层**: 重构 `getVectorizableContent` 和 `getRawContentForScanning`，移除内部的 `if` 判断，改为调用新的 `chatUtils.getMessages()`。
+- **验证点**: 确保UI显示、内容提取和向量化功能在逻辑统一后表现完全一致。
+- **执行时机**: 在完成所有 `Phase 3` 的UI工具函数迁移后，但在开始 `Phase 5` 内容提取器之前执行。
 
 ## Phase 4: 创建适配器层（包装现有功能）
 
