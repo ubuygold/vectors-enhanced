@@ -277,7 +277,7 @@
     - 列表项上的交互按钮（如删除、勾选）功能正常。
   - **回滚策略**: 恢复使用 `index.js` 中的旧版渲染函数。
 
-- [ ] **迁移标签相关UI函数**
+- [x] **迁移标签相关UI函数**
   - **涉及函数**: `displayTagSuggestions`, `clearTagSuggestions`, `showTagExamples`。
   - **描述**: 这些函数处理标签扫描和建议的UI显示逻辑。
   - **迁移策略**:

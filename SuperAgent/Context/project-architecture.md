@@ -3,7 +3,7 @@
 ## 文件结构
 ```
 vectors-enhanced/
-├── index.js              # 主入口文件 (5000+行，待重构)
+├── index.js              # 主入口文件 (5000+行，UI逻辑逐步迁移至 src/ui/ 模块)
 ├── webllm.js            # WebLLM 引擎适配器
 ├── settings.html        # 设置界面 (500+行，待模块化)
 ├── style.css            # 样式文件 (待优化)
@@ -35,6 +35,7 @@ vectors-enhanced/
 │   │       ├── TaskList.js          # 任务列表UI组件 (新增)
 │   │       ├── FileList.js          # 文件列表UI组件 (新增)
 │   │       ├── WorldInfoList.js     # 世界信息列表UI组件 (新增)
+│   │       ├── TagUI.js             # 标签相关UI逻辑管理 (新增)
 │   │       └── README.md
 │   ├── legacy/        # 将被重构的旧代码
 │   │   └── README.md
@@ -66,6 +67,7 @@ index.js
 │    ├──> vLLM API
 │    └──> WebLLM (webllm.js)
 ├──> UI组件 (settings.html)
+│    └──> src/ui/components/TagUI.js
 ├──> 样式 (style.css)
 └──> 调试工具 (debug/*)
 
