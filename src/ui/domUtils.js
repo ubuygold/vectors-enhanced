@@ -35,11 +35,14 @@ export default DOMUtils;
 export function updateMasterSwitchState(settings) {
   const isEnabled = settings.master_enabled;
 
-  // 控制主要设置区域的显示/隐藏
-  $('#vectors_enhanced_main_settings').toggle(isEnabled);
+  // 控制主要设置区域的显示/隐藏 - 更新为新模板的ID
+  $('#vectors_enhanced_vectorization_settings').toggle(isEnabled);
+  $('#vectors_enhanced_rerank_settings').toggle(isEnabled);
+  $('#vectors_enhanced_injection_settings').toggle(isEnabled);
   $('#vectors_enhanced_content_settings').toggle(isEnabled);
   $('#vectors_enhanced_tasks_settings').toggle(isEnabled);
   $('#vectors_enhanced_actions_settings').toggle(isEnabled);
+  $('#vectors_enhanced_experimental_settings').toggle(isEnabled);
 
   // 如果禁用，还需要禁用所有输入控件（作为额外保护）
   const settingsContainer = $('#vectors_enhanced_container');

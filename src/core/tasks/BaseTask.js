@@ -19,6 +19,7 @@ export class BaseTask extends ITask {
      * @param {boolean} [config.enabled=true] - Whether task is enabled
      * @param {Object} [config.result] - Task execution result
      * @param {Object} [config.dependencies] - Task dependencies
+     * @param {string} [config.version='1.0'] - Task format version
      */
     constructor(config) {
         super();
@@ -37,6 +38,8 @@ export class BaseTask extends ITask {
             children: [],
             requires: []
         };
+        // 新增：任务格式版本
+        this.version = config.version || '1.0';
     }
 
     /**
@@ -74,7 +77,8 @@ export class BaseTask extends ITask {
             name: this.name,
             enabled: this.enabled,
             result: this.result,
-            dependencies: this.dependencies
+            dependencies: this.dependencies,
+            version: this.version
         };
     }
 
@@ -113,5 +117,14 @@ export class BaseTask extends ITask {
      */
     async cancel() {
         this.updateStatus('cancelled');
+    }
+
+    /**
+     * Check if a task is a legacy task (version 1.0 or missing version)
+     * @param {Object} task - Task object to check
+     * @returns {boolean} True if task is legacy format
+     */
+    static isLegacyTask(task) {
+        return !task.version || task.version === '1.0';
     }
 }

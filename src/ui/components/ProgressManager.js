@@ -258,8 +258,8 @@ export class ProgressManager {
         // Update progress bar
         this.progressBar.css('width', `${percentage}%`);
         
-        // Update text with percentage and message
-        const displayText = `${this.progressState.message} (${percentage}%)`;
+        // Update text with block count and message
+        const displayText = `${this.progressState.message} (${this.progressState.current}/${this.progressState.total})`;
         this.progressText.text(displayText);
 
         // Update container classes based on state
@@ -275,7 +275,7 @@ export class ProgressManager {
             this.progressBar.css('background-color', 'var(--SmartThemeQuoteColor)');
         }
 
-        console.debug(`ProgressManager: Display updated - ${percentage}% - ${this.progressState.message}`);
+        console.debug(`ProgressManager: Display updated - ${this.progressState.current}/${this.progressState.total} (${percentage}%) - ${this.progressState.message}`);
     }
 
     /**

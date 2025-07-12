@@ -100,4 +100,9 @@ TaskFactory.registerTaskType('vectorization', VectorizationTask);
 
 // Future task types will be registered here:
 // TaskFactory.registerTaskType('summary', SummaryTask);
-// TaskFactory.registerTaskType('auto-update', AutoUpdateTask);
+// TaskFactory.registerTaskType('auto-vectorization', AutoVectorizationTask);
+// TaskFactory.registerTaskType('rerank', RerankTask);
+// 
+// Example of registering a new task type:
+// import { CustomTask } from './CustomTask.js';
+// TaskFactory.registerTaskType('custom', CustomTask);

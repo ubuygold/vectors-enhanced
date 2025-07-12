@@ -55,7 +55,8 @@ export class SettingsPanel {
             console.log('SettingsPanel: Loading template...');
             
             // Use the same template loading logic as the original
-            const template = await this.renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings');
+            // Note: Using 'settings-modular' instead of 'settings' for the new modular template
+            const template = await this.renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings-modular');
             $(this.targetSelector).append(template);
             
             this.templateLoaded = true;

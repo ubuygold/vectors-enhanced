@@ -8,4 +8,10 @@ export class Logger {
   error(message, ...args) {
     console.error(`[${this.module}] ${message}`, ...args);
   }
+  warn(message, ...args) {
+    console.warn(`[${this.module}] ${message}`, ...args);
+  }
+  debug(message, ...args) {
+    console.debug(`[${this.module}] ${message}`, ...args);
+  }
 }

@@ -164,6 +164,9 @@ const settings = {
   // Vector tasks management
   vector_tasks: {}, // { chatId: [{ taskId, name, timestamp, settings, enabled }] }
   tag_rules_version: 2,
+  
+  // Pipeline settings
+  use_pipeline: false, // Feature flag for new pipeline implementation
 };
 
 const moduleWorker = new ModuleWorkerWrapper(synchronizeChat);
@@ -1230,7 +1233,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       const successMessage = isIncremental ?
         `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allChunks.length} 个块` :
         `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allChunks.length} 个块`;
-      toastr.success(successMessage, '成功');
+      toastr.success(successMessage, '向量化完成');
 
       // Refresh task list UI
       await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
@@ -1293,6 +1296,424 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       } else {
         hideProgressNew();
       }
+  }
+}
+
+/**
+ * Pipeline version of performVectorization
+ * Uses the complete text processing pipeline: Extract → Process → Dispatch → Execute
+ * @param {Object} contentSettings - Content settings
+ * @param {string} chatId - Chat ID
+ * @param {boolean} isIncremental - Whether this is incremental
+ * @param {Array} items - Items to vectorize
+ * @returns {Promise<Object>} Result with success status and metadata
+ */
+async function performVectorizationPipeline(contentSettings, chatId, isIncremental, items) {
+  console.log('Pipeline: Starting FULL pipeline processing with settings:', JSON.stringify(contentSettings, null, 2));
+  
+  // Import all pipeline components
+  const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
+  const { ChatExtractor } = await import('./src/core/extractors/ChatExtractor.js');
+  const { FileExtractor } = await import('./src/core/extractors/FileExtractor.js');
+  const { WorldInfoExtractor } = await import('./src/core/extractors/WorldInfoExtractor.js');
+  
+  try {
+    // Initialize pipeline with full functionality
+    if (!pipelineIntegration.isEnabled()) {
+      console.log('Pipeline: Initializing complete pipeline system...');
+      await pipelineIntegration.initialize({
+        vectorizationAdapter: vectorizationAdapter,
+        settings: settings
+      });
+      pipelineIntegration.setEnabled(true);
+    }
+    
+    // Generate task metadata
+    let taskName = await generateTaskName(contentSettings, items);
+    if (isIncremental) {
+      taskName = '[增量] ' + taskName;
+    }
+    
+    // Set vectorization state
+    isVectorizing = true;
+    vectorizationAbortController = new AbortController();
+    
+    // Update UI state
+    $('#vectors_enhanced_vectorize').hide();
+    $('#vectors_enhanced_abort').show();
+    
+    // Create task and collection IDs
+    const taskId = generateTaskId();
+    const collectionId = `${chatId}_${taskId}`;
+    let vectorsInserted = false;
+    
+    try {
+      const progressMessage = isIncremental ? '增量向量化开始 (Full Pipeline)...' : '向量化开始 (Full Pipeline)...';
+      toastr.info(progressMessage, 'Pipeline处理中');
+      
+      // === PHASE 1: USE PRE-EXTRACTED ITEMS (Skip Re-extraction) ===
+      console.log('Pipeline: Phase 1 - Using pre-extracted items (Skip Re-extraction)');
+      console.log(`Pipeline: getVectorizableContent() already provided ${items.length} items`);
+      
+      if (globalProgressManager) {
+        globalProgressManager.show(0, items.length, 'Phase 1: 准备预提取项目 (Pipeline)');
+      } else {
+        updateProgressNew(0, items.length, 'Phase 1: 准备预提取项目 (Pipeline)');
+      }
+      
+      // Group items by type without re-extraction
+      const extractedContent = [];
+      
+      // Group chat items
+      const chatItems = items.filter(item => item.type === 'chat');
+      if (chatItems.length > 0 && contentSettings.chat?.enabled) {
+        console.log(`Pipeline: Prepared ${chatItems.length} chat items for processing`);
+        extractedContent.push({
+          type: 'chat',
+          content: chatItems, // 保持数组格式！不合并！
+          metadata: { 
+            extractorType: 'PreExtracted',
+            itemCount: chatItems.length,
+            source: 'getVectorizableContent'
+          }
+        });
+      }
+      
+      // Group file items
+      const fileItems = items.filter(item => item.type === 'file');
+      if (fileItems.length > 0 && contentSettings.files?.enabled) {
+        console.log(`Pipeline: Prepared ${fileItems.length} file items for processing`);
+        extractedContent.push({
+          type: 'files',
+          content: fileItems, // 保持数组格式！不合并！
+          metadata: { 
+            extractorType: 'PreExtracted',
+            itemCount: fileItems.length,
+            source: 'getVectorizableContent'
+          }
+        });
+      }
+      
+      // Group world info items
+      const worldInfoItems = items.filter(item => item.type === 'world_info');
+      if (worldInfoItems.length > 0 && contentSettings.world_info?.enabled) {
+        console.log(`Pipeline: Prepared ${worldInfoItems.length} world info items for processing`);
+        extractedContent.push({
+          type: 'world_info',
+          content: worldInfoItems, // 保持数组格式！不合并！
+          metadata: { 
+            extractorType: 'PreExtracted',
+            itemCount: worldInfoItems.length,
+            source: 'getVectorizableContent'
+          }
+        });
+      }
+      
+      if (globalProgressManager) {
+        globalProgressManager.update(items.length, items.length, 'Phase 1: 项目准备完成');
+      }
+      
+      console.log(`Pipeline: Prepared ${extractedContent.length} content blocks containing ${items.length} total items`);
+      console.log('Pipeline: Content block summary:', extractedContent.map(block => ({ 
+        type: block.type, 
+        itemCount: Array.isArray(block.content) ? block.content.length : 1,
+        isArray: Array.isArray(block.content),
+        firstItemPreview: Array.isArray(block.content) && block.content.length > 0 
+          ? block.content[0].text?.substring(0, 50) + '...' 
+          : 'N/A'
+      })));
+      
+      // === PHASE 2: TEXT PROCESSING ===
+      console.log('Pipeline: Phase 2 - Text Processing through Pipeline');
+      if (globalProgressManager) {
+        globalProgressManager.show(0, extractedContent.length, 'Phase 2: 文本处理 (Pipeline)');
+      }
+      
+      // Get pipeline components
+      const pipeline = pipelineIntegration.pipeline;
+      const dispatcher = pipelineIntegration.dispatcher;
+      
+      // Create processing context
+      const processingContext = {
+        chatId,
+        taskId,
+        collectionId,
+        isIncremental,
+        settings: contentSettings,
+        abortSignal: vectorizationAbortController.signal,
+        source: 'chat_vectorization',
+        vectorizationSettings: {
+          source: settings.source,
+          chunk_size: settings.chunk_size,
+          overlap_percent: settings.overlap_percent
+        }
+      };
+      
+      const allProcessedChunks = [];
+      
+      // Process each content block through the pipeline
+      for (let i = 0; i < extractedContent.length; i++) {
+        if (vectorizationAbortController.signal.aborted) {
+          throw new Error('向量化被用户中断');
+        }
+        
+        const contentBlock = extractedContent[i];
+        console.log(`Pipeline: Processing content block ${i + 1}/${extractedContent.length} (${contentBlock.type})`);
+        
+        // === PHASE 3: TASK DISPATCH ===
+        console.log('Pipeline: Phase 3 - Task Dispatch');
+        
+        // Prepare input for dispatcher
+        const dispatchInput = {
+          content: contentBlock.content,
+          metadata: {
+            ...contentBlock.metadata,
+            type: contentBlock.type,
+            collectionId: collectionId,
+            source: 'pipeline_extraction'
+          }
+        };
+        
+        console.log(`Pipeline: Dispatch input for ${contentBlock.type}:`, {
+          isArray: Array.isArray(dispatchInput.content),
+          contentLength: Array.isArray(dispatchInput.content) 
+            ? dispatchInput.content.length 
+            : dispatchInput.content?.length,
+          contentPreview: Array.isArray(dispatchInput.content)
+            ? dispatchInput.content.slice(0, 2).map(item => ({ 
+                type: item?.type, 
+                hasText: !!item?.text, 
+                textLength: item?.text?.length,
+                textPreview: item?.text?.substring(0, 50) + '...'
+              }))
+            : dispatchInput.content?.substring(0, 100) + '...',
+          metadata: dispatchInput.metadata
+        });
+        
+        // Dispatch through the text dispatcher
+        const dispatchResult = await dispatcher.dispatch(
+          dispatchInput,
+          'vectorization',
+          contentSettings,
+          processingContext
+        );
+        
+        console.log(`Pipeline: Dispatch result for ${contentBlock.type}:`, {
+          success: dispatchResult.success,
+          vectorized: dispatchResult.vectorized,
+          processingTime: dispatchResult._pipeline?.processingTime
+        });
+        
+        // Convert pipeline result to chunks format
+        if (dispatchResult.success && dispatchResult.vectors) {
+          const chunks = dispatchResult.vectors.map((vector, idx) => ({
+            hash: getHashValue(vector.text || vector.content),
+            text: vector.text || vector.content,
+            index: allProcessedChunks.length + idx,
+            metadata: {
+              ...vector.metadata,
+              ...contentBlock.metadata,
+              type: contentBlock.type,
+              chunk_index: idx,
+              chunk_total: dispatchResult.vectors.length,
+              pipeline_processed: true
+            }
+          }));
+          
+          allProcessedChunks.push(...chunks);
+        }
+        
+        if (globalProgressManager) {
+          globalProgressManager.update(i + 1, extractedContent.length, `Phase 2-3: 处理 ${contentBlock.type} 完成`);
+        }
+      }
+      
+      console.log(`Pipeline: Processing complete. Generated ${allProcessedChunks.length} chunks through full pipeline`);
+      console.log('Pipeline: allProcessedChunks details:', allProcessedChunks.map(chunk => ({
+        hasText: !!chunk.text,
+        textLength: chunk.text?.length,
+        textPreview: chunk.text?.substring(0, 50) + '...',
+        hasMetadata: !!chunk.metadata,
+        metadata: chunk.metadata
+      })));
+      
+      // === PHASE 4: VECTOR STORAGE ===
+      console.log('Pipeline: Phase 4 - Vector Storage');
+      if (globalProgressManager) {
+        globalProgressManager.show(0, allProcessedChunks.length, 'Phase 4: 向量存储 (Pipeline)');
+      }
+      
+      // Store vectors using existing storage adapter
+      const batchSize = 50;
+      for (let i = 0; i < allProcessedChunks.length; i += batchSize) {
+        if (vectorizationAbortController.signal.aborted) {
+          throw new Error('向量化被用户中断');
+        }
+        
+        const batch = allProcessedChunks.slice(i, Math.min(i + batchSize, allProcessedChunks.length));
+        await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
+        vectorsInserted = true;
+        
+        if (globalProgressManager) {
+          globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, 'Phase 4: 向量存储中...');
+        }
+      }
+      
+      // Create corrected settings (reuse existing logic)
+      const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
+      
+      // ... (copy the settings correction logic from original function)
+      if (correctedSettings.chat.enabled) {
+        const chatItems = items.filter(item => item.type === 'chat');
+        if (chatItems.length > 0) {
+          const indices = chatItems.map(item => item.metadata.index);
+          correctedSettings.chat.range.start = Math.min(...indices);
+          correctedSettings.chat.range.end = Math.max(...indices);
+        } else {
+          correctedSettings.chat.enabled = false;
+        }
+      }
+      
+      if (correctedSettings.files.enabled) {
+        const actuallyProcessedFiles = items
+          .filter(item => item.type === 'file')
+          .map(item => item.metadata.url);
+        correctedSettings.files.selected = actuallyProcessedFiles;
+      }
+      
+      if (correctedSettings.world_info.enabled) {
+        const actuallyProcessedEntries = items
+          .filter(item => item.type === 'world_info')
+          .map(item => item.metadata.uid);
+        const newWorldInfoSelected = {};
+        for (const uid of actuallyProcessedEntries) {
+          const originalWorld = Object.keys(contentSettings.world_info.selected).find(world =>
+            contentSettings.world_info.selected[world].includes(uid)
+          );
+          if (originalWorld) {
+            if (!newWorldInfoSelected[originalWorld]) {
+              newWorldInfoSelected[originalWorld] = [];
+            }
+            newWorldInfoSelected[originalWorld].push(uid);
+          }
+        }
+        correctedSettings.world_info.selected = newWorldInfoSelected;
+      }
+      
+      // Create task object
+      const task = {
+        taskId: taskId,
+        name: taskName,
+        timestamp: Date.now(),
+        settings: correctedSettings,
+        enabled: true,
+        itemCount: allProcessedChunks.length,
+        originalItemCount: items.length,
+        isIncremental: isIncremental,
+        version: '2.0' // Mark as pipeline version
+      };
+      
+      // Add text content to task (similar to original implementation)
+      if (settings.lightweight_storage && allProcessedChunks.length > 100) {
+        // Large content mode
+        console.debug(`Vectors: Large content detected (${allProcessedChunks.length} chunks), using lightweight storage`);
+        task.lightweight = true;
+      } else {
+        // Normal mode: save text content to task
+        task.textContent = allProcessedChunks.map(chunk => ({
+          hash: chunk.hash,
+          text: chunk.text,
+          metadata: chunk.metadata
+        }));
+      }
+      
+      // Add task to list
+      addVectorTask(chatId, task);
+      
+      // Update cache
+      cachedVectors.set(collectionId, {
+        timestamp: Date.now(),
+        items: allProcessedChunks, // Use allProcessedChunks from pipeline processing
+        settings: JSON.parse(JSON.stringify(settings)),
+      });
+      
+      // Complete progress
+      if (globalProgressManager) {
+        globalProgressManager.complete('向量化完成 (Pipeline)');
+      } else {
+        hideProgressNew();
+      }
+      
+      const successMessage = isIncremental ?
+        `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allProcessedChunks.length} 个块 (Pipeline)` :
+        `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allProcessedChunks.length} 个块 (Pipeline)`;
+      toastr.success(successMessage, '向量化完成');
+      
+      // Refresh task list UI
+      await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
+      
+      return {
+        success: true,
+        taskId,
+        collectionId,
+        itemCount: allProcessedChunks.length,
+        originalItemCount: items.length,
+        pipelineProcessed: true
+      };
+      
+    } catch (error) {
+      console.error('Pipeline vectorization failed:', error);
+      
+      // Use ProgressManager
+      if (globalProgressManager) {
+        globalProgressManager.error('向量化失败 (Pipeline)');
+      } else {
+        hideProgressNew();
+      }
+      
+      // Handle abort
+      if (error.message === '向量化被用户中断' || vectorizationAbortController.signal.aborted) {
+        if (vectorsInserted) {
+          await storageAdapter.purgeVectorIndex(collectionId);
+        }
+        toastr.info('向量化已中断，已清理部分数据', '中断');
+      } else {
+        if (vectorsInserted) {
+          await storageAdapter.purgeVectorIndex(collectionId);
+        }
+        toastr.error('向量化内容失败', '错误');
+      }
+      
+      throw error;
+      
+    } finally {
+      // Reset state
+      isVectorizing = false;
+      vectorizationAbortController = null;
+      $('#vectors_enhanced_vectorize').show();
+      $('#vectors_enhanced_abort').hide();
+    }
+    
+  } catch (error) {
+    console.error('Pipeline vectorization main flow error:', error);
+    toastr.error('向量化处理中发生严重错误，请检查控制台。');
+    
+    // Ensure UI state reset
+    isVectorizing = false;
+    vectorizationAbortController = null;
+    $('#vectors_enhanced_vectorize').show();
+    $('#vectors_enhanced_abort').hide();
+    
+    if (globalProgressManager) {
+      globalProgressManager.error('严重错误');
+    } else {
+      hideProgressNew();
+    }
+    
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
@@ -1585,7 +2006,16 @@ async function vectorizeContent() {
     }
 
     // 6. Perform vectorization with the final, clean set of items
-    await performVectorization(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
+    // Check if pipeline mode is enabled
+    const usePipeline = settings.use_pipeline || false;
+    
+    if (usePipeline) {
+        console.log('Vectors: Using pipeline implementation for vectorization');
+        await performVectorizationPipeline(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
+    } else {
+        console.log('Vectors: Using original implementation for vectorization');
+        await performVectorization(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
+    }
 }
 
 /**
@@ -2518,6 +2948,53 @@ jQuery(async () => {
     console.log('Vectors Enhanced Task System Status:', status);
     return status;
   };
+  
+  // 添加管道A/B测试函数（调试用）
+  window.vectorsPipelineABTest = async () => {
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+      console.error('No chat selected for A/B test');
+      return;
+    }
+    
+    console.log('Starting Pipeline A/B Test...');
+    
+    // Get test content
+    const items = await getVectorizableContent();
+    const validItems = items.filter(item => item.text && item.text.trim() !== '').slice(0, 5); // Use first 5 items for test
+    
+    if (validItems.length === 0) {
+      console.error('No valid content for A/B test');
+      return;
+    }
+    
+    // Import pipeline integration
+    const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
+    
+    // Initialize pipeline if needed
+    if (!pipelineIntegration.initialized) {
+      await pipelineIntegration.initialize({
+        vectorizationAdapter: vectorizationAdapter,
+        settings: settings
+      });
+    }
+    
+    // Set original function
+    pipelineIntegration.setOriginalFunction(performVectorization);
+    
+    // Create A/B test wrapper
+    const abTestWrapper = pipelineIntegration.createABTestWrapper();
+    
+    // Run test
+    const testSettings = JSON.parse(JSON.stringify(settings.selected_content));
+    
+    try {
+      const result = await abTestWrapper(testSettings, chatId, false, validItems);
+      console.log('A/B Test completed:', result);
+    } catch (error) {
+      console.error('A/B Test failed:', error);
+    }
+  };
 
   // 初始化所有设置UI
   console.log('Vectors Enhanced: Initializing settings UI...');
@@ -2679,19 +3156,7 @@ async function initializeDebugModule() {
  * Scans current selected content for tags and displays suggestions
  */
 async function scanAndSuggestTags() {
-    const scanBtn = $('#vectors_enhanced_tag_scanner');
-    const originalText = scanBtn.find('span').text();
-
-    const restoreButtonState = () => {
-        scanBtn.prop('disabled', false);
-        scanBtn.find('span').text(originalText);
-        scanBtn.find('i').removeClass('fa-spinner fa-spin').addClass('fa-search');
-    };
-
     try {
-        scanBtn.prop('disabled', true);
-        scanBtn.find('span').text('扫描中...');
-        scanBtn.find('i').removeClass('fa-search').addClass('fa-spinner fa-spin');
 
         // Use the new function to get raw content
         const content = await getRawContentForScanning();
@@ -2729,8 +3194,6 @@ async function scanAndSuggestTags() {
     } catch (error) {
         console.error('标签扫描失败:', error);
         toastr.error('标签扫描失败: ' + error.message);
-    } finally {
-        restoreButtonState();
     }
 }
 

@@ -1,21 +1,23 @@
 <!-- Vectors Enhanced - Modular Settings Template -->
-<div id="vectors_enhanced_settings">
-  <!-- Custom Styles -->
-  <link rel="stylesheet" href="src/ui/styles/components.css">
-  
-  <div class="vectors-enhanced-section">
+<div id="vectors_enhanced_container" class="inline-drawer">
+  <div class="inline-drawer-toggle inline-drawer-header">
+    <b>聊天记录超级管理器</b>
+    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+  </div>
+  <div class="inline-drawer-content">
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="src/ui/styles/components.css">
+    
     <!-- Master Switch -->
-    <div class="vectors-enhanced-header">
-      <label class="checkbox_label" for="vectors_master_enabled">
+    <div class="vectors-enhanced-section" style="padding-bottom: 0.5rem; border-bottom: 2px solid var(--SmartThemeQuoteColor)">
+      <label class="checkbox_label" for="vectors_enhanced_master_enabled" title="启用/禁用整个插件的所有功能。禁用时，所有向量化和查询功能都将停止工作。">
         <input id="vectors_enhanced_master_enabled" type="checkbox" />
-        <span class="vectors-enhanced-title">启用聊天记录超级管理器</span>
+        <span style="font-weight: bold; color: var(--SmartThemeQuoteColor)">启用聊天记录超级管理器</span>
       </label>
-      <small class="vectors-enhanced-subtitle">
-        管理聊天记录、文件、世界信息的向量化存储和检索
+      <small style="display: block; margin-top: 0.25rem; color: var(--SmartThemeEmColor)">
+        关闭此开关将禁用插件的所有功能，包括向量化、查询和任务管理
       </small>
     </div>
-
-    <hr class="m-t-1 m-b-1" />
 
     <!-- Vectorization Settings -->
     <div id="vectors_enhanced_vectorization_settings" class="vectors-enhanced-section">
@@ -72,113 +74,94 @@
         </div>
 
         <!-- General Parameters -->
-        <div class="flex-container flexFlowColumn m-t-1">
-          <div class="flex-container">
-            <div class="flex1">
-              <label for="vectors_enhanced_chunk_size">分块大小</label>
-              <input id="vectors_enhanced_chunk_size" type="number" class="text_pole" min="100" max="2000" value="500" />
-            </div>
-            <div class="flex1">
-              <label for="vectors_enhanced_overlap_percent">重叠百分比</label>
-              <input id="vectors_enhanced_overlap_percent" type="number" class="text_pole" min="0" max="50" value="10" />
-            </div>
+        <div class="flex-container m-t-1">
+          <div class="flex1" title="向量化的文本块大小">
+            <label for="vectors_enhanced_chunk_size">
+              <small>块大小</small>
+            </label>
+            <input id="vectors_enhanced_chunk_size" type="number" class="text_pole" min="100" max="10000" />
+          </div>
+          <div class="flex1" title="块之间的重叠百分比">
+            <label for="vectors_enhanced_overlap_percent">
+              <small>重叠 %</small>
+            </label>
+            <input id="vectors_enhanced_overlap_percent" type="number" class="text_pole" min="0" max="50" />
+          </div>
+          <div class="flex1" title="检索的最小相似度分数">
+            <label for="vectors_enhanced_score_threshold">
+              <small>分数阈值</small>
+            </label>
+            <input id="vectors_enhanced_score_threshold" type="number" class="text_pole" min="0" max="1" step="0.05" />
           </div>
         </div>
 
         <div class="flex-container flexFlowColumn m-t-0-5">
-          <div class="flex-container">
-            <div class="flex1">
-              <label for="vectors_enhanced_score_threshold">相似度阈值</label>
-              <input id="vectors_enhanced_score_threshold" type="number" class="text_pole" min="0" max="1" step="0.01" value="0.5" />
-            </div>
-            <div class="flex1">
-              <label for="vectors_enhanced_max_results">最大结果数</label>
-              <input id="vectors_enhanced_max_results" type="number" class="text_pole" min="1" max="50" value="10" />
-            </div>
-          </div>
+          <label for="vectors_enhanced_force_chunk_delimiter" title="块边界的自定义分隔符">
+            <small>自定义块分隔符</small>
+          </label>
+          <input id="vectors_enhanced_force_chunk_delimiter" class="text_pole" type="text" placeholder="（可选）" />
         </div>
 
-        <label class="checkbox_label" for="vectors_enhanced_force_chunk_delimiter">
-          <input id="vectors_enhanced_force_chunk_delimiter" type="checkbox" />
-          <span>强制块分隔符</span>
-        </label>
-
-        <label class="checkbox_label" for="vectors_enhanced_enabled">
+        <!-- Enable Vector Query -->
+        <label class="checkbox_label" for="vectors_enhanced_enabled" title="启用/禁用向量查询功能（已向量化的内容不会受影响）">
           <input id="vectors_enhanced_enabled" type="checkbox" />
           <span>启用向量查询</span>
         </label>
 
-        <!-- Notification Settings -->
-        <label class="checkbox_label" for="vectors_enhanced_show_query_notification">
+        <!-- Show Query Notification -->
+        <label class="checkbox_label" for="vectors_enhanced_show_query_notification" title="每次向量查询后显示结果统计">
           <input id="vectors_enhanced_show_query_notification" type="checkbox" />
-          <span>显示查询通知</span>
+          <span>显示查询结果通知</span>
         </label>
 
-        <div id="vectors_enhanced_notification_details" class="vectors-notification-details">
-          <label class="checkbox_label" for="vectors_enhanced_detailed_notification">
+        <!-- Detailed Notification Details -->
+        <div id="vectors_enhanced_notification_details" style="margin-left: 1.5rem; display: none;">
+          <label class="checkbox_label" for="vectors_enhanced_detailed_notification" title="显示各来源的详细分布（聊天记录、文件、世界信息）">
             <input id="vectors_enhanced_detailed_notification" type="checkbox" />
-            <span>详细通知信息</span>
+            <span>详细模式（显示来源分布）</span>
           </label>
         </div>
       </details>
     </div>
 
-    <hr class="m-t-1 m-b-1" />
-
-    <!-- Query Settings -->
-    <div id="vectors_enhanced_query_settings" class="vectors-enhanced-section">
+    <!-- Rerank Settings -->
+    <div id="vectors_enhanced_rerank_settings" class="vectors-enhanced-section">
       <details>
-        <summary><strong>查询设置</strong></summary>
-
-        <div class="flex-container flexFlowColumn">
-          <label for="vectors_enhanced_query_messages">查询消息数</label>
-          <input id="vectors_enhanced_query_messages" type="number" class="text_pole" min="1" max="10" value="1" />
+        <summary><strong>Rerank 设置</strong></summary>
+        
+        <label class="checkbox_label" for="vectors_enhanced_rerank_enabled" title="启用/禁用Rerank模型对搜索结果进行重排序">
+          <input id="vectors_enhanced_rerank_enabled" type="checkbox" />
+          <span>启用 Rerank</span>
+        </label>
+        
+        <label class="checkbox_label" for="vectors_enhanced_rerank_success_notify" title="在Rerank成功时显示通知">
+          <input id="vectors_enhanced_rerank_success_notify" type="checkbox" />
+          <span>显示 Rerank 成功通知</span>
+        </label>
+        
+        <div class="flex-container flexFlowColumn m-t-0-5">
+          <label for="vectors_enhanced_rerank_url">Rerank API URL</label>
+          <input id="vectors_enhanced_rerank_url" class="text_pole" type="text" placeholder="例如：https://api.siliconflow.cn/v1/rerank">
+          
+          <label for="vectors_enhanced_rerank_apiKey">Rerank API Key</label>
+          <input id="vectors_enhanced_rerank_apiKey" class="text_pole" type="password" placeholder="输入您的API Key">
+          
+          <label for="vectors_enhanced_rerank_model">Rerank 模型</label>
+          <input id="vectors_enhanced_rerank_model" class="text_pole" type="text" placeholder="例如：Pro/BAAI/bge-reranker-v2-m3">
+          
+          <div class="flex-container">
+            <div class="flex1" title="在Rerank前，从向量搜索中获取的候选项数量">
+              <label for="vectors_enhanced_rerank_top_n"><small>Rerank Top N</small></label>
+              <input id="vectors_enhanced_rerank_top_n" type="number" class="text_pole" min="1" max="100">
+            </div>
+            <div class="flex1" title="混合分数中Rerank分数的权重 (0-1)">
+              <label for="vectors_enhanced_rerank_hybrid_alpha"><small>混合权重</small></label>
+              <input id="vectors_enhanced_rerank_hybrid_alpha" type="number" class="text_pole" min="0" max="1" step="0.1">
+            </div>
+          </div>
         </div>
-
-        <!-- Rerank Settings -->
-        <details class="m-t-1">
-          <summary>
-            <label class="checkbox_label" for="vectors_enhanced_rerank_enabled">
-              <input id="vectors_enhanced_rerank_enabled" type="checkbox" />
-              <span>启用 Rerank</span>
-            </label>
-          </summary>
-
-          <div class="flex-container flexFlowColumn m-t-0-5">
-            <label for="vectors_enhanced_rerank_url">Rerank API 地址</label>
-            <input id="vectors_enhanced_rerank_url" class="text_pole" type="text" placeholder="http://127.0.0.1:8080/rerank" />
-          </div>
-
-          <div class="flex-container flexFlowColumn m-t-0-5">
-            <label for="vectors_enhanced_rerank_apiKey">API 密钥</label>
-            <input id="vectors_enhanced_rerank_apiKey" class="text_pole" type="password" placeholder="your-api-key" />
-          </div>
-
-          <div class="flex-container flexFlowColumn m-t-0-5">
-            <label for="vectors_enhanced_rerank_model">模型名称</label>
-            <input id="vectors_enhanced_rerank_model" class="text_pole" type="text" placeholder="BAAI/bge-reranker-v2-m3" />
-          </div>
-
-          <div class="flex-container m-t-0-5">
-            <div class="flex1">
-              <label for="vectors_enhanced_rerank_top_n">Top N</label>
-              <input id="vectors_enhanced_rerank_top_n" type="number" class="text_pole" min="1" max="100" value="10" />
-            </div>
-            <div class="flex1">
-              <label for="vectors_enhanced_rerank_hybrid_alpha">混合权重</label>
-              <input id="vectors_enhanced_rerank_hybrid_alpha" type="number" class="text_pole" min="0" max="1" step="0.1" value="0.7" />
-            </div>
-          </div>
-
-          <label class="checkbox_label" for="vectors_enhanced_rerank_success_notify">
-            <input id="vectors_enhanced_rerank_success_notify" type="checkbox" />
-            <span>Rerank 成功通知</span>
-          </label>
-        </details>
       </details>
     </div>
-
-    <hr class="m-t-1 m-b-1" />
 
     <!-- Injection Settings -->
     <div id="vectors_enhanced_injection_settings" class="vectors-enhanced-section">
@@ -252,8 +235,6 @@
         </label>
       </details>
     </div>
-
-    <hr class="m-t-1 m-b-1" />
 
     <!-- Content Selection -->
     <div id="vectors_enhanced_content_settings" class="vectors-enhanced-section">
@@ -390,8 +371,6 @@
         </div>
       </div>
 
-      <hr class="m-t-0-5 m-b-0-5" />
-
       <!-- Files -->
       <div class="content-type-section">
         <label class="checkbox_label" for="vectors_enhanced_files_enabled">
@@ -409,8 +388,6 @@
           </button>
         </div>
       </div>
-
-      <hr class="m-t-0-5 m-b-0-5" />
 
       <!-- World Info -->
       <div class="content-type-section">
@@ -430,8 +407,6 @@
         </div>
       </div>
 
-      <hr class="m-t-1 m-b-1" />
-
       <!-- Task List -->
       <div id="vectors_enhanced_tasks_settings" class="vectors-enhanced-section">
         <h3>向量化任务</h3>
@@ -440,11 +415,9 @@
         </div>
       </div>
 
-      <hr class="m-t-1 m-b-1" />
-
       <!-- Action Buttons -->
       <div id="vectors_enhanced_actions_settings" class="vectors-enhanced-section">
-        <div class="vectors-enhanced-actions">
+        <div class="vectors-enhanced-actions flex-container">
           <button id="vectors_enhanced_preview" class="menu_button menu_button_icon">
             <i class="fa-solid fa-eye"></i>
             <span>预览</span>
@@ -476,6 +449,23 @@
           <!-- Status messages will be displayed here -->
         </div>
       </div>
+    </div>
+
+    <!-- Experimental Settings -->
+    <div id="vectors_enhanced_experimental_settings" class="vectors-enhanced-section m-t-1">
+      <details>
+        <summary><strong>实验性功能</strong></summary>
+        
+        <div class="vectors-enhanced-content m-t-0-5">
+          <label class="checkbox_label" for="vectors_enhanced_use_pipeline">
+            <input id="vectors_enhanced_use_pipeline" type="checkbox" />
+            <span>启用文本处理管道 (实验性)</span>
+          </label>
+          <small class="vectors-enhanced-info">
+            使用新的文本处理管道架构进行向量化。此功能仍在测试中，可能会影响性能。
+          </small>
+        </div>
+      </details>
     </div>
   </div>
 </div>

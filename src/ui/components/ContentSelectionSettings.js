@@ -160,23 +160,12 @@ export class ContentSelectionSettings {
      * Bind tag extraction and content filtering listeners
      */
     bindTagAndFilterListeners() {
-        // Tag examples button
-        $('#vectors_enhanced_tag_examples').on('click', () => {
-            if (this.showTagExamples) {
-                this.showTagExamples();
-            }
-        });
+        // Note: tag_examples and tag_scanner buttons are handled in settingsManager.js
+        // to avoid duplicate event bindings
 
         // Add rule button
         $('#vectors_enhanced_add_rule').on('click', () => {
             this.handleAddTagRule();
-        });
-
-        // Tag scanner button
-        $('#vectors_enhanced_tag_scanner').on('click', () => {
-            if (this.scanAndSuggestTags) {
-                this.scanAndSuggestTags();
-            }
         });
 
         // Exclude CoT button
@@ -525,9 +514,8 @@ export class ContentSelectionSettings {
         $('#vectors_enhanced_show_hidden').off('click');
         $('#vectors_enhanced_files_refresh').off('click');
         $('#vectors_enhanced_wi_refresh').off('click');
-        $('#vectors_enhanced_tag_examples').off('click');
+        // Note: tag_examples and tag_scanner are handled in settingsManager.js
         $('#vectors_enhanced_add_rule').off('click');
-        $('#vectors_enhanced_tag_scanner').off('click');
         $('#vectors_enhanced_exclude_cot').off('click');
         $('#vectors_enhanced_clear_suggestions').off('click');
 

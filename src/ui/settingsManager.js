@@ -66,12 +66,18 @@ export class SettingsManager {
 
     // 初始化其他设置
     this.initializeMiscellaneousSettings();
+    
+    // 初始化实验性设置
+    this.initializeExperimentalSettings();
 
     // 初始化UI状态
     this.initializeUIState();
 
     // 绑定其他事件
     this.bindOtherEvents();
+    
+    // 清除标签建议（防止空的"发现的标签"框显示）
+    clearTagSuggestions();
   }
 
   /**
@@ -302,6 +308,9 @@ export class SettingsManager {
         this.settings.detailed_notification = $('#vectors_enhanced_detailed_notification').prop('checked');
         this.updateAndSave();
       });
+      
+    // 初始化详细选项的显示状态
+    $('#vectors_enhanced_notification_details').toggle(this.settings.show_query_notification);
   }
 
   /**
@@ -536,6 +545,15 @@ export class SettingsManager {
     
     // 初始化通知详细选项的显示状态
     $('#vectors_enhanced_notification_details').toggle(this.settings.show_query_notification);
+    
+    // 隐藏进度条和重置按钮状态
+    $('#vectors_enhanced_progress').hide();
+    $('#vectors_enhanced_vectorize').show();
+    $('#vectors_enhanced_abort').hide();
+    
+    // 重置进度条样式
+    $('#vectors_enhanced_progress .progress-bar-inner').css('width', '0%');
+    $('#vectors_enhanced_progress .progress-text').text('准备中...');
   }
 
   /**
@@ -652,5 +670,33 @@ export class SettingsManager {
   async initializeTaskList() {
     const { getChatTasks, renameVectorTask, removeVectorTask } = this.dependencies;
     await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
+  }
+  
+  /**
+   * 初始化实验性设置
+   */
+  initializeExperimentalSettings() {
+    // 文本处理管道开关
+    $('#vectors_enhanced_use_pipeline')
+      .prop('checked', this.settings.use_pipeline || false)
+      .on('change', () => {
+        this.settings.use_pipeline = $('#vectors_enhanced_use_pipeline').prop('checked');
+        this.updateAndSave();
+        
+        // Log the state change
+        console.log(`Vectors Enhanced: Pipeline mode ${this.settings.use_pipeline ? 'enabled' : 'disabled'}`);
+        
+        // Show notification
+        const message = this.settings.use_pipeline 
+          ? '已启用文本处理管道 (实验性功能)' 
+          : '已禁用文本处理管道，使用传统实现';
+        
+        // toastr is available globally in SillyTavern
+        if (typeof toastr !== 'undefined') {
+          toastr.info(message);
+        } else {
+          console.log(message);
+        }
+      });
   }
 }

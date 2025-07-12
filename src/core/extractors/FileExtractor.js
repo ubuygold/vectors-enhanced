@@ -8,12 +8,28 @@ import { getFileAttachment } from '../../../../../../chats.js';
 export class FileExtractor {
     /**
      * Extracts content from a list of specified file paths.
-     * @param {object} source - The source configuration object.
-     * @param {string[]} source.filePaths - An array of file paths to extract content from.
-     * @returns {Promise<Content[]>} A promise that resolves to an array of Content objects.
+     * @param {object|Array} source - The source configuration object or array of file items.
+     * @param {string[]} [source.filePaths] - An array of file paths to extract content from.
+     * @param {object} [config] - Additional configuration.
+     * @returns {Promise<object>} A promise that resolves to extraction result with content and metadata.
      */
-    async extract(source) {
-        const contentPromises = source.filePaths.map(async (filePath) => {
+    async extract(source, config = {}) {
+        // Handle different input formats
+        let filePaths = [];
+        
+        if (Array.isArray(source)) {
+            // Pipeline mode: array of file items
+            filePaths = source.map(item => item.metadata?.url || item.metadata?.path || item.text);
+        } else if (source && source.filePaths) {
+            // Original mode: source object with filePaths
+            filePaths = source.filePaths;
+        } else {
+            throw new Error('Invalid source format: expected array of items or object with filePaths');
+        }
+        
+        console.log(`FileExtractor: Processing ${filePaths.length} files`);
+        
+        const contentPromises = filePaths.map(async (filePath) => {
             try {
                 const text = await getFileAttachment(filePath);
                 if (text) {
@@ -34,6 +50,25 @@ export class FileExtractor {
         });
 
         const contents = await Promise.all(contentPromises);
-        return contents.filter(content => content !== null);
+        const validContents = contents.filter(content => content !== null);
+        
+        // Return in pipeline format
+        const joinedContent = validContents.map(content => content.text).join('\n\n');
+        
+        console.log(`FileExtractor: Extracted ${validContents.length} files, content length: ${joinedContent.length}`);
+        console.log('FileExtractor: Content preview:', joinedContent.substring(0, 200) + '...');
+        
+        return {
+            content: joinedContent,
+            metadata: {
+                extractorType: 'FileExtractor',
+                fileCount: validContents.length,
+                files: validContents.map(content => ({
+                    id: content.id,
+                    fileName: content.metadata.fileName,
+                    path: content.metadata.path
+                }))
+            }
+        };
     }
 }

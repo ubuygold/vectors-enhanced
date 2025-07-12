@@ -134,6 +134,7 @@ export class StorageAdapter {
 
     /**
      * 获取特定哈希值的文本内容
+     * 注意：SillyTavern没有/retrieve端点，但文本存储在query结果的metadata中
      * @param {string} collectionId 集合ID
      * @param {number[]} hashes 哈希值数组
      * @returns {Promise<Array>} {hash, text, metadata} 对象数组
@@ -142,13 +143,18 @@ export class StorageAdapter {
         try {
             logger.log(`Retrieving texts for ${hashes.length} hashes from collection: ${collectionId}`);
             
-            const response = await fetch(`${this.baseUrl}/retrieve`, {
+            // SillyTavern没有专门的retrieve端点，但我们可以通过query获取metadata中的文本
+            // 使用一个无关的搜索词来获取所有项目的metadata
+            const response = await fetch(`${this.baseUrl}/query`, {
                 method: 'POST',
                 headers: this.getRequestHeaders(),
                 body: JSON.stringify({
                     ...this.getVectorsRequestBody(),
                     collectionId: collectionId,
-                    hashes: hashes,
+                    searchText: "dummy_search_for_metadata_retrieval",
+                    topK: 9999, // 获取所有项目
+                    threshold: 0.0, // 接受所有相似度
+                    includeText: true,
                 }),
             });
 
@@ -156,8 +162,24 @@ export class StorageAdapter {
                 throw new Error(`Failed to retrieve texts for collection ${collectionId}`);
             }
 
-            const texts = await response.json();
-            logger.log(`Retrieved ${texts.length} texts`);
+            const result = await response.json();
+            logger.log(`Retrieved metadata for ${result.metadata?.length || 0} items`);
+            
+            // 过滤并格式化结果，只返回请求的哈希值
+            const texts = [];
+            if (result.metadata && Array.isArray(result.metadata)) {
+                for (const metadata of result.metadata) {
+                    if (hashes.includes(metadata.hash)) {
+                        texts.push({
+                            hash: metadata.hash,
+                            text: metadata.text || '',
+                            metadata: metadata
+                        });
+                    }
+                }
+            }
+            
+            logger.log(`Filtered and retrieved ${texts.length} texts matching requested hashes`);
             return texts;
         } catch (error) {
             logger.error(`Error retrieving texts: ${error.message}`);

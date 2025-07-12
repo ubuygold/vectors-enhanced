@@ -8,21 +8,36 @@ import { extension_settings } from '../../../../../../extensions.js';
 export class WorldInfoExtractor {
     /**
      * Extracts content from world info entries based on current settings.
-     * @param {object} source - The source configuration object.
+     * @param {object|Array} source - The source configuration object or array of world info items.
      * @param {Object<string, string[]>} [source.selectedWorlds] - The selected world info entries grouped by world name.
-     * @returns {Promise<object[]>} A promise that resolves to an array of VectorItem objects.
+     * @param {object} [config] - Additional configuration.
+     * @returns {Promise<object>} A promise that resolves to extraction result with content and metadata.
      */
-    async extract(source) {
+    async extract(source, config = {}) {
         const settings = extension_settings.vectors_enhanced;
         const items = [];
 
-        // Check if world info is enabled
-        if (!settings.selected_content.world_info.enabled) {
-            return items;
+        // Handle different input formats
+        let selectedWorlds = {};
+        
+        if (Array.isArray(source)) {
+            // Pipeline mode: array of world info items
+            console.log(`WorldInfoExtractor: Processing ${source.length} world info items from pipeline`);
+            // Group items by world
+            for (const item of source) {
+                const worldName = item.metadata?.world || 'default';
+                if (!selectedWorlds[worldName]) {
+                    selectedWorlds[worldName] = [];
+                }
+                selectedWorlds[worldName].push(item.metadata?.uid || item.id);
+            }
+        } else {
+            // Original mode: source object with selectedWorlds
+            if (!settings.selected_content.world_info.enabled) {
+                return { content: '', metadata: { extractorType: 'WorldInfoExtractor', entryCount: 0 } };
+            }
+            selectedWorlds = source?.selectedWorlds || settings.selected_content.world_info.selected || {};
         }
-
-        // Get selected worlds from source or settings
-        const selectedWorlds = source?.selectedWorlds || settings.selected_content.world_info.selected || {};
         
         // Get all world info entries
         const entries = await getSortedEntries();
@@ -71,6 +86,25 @@ export class WorldInfoExtractor {
 
         console.debug(`Vectors: Actually processed ${processedCount} world info entries out of ${totalSelected} selected`);
         
-        return items;
+        // Return in pipeline format
+        const joinedContent = items.map(item => item.text).join('\n\n');
+        
+        console.log(`WorldInfoExtractor: Extracted ${items.length} items, content length: ${joinedContent.length}`);
+        console.log('WorldInfoExtractor: Content preview:', joinedContent.substring(0, 200) + '...');
+        
+        return {
+            content: joinedContent,
+            metadata: {
+                extractorType: 'WorldInfoExtractor',
+                entryCount: items.length,
+                processedCount: processedCount,
+                selectedWorlds: selectedWorlds,
+                entries: items.map(item => ({
+                    uid: item.metadata?.uid,
+                    world: item.metadata?.world,
+                    comment: item.metadata?.comment
+                }))
+            }
+        };
     }
 }

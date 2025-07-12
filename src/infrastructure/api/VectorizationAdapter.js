@@ -22,6 +22,9 @@ export class VectorizationAdapter {
         this.textgenerationwebui_settings = dependencies.textgenerationwebui_settings;
         this.textgen_types = dependencies.textgen_types;
         
+        // Plugin manager support (optional)
+        this.pluginManager = dependencies.pluginManager || null;
+        
         logger.log('VectorizationAdapter initialized');
     }
 
@@ -35,203 +38,135 @@ export class VectorizationAdapter {
         const source = this.settings.source;
         logger.log(`Vectorizing ${items.length} items using source: ${source}`);
 
-        // 验证源配置
-        this.throwIfSourceInvalid();
-
-        switch (source) {
-            case 'transformers':
-                return await this.vectorizeWithTransformers(items, signal);
-            case 'ollama':
-                return await this.vectorizeWithOllama(items, signal);
-            case 'vllm':
-                return await this.vectorizeWithVLLM(items, signal);
-            case 'webllm':
-                return await this.vectorizeWithWebLLM(items, signal);
-            case 'openai':
-                return await this.vectorizeWithOpenAI(items, signal);
-            case 'cohere':
-                return await this.vectorizeWithCohere(items, signal);
-            default:
-                throw new Error(`Unsupported vectorization source: ${source}`);
+        // Check if we should use plugin manager
+        if (this.pluginManager && this.settings.use_plugin_system) {
+            return await this.vectorizeWithPlugin(items, signal);
         }
+
+        // Use SillyTavern's existing vectorization system via /api/vector/insert
+        // This delegates to the server which handles all vectorization internally
+        return await this.vectorizeViaSillyTavernAPI(items, signal);
     }
 
     /**
-     * 使用 Transformers 进行向量化
+     * 使用插件系统进行向量化
      * @private
      */
-    async vectorizeWithTransformers(items, signal) {
-        logger.log('Using Transformers for vectorization');
+    async vectorizeWithPlugin(items, signal) {
+        logger.log('Using plugin system for vectorization');
         
-        const requestBody = this.getVectorsRequestBody({
-            items: items
-        });
-
-        const response = await fetch('/api/vector/embed', {
-            method: 'POST',
-            headers: this.getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-            signal: signal
-        });
-
-        if (!response.ok) {
-            throw new Error(`Transformers vectorization failed: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        logger.log(`Transformers vectorization completed for ${items.length} items`);
-        return result;
-    }
-
-    /**
-     * 使用 Ollama 进行向量化
-     * @private
-     */
-    async vectorizeWithOllama(items, signal) {
-        logger.log('Using Ollama for vectorization');
+        // Convert items to texts array for plugin API
+        const texts = items.map(item => item.text);
         
-        const requestBody = this.getVectorsRequestBody({
-            items: items
-        });
-
-        // Ollama 需要特殊的 API 端点
-        const response = await fetch('/api/vector/embed', {
-            method: 'POST',
-            headers: this.getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-            signal: signal
-        });
-
-        if (!response.ok) {
-            throw new Error(`Ollama vectorization failed: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        logger.log(`Ollama vectorization completed for ${items.length} items`);
-        return result;
-    }
-
-    /**
-     * 使用 vLLM 进行向量化
-     * @private
-     */
-    async vectorizeWithVLLM(items, signal) {
-        logger.log('Using vLLM for vectorization');
-        
-        const requestBody = this.getVectorsRequestBody({
-            items: items
-        });
-
-        const response = await fetch('/api/vector/embed', {
-            method: 'POST',
-            headers: this.getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-            signal: signal
-        });
-
-        if (!response.ok) {
-            throw new Error(`vLLM vectorization failed: ${response.statusText}`);
-        }
-
-        const result = await response.json();
-        logger.log(`vLLM vectorization completed for ${items.length} items`);
-        return result;
-    }
-
-    /**
-     * 使用 WebLLM 进行向量化
-     * @private
-     */
-    async vectorizeWithWebLLM(items, signal) {
-        logger.log('Using WebLLM for vectorization');
-        
-        // WebLLM 在客户端运行，需要特殊处理
-        if (!window.webllm || !window.webllm.embedder) {
-            throw new Error('WebLLM not initialized. Please ensure WebLLM is loaded.');
-        }
-
         try {
-            const embeddings = [];
-            
-            // WebLLM 通常需要逐个处理文本
-            for (const item of items) {
-                if (signal?.aborted) {
-                    throw new Error('Vectorization aborted');
+            // Use plugin manager to vectorize
+            const embeddings = await this.pluginManager.vectorize(texts, {
+                signal: signal,
+                onProgress: (progress) => {
+                    logger.log(`Plugin vectorization progress: ${progress.percentage}%`);
                 }
-                
-                const embedding = await window.webllm.embedder.embed(item.text);
-                embeddings.push({
-                    index: item.index,
-                    embedding: embedding
-                });
-            }
-
-            logger.log(`WebLLM vectorization completed for ${items.length} items`);
-            return embeddings;
+            });
+            
+            // Convert back to expected format
+            const results = items.map((item, index) => ({
+                index: item.index,
+                embedding: embeddings[index]
+            }));
+            
+            logger.log(`Plugin vectorization completed for ${items.length} items`);
+            return results;
+            
         } catch (error) {
-            logger.error('WebLLM vectorization error:', error);
+            logger.error('Plugin vectorization failed:', error);
             throw error;
         }
     }
 
     /**
-     * 使用 OpenAI 进行向量化
+     * 使用 SillyTavern 原生架构进行向量化
+     * 重要：VectorizationProcessor阶段不实际向量化，只准备数据
+     * 真正的向量化由Phase 4的storageAdapter.insertVectorItems()处理
      * @private
      */
-    async vectorizeWithOpenAI(items, signal) {
-        logger.log('Using OpenAI for vectorization');
+    async vectorizeViaSillyTavernAPI(items, signal) {
+        logger.log('Using SillyTavern native architecture for vectorization');
+        logger.log('Note: This is preparation phase - actual vectorization happens in Phase 4');
         
-        // OpenAI 向量化通常通过后端代理
-        const requestBody = {
-            source: 'openai',
-            model: this.settings.openai_model || 'text-embedding-ada-002',
-            items: items
-        };
-
-        const response = await fetch('/api/vector/embed', {
-            method: 'POST',
-            headers: this.getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-            signal: signal
-        });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI vectorization failed: ${response.statusText}`);
+        // 验证源配置
+        this.throwIfSourceInvalid();
+        
+        logger.log(`Preparing ${items.length} items for vectorization`);
+        
+        try {
+            // 验证向量化源是否可用
+            const source = this.settings.source;
+            if (!source) {
+                throw new Error('No vectorization source configured');
+            }
+            
+            // 验证必要的配置
+            if (source === 'vllm') {
+                if (!this.settings.vllm_url && !this.textgenerationwebui_settings?.server_urls?.[this.textgen_types?.VLLM]) {
+                    throw new Error('vLLM URL not configured');
+                }
+                if (!this.settings.vllm_model) {
+                    throw new Error('vLLM model not specified');
+                }
+            }
+            
+            logger.log('Vectorization configuration validated successfully');
+            logger.log('Configuration details:', {
+                source: source,
+                itemCount: items.length
+            });
+            
+            // 准备向量化项目 - 格式化为storageAdapter.insertVectorItems()期望的格式
+            const result = {
+                success: true,
+                items: items.map((item, index) => ({
+                    // 保持SillyTavern insertVectorItems需要的格式
+                    text: item.text,
+                    hash: item.hash || this.generateHash(item.text),
+                    index: item.index !== undefined ? item.index : index,
+                    metadata: {
+                        ...(item.metadata || {}),
+                        vectorization_source: source,
+                        prepared_at: new Date().toISOString(),
+                        // 保持原始类型信息
+                        originalType: item.type || 'unknown',
+                        originalId: item.id || `item_${index}`
+                    }
+                }))
+            };
+            
+            logger.log(`Vectorization preparation completed for ${result.items.length} items`);
+            logger.log('Items prepared for Phase 4 vectorization:', result.items.map(item => ({
+                textLength: item.text?.length,
+                hasText: !!item.text,
+                type: item.metadata?.originalType
+            })));
+            
+            return result;
+            
+        } catch (error) {
+            logger.error('Vectorization preparation failed:', error);
+            throw error;
         }
-
-        const result = await response.json();
-        logger.log(`OpenAI vectorization completed for ${items.length} items`);
-        return result;
     }
-
+    
     /**
-     * 使用 Cohere 进行向量化
+     * 生成文本哈希值
      * @private
      */
-    async vectorizeWithCohere(items, signal) {
-        logger.log('Using Cohere for vectorization');
-        
-        // Cohere 向量化通常通过后端代理
-        const requestBody = {
-            source: 'cohere',
-            model: this.settings.cohere_model || 'embed-english-v2.0',
-            items: items
-        };
-
-        const response = await fetch('/api/vector/embed', {
-            method: 'POST',
-            headers: this.getRequestHeaders(),
-            body: JSON.stringify(requestBody),
-            signal: signal
-        });
-
-        if (!response.ok) {
-            throw new Error(`Cohere vectorization failed: ${response.statusText}`);
+    generateHash(text) {
+        if (!text) return 0;
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+            const char = text.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32-bit integer
         }
-
-        const result = await response.json();
-        logger.log(`Cohere vectorization completed for ${items.length} items`);
-        return result;
+        return Math.abs(hash);
     }
 
     /**

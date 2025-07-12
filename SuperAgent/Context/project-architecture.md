@@ -26,13 +26,17 @@ vectors-enhanced/
 │   │   │   ├── FileExtractor.js        # 文件提取器 (新增)
 │   │   │   ├── WorldInfoExtractor.js   # 世界信息提取器 (新增)
 │   │   │   └── README.md
-│   │   └── tasks/      # 任务系统 (新增)
-│   │       ├── ITask.js                # 任务接口 (新增)
-│   │       ├── BaseTask.js             # 基础任务类 (新增)
-│   │       ├── VectorizationTask.js    # 向量化任务 (新增)
-│   │       ├── TaskFactory.js          # 任务工厂 (新增)
-│   │       ├── taskTypes.js            # 任务类型常量 (新增)
-│   │       └── README.md
+│   │   ├── tasks/      # 任务系统 (新增)
+│   │   │   ├── ITask.js                # 任务接口 (新增)
+│   │   │   ├── BaseTask.js             # 基础任务类 (新增)
+│   │   │   ├── VectorizationTask.js    # 向量化任务 (新增)
+│   │   │   ├── TaskFactory.js          # 任务工厂 (新增)
+│   │   │   ├── taskTypes.js            # 任务类型常量 (新增)
+│   │   │   └── README.md
+│   │   └── plugins/    # 插件系统 (Phase 8 - 计划中)
+│   │       ├── IVectorizationPlugin.js # 插件接口定义
+│   │       ├── PluginManager.js        # 插件管理器
+│   │       └── PluginLoader.js         # 插件加载器
 │   ├── application/    # 应用层服务 (新增)
 │   │   ├── TaskManager.js              # 任务管理器 (新增)
 │   │   └── TaskQueue.js                # 任务队列 (新增)
@@ -67,11 +71,47 @@ vectors-enhanced/
 │   │       ├── WorldInfoList.js     # 世界信息列表UI组件 (新增)
 │   │       ├── TagUI.js             # 标签相关UI逻辑管理 (新增)
 │   │       ├── MessageUI.js         # 消息相关UI逻辑管理 (新增)
+│   │       ├── ActionButtons.js     # 动作按钮管理 (Phase 7.1 - 已完成)
+│   │       ├── SettingsPanel.js     # 设置面板架构 (Phase 7.2 - 已完成)
+│   │       ├── VectorizationSettings.js  # 向量化设置 (Phase 7.2 - 已完成)
+│   │       ├── QuerySettings.js     # 查询设置 (Phase 7.2 - 已完成)
+│   │       ├── InjectionSettings.js # 注入设置 (Phase 7.2 - 已完成)
+│   │       ├── ContentSelectionSettings.js # 内容选择设置 (Phase 7.2 - 已完成)
+│   │       ├── ProgressManager.js   # 进度管理器 (Phase 7.3 - 已完成)
+│   │       ├── NotificationManager.js # 通知管理器 (Phase 7.6 - 已完成)
 │   │       └── README.md
+│   │   ├── EventManager.js      # UI事件协调器 (Phase 7.4 - 已完成)
+│   │   ├── StateManager.js      # UI状态管理器 (Phase 7.5 - 已完成)
+│   │   └── styles/              # 模块化样式 (Phase 7.7 - 已完成)
+│   │       ├── index.css        # 样式入口文件
+│   │       ├── base.css         # 基础样式和CSS变量
+│   │       ├── buttons.css      # 按钮样式
+│   │       ├── content-selection.css # 内容选择样式
+│   │       ├── forms.css        # 表单样式
+│   │       ├── preview.css      # 预览样式
+│   │       ├── progress.css     # 进度条样式
+│   │       ├── tags.css         # 标签样式
+│   │       ├── tasks.css        # 任务列表样式
+│   │       └── responsive.css   # 响应式样式
+│   ├── plugins/       # 内置插件 (Phase 8 - 计划中)
+│   │   └── builtin/
+│   │       ├── TransformersPlugin.js  # Transformers向量化插件
+│   │       ├── OllamaPlugin.js        # Ollama向量化插件
+│   │       ├── vLLMPlugin.js          # vLLM向量化插件
+│   │       ├── WebLLMPlugin.js        # WebLLM向量化插件
+│   │       ├── OpenAIPlugin.js        # OpenAI向量化插件
+│   │       └── CoherePlugin.js        # Cohere向量化插件
 │   ├── legacy/        # 将被重构的旧代码
 │   │   └── README.md
 │   ├── build-setup-plan.md  # 构建环境设置计划 (新增)
 │   └── refactoring-progress.md  # 重构进度报告 (新增)
+├── plugins/            # 外部插件目录 (Phase 8 - 计划中)
+│   └── example/
+│       └── MockVectorizerPlugin.js  # 示例插件
+├── docs/               # 文档目录 (Phase 8 - 计划中)
+│   └── plugin-development.md  # 插件开发指南
+├── scripts/            # 脚本目录 (Phase 8 - 计划中)
+│   └── create-plugin.js  # 插件模板生成器
 ├── debug/               # 调试工具目录
 │   ├── debugger.js
 │   ├── ui-manager.js
@@ -156,7 +196,45 @@ index.js
   - 从 index.js 的 jQuery ready 处理器中提取了约373行设置初始化代码
   - 使用 SettingsManager 类组织所有设置的初始化逻辑
   - 通过 ConfigManager 处理设置的持久化
+  - Phase 9.3: 添加实验性设置管理（管道开关）
 - **src/ui/components/**: 存放可复用的UI组件
+- **src/ui/ProgressManager.js**: 集中进度条管理（Phase 7.3）
+- **src/ui/EventManager.js**: UI事件协调器（Phase 7.4）
+- **src/ui/StateManager.js**: UI状态管理器（Phase 7.5）
+
+### 文本处理管道模块 (Phase 9已完成)
+- **src/core/pipeline/ITextProcessor.js**: 文本处理器抽象接口，支持生命周期管理
+- **src/core/pipeline/TextPipeline.js**: 核心管道，集成中间件、生命周期和事件系统
+- **src/core/pipeline/ProcessorRegistry.js**: 处理器注册表
+- **src/core/pipeline/TextDispatcher.js**: 路由文本到合适的处理器
+- **src/core/pipeline/ProcessingContext.js**: 携带上下文信息
+- **src/core/pipeline/processors/VectorizationProcessor.js**: 向量化处理器包装器（Phase 9.2）
+- **src/core/pipeline/adapters/ExtractorPipeline.js**: 内容提取器管道适配器（Phase 9.2）
+- **src/core/pipeline/ProcessorFactory.js**: 处理器工厂（Phase 9.2）
+- **src/core/pipeline/PipelineIntegration.js**: 管道集成助手（Phase 9.2）
+
+#### 中间件系统 (Phase 9.4.1)
+- **src/core/pipeline/middleware/IMiddleware.js**: 中间件接口定义
+- **src/core/pipeline/middleware/LoggingMiddleware.js**: 日志记录中间件
+- **src/core/pipeline/middleware/ValidationMiddleware.js**: 输入验证中间件
+- **src/core/pipeline/middleware/TransformMiddleware.js**: 数据转换中间件
+- **src/core/pipeline/MiddlewareManager.js**: 中间件管理器
+
+#### 生命周期管理 (Phase 9.4.2)
+- **src/core/pipeline/LifecycleManager.js**: 处理器和中间件生命周期管理
+- **扩展的ITextProcessor**: 支持start/stop/pause/resume/healthCheck等生命周期方法
+
+#### 事件系统 (Phase 9.4.3)
+- **src/core/pipeline/events/PipelineEventBus.js**: 管道专用事件总线
+- **src/core/pipeline/events/EventListenerFactory.js**: 事件监听器工厂
+- **集成事件支持**: TextPipeline和LifecycleManager完全集成事件系统
+
+### 并行实现策略 (Phase 9.3)
+- **performVectorizationPipeline**: 新的管道版本向量化函数
+- **settings.use_pipeline**: 功能开关标志
+- **实验性功能UI**: 在settings-modular.html中添加了管道开关
+- **A/B测试支持**: window.vectorsPipelineABTest()全局函数
+- **安全降级**: 出错时自动回退到原实现
   - **ActionButtons.js**: 主要操作按钮组件 (Phase 7.1新增)
     - 集中管理Preview/Export/Vectorize/Abort按钮处理逻辑
     - 统一按钮状态管理和错误处理
@@ -300,7 +378,18 @@ index.js
 - **Phase 5**: 内容提取器 ✅ 100%
 - **Phase 6**: 任务系统 ✅ 100%
 - **Phase 7**: UI层重构 ✅ 95% (ActionButtons + SettingsPanel架构 + ProgressManager/EventManager/StateManager完成)
-- **Phase 8-10**: 等待后续实施
+- **Phase 8**: 任务系统兼容性扩展 📋 待实施
+- **Phase 9**: 文本处理管道 ✅ 100%
+  - **Phase 9.1**: 管道架构基础 ✅ 100%
+  - **Phase 9.2**: 适配器模式集成 ✅ 100%
+  - **Phase 9.3**: 并行实现 ✅ 100%
+  - **Phase 9.4**: 扩展性支持 ✅ 100%
+    - **Phase 9.4.1**: 中间件系统 ✅ 100%
+    - **Phase 9.4.2**: 生命周期管理 ✅ 100%
+    - **Phase 9.4.3**: 事件支持 ✅ 100%
+- **Phase 9.5**: 安全验证和迁移 📋 待实施
+- **Phase 10**: 架构切换 📋 待实施  
+- **Phase 11**: 清理优化和新功能 📋 待实施
 
 ### 关键特性
 1. **双系统兼容**: 新任务系统与legacy系统完美共存

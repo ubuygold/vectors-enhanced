@@ -1,4 +1,5 @@
 import { TaskFactory } from '../../core/tasks/TaskFactory.js';
+import { BaseTask } from '../../core/tasks/BaseTask.js';
 
 /**
  * Storage adapter for task persistence.
@@ -24,6 +25,11 @@ export class TaskStorageAdapter {
         const tasks = [];
         for (const data of tasksData) {
             try {
+                // Add version compatibility
+                if (!data.version) {
+                    data.version = '1.0'; // Mark as legacy version
+                }
+                
                 const task = TaskFactory.createTask(data.type, data);
                 tasks.push(task);
             } catch (error) {
@@ -40,6 +46,11 @@ export class TaskStorageAdapter {
      * @returns {Promise<void>}
      */
     async saveTask(task) {
+        // Check if this is a legacy task
+        if (BaseTask.isLegacyTask(task)) {
+            return this.saveLegacyFormat(task);
+        }
+        
         const chatId = task.chatId;
         const tasks = await this.getTasks(chatId);
         
@@ -188,5 +199,52 @@ export class TaskStorageAdapter {
         }
         
         return Array.from(chats);
+    }
+
+    /**
+     * Save task in legacy format (for backward compatibility)
+     * @param {BaseTask} task - Task to save
+     * @returns {Promise<void>}
+     * @private
+     */
+    async saveLegacyFormat(task) {
+        // For version 1.0 tasks, save without version field to maintain compatibility
+        const taskData = task.toJSON();
+        delete taskData.version; // Remove version field for legacy format
+        
+        const chatId = task.chatId;
+        const tasks = await this.getTasks(chatId);
+        
+        // Find existing task index
+        const index = tasks.findIndex(t => t.id === task.id);
+        
+        if (index >= 0) {
+            // Update existing task
+            tasks[index] = task;
+        } else {
+            // Add new task
+            tasks.push(task);
+        }
+        
+        // Save tasks data without version field
+        const tasksData = tasks.map(t => {
+            const data = t.toJSON();
+            if (BaseTask.isLegacyTask(t)) {
+                delete data.version;
+            }
+            return data;
+        });
+        this.configManager.set(`tasks.${chatId}`, tasksData);
+    }
+
+    /**
+     * Save task in new format (for future versions)
+     * @param {BaseTask} task - Task to save
+     * @returns {Promise<void>}
+     * @private
+     */
+    async saveNewFormat(task) {
+        // Save with all fields including version
+        return this.saveTask(task);
     }
 }
