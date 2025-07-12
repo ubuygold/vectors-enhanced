@@ -23,4 +23,9 @@ export class ConfigManager {
 
     return value;
   }
+
+  getAll() {
+    // 返回所有设置
+    return this.extensionSettings.vectors_enhanced || {};
+  }
 }

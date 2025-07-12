@@ -5,7 +5,9 @@
       "Bash(rg:*)",
       "Bash(sed:*)",
       "Bash(cp:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
