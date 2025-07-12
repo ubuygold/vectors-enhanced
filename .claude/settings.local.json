@@ -6,7 +6,8 @@
       "Bash(sed:*)",
       "Bash(cp:*)",
       "Bash(node:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(git merge:*)"
     ],
     "deny": []
   }
