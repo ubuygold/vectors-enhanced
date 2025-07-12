@@ -217,6 +217,11 @@ export class ProgressManager {
         });
 
         console.error(`ProgressManager: Progress error - ${message}`);
+
+        // Hide after showing error for a moment
+        setTimeout(() => {
+            this.hide();
+        }, 3000);
     }
 
     /**
