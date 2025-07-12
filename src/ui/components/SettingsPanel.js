@@ -180,11 +180,12 @@ export class SettingsPanel {
      */
     addSubComponent(name, component) {
         if (this.subComponents.hasOwnProperty(name)) {
-            console.warn(`SettingsPanel: Sub-component ${name} already exists, replacing...`);
+            console.debug(`SettingsPanel: Sub-component ${name} already exists, replacing...`);
+        } else {
+            console.log(`SettingsPanel: Added sub-component: ${name}`);
         }
         
         this.subComponents[name] = component;
-        console.log(`SettingsPanel: Added sub-component: ${name}`);
     }
 
     /**

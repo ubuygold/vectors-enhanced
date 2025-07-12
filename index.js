@@ -52,9 +52,14 @@ import { SettingsPanel } from './src/ui/components/SettingsPanel.js';
 import { VectorizationSettings } from './src/ui/components/VectorizationSettings.js';
 import { QuerySettings } from './src/ui/components/QuerySettings.js';
 import { InjectionSettings } from './src/ui/components/InjectionSettings.js';
+import { ContentSelectionSettings } from './src/ui/components/ContentSelectionSettings.js';
+import { ProgressManager } from './src/ui/components/ProgressManager.js';
+import { EventManager } from './src/ui/EventManager.js';
+import { StateManager } from './src/ui/StateManager.js';
 import { getMessages, createVectorItem, getHiddenMessages } from './src/utils/chatUtils.js';
 import { StorageAdapter } from './src/infrastructure/storage/StorageAdapter.js';
 import { VectorizationAdapter } from './src/infrastructure/api/VectorizationAdapter.js';
+import { eventBus } from './src/infrastructure/events/eventBus.instance.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -83,6 +88,11 @@ let globalActionButtons = null;
 
 // Global SettingsPanel instance (initialized in jQuery ready)
 let globalSettingsPanel = null;
+
+// Global UI infrastructure instances (initialized in jQuery ready)
+let globalProgressManager = null;
+let globalEventManager = null;
+let globalStateManager = null;
 
 const settings = {
   // Master switch - controls all plugin functionality
@@ -349,13 +359,7 @@ function getAllAvailableFiles() {
 
 
 // Note: Content filtering functions have been moved to src/utils/contentFilter.js
-// These are wrapper functions for backward compatibility
-
-
-
-
 // Note: escapeRegex has been moved to src/utils/contentFilter.js
-// This is a wrapper function for backward compatibility
 
 /**
  * Gets all raw content for scanning, bypassing tag extraction rules.
@@ -589,15 +593,46 @@ async function generateTaskName(contentSettings, actualItems) {
   // Chat range - use newRanges if available for accurate naming
     const chatItems = actualItems.filter(item => item.type === 'chat');
     if (chatItems.length > 0) {
-        const indices = chatItems.map(item => item.metadata.index);
-        const minIndex = Math.min(...indices);
-        const maxIndex = Math.max(...indices);
-
-        if (minIndex === maxIndex) {
-            parts.push(`消息 #${minIndex}`);
-        } else {
-            parts.push(`消息 #${minIndex}-${maxIndex}`);
+        const indices = chatItems.map(item => item.metadata.index).sort((a, b) => a - b);
+        
+        // Format non-continuous ranges properly
+        const ranges = [];
+        let start = indices[0];
+        let end = indices[0];
+        
+        for (let i = 1; i < indices.length; i++) {
+            if (indices[i] === end + 1) {
+                // Continuous, extend the range
+                end = indices[i];
+            } else {
+                // Not continuous, save current range and start new one
+                if (start === end) {
+                    ranges.push(`#${start}`);
+                } else {
+                    ranges.push(`#${start}-${end}`);
+                }
+                start = indices[i];
+                end = indices[i];
+            }
         }
+        
+        // Add the last range
+        if (start === end) {
+            ranges.push(`#${start}`);
+        } else {
+            ranges.push(`#${start}-${end}`);
+        }
+        
+        // Join ranges with proper formatting
+        if (ranges.length === 1) {
+            parts.push(`消息 ${ranges[0]}`);
+        } else if (ranges.length <= 3) {
+            parts.push(`消息 ${ranges.join('、')}`);
+        } else {
+            // For many ranges, show first few and count
+            parts.push(`消息 ${ranges.slice(0, 2).join('、')}等 (${chatItems.length}条)`);
+        }
+        
         console.debug('Vectors: Added chat part (from actual items):', parts[parts.length - 1]);
     }
 
@@ -1018,7 +1053,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     try {
       const progressMessage = isIncremental ? '增量向量化开始...' : '向量化开始...';
       toastr.info(progressMessage, '处理中');
-      updateProgressNew(0, items.length, '准备向量化');
+      
+      // Use ProgressManager instead of old updateProgress
+      if (globalProgressManager) {
+        globalProgressManager.show(0, items.length, '准备向量化');
+      } else {
+        updateProgressNew(0, items.length, '准备向量化');
+      }
 
       // Create corrected settings based on actually processed items
       const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
@@ -1115,11 +1156,21 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         });
 
         processedItems++;
-        updateProgressNew(processedItems, items.length, '正在处理内容');
+        
+        // Use ProgressManager instead of old updateProgress
+        if (globalProgressManager) {
+          globalProgressManager.update(processedItems, items.length, '正在处理内容');
+        } else {
+          updateProgressNew(processedItems, items.length, '正在处理内容');
+        }
       }
 
       // Insert vectors in batches
-      updateProgressNew(0, allChunks.length, '正在插入向量');
+      if (globalProgressManager) {
+        globalProgressManager.update(0, allChunks.length, '正在插入向量');
+      } else {
+        updateProgressNew(0, allChunks.length, '正在插入向量');
+      }
       const batchSize = 50;
       for (let i = 0; i < allChunks.length; i += batchSize) {
         // 检查是否被中断
@@ -1130,7 +1181,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         const batch = allChunks.slice(i, Math.min(i + batchSize, allChunks.length));
         await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
         vectorsInserted = true; // 标记已有向量插入
-        updateProgressNew(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
+        
+        // Use ProgressManager instead of old updateProgress
+        if (globalProgressManager) {
+          globalProgressManager.update(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
+        } else {
+          updateProgressNew(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
+        }
       }
 
       // 可选：为大量内容优化存储
@@ -1163,7 +1220,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         settings: JSON.parse(JSON.stringify(settings)),
       });
 
-      hideProgressNew();
+      // Use ProgressManager instead of old hideProgress
+      if (globalProgressManager) {
+        globalProgressManager.complete('向量化完成');
+      } else {
+        hideProgressNew();
+      }
+      
       const successMessage = isIncremental ?
         `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allChunks.length} 个块` :
         `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allChunks.length} 个块`;
@@ -1173,7 +1236,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
     } catch (error) {
       console.error('向量化失败:', error);
-      hideProgressNew();
+      
+      // Use ProgressManager instead of old hideProgress
+      if (globalProgressManager) {
+        globalProgressManager.error('向量化失败');
+      } else {
+        hideProgressNew();
+      }
 
       // Check if it was an intentional abort
       if (error.message === '向量化被用户中断') {
@@ -1217,7 +1286,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       vectorizationAbortController = null;
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
-      hideProgressNew();
+      
+      // Use ProgressManager instead of old hideProgress
+      if (globalProgressManager) {
+        globalProgressManager.error('严重错误');
+      } else {
+        hideProgressNew();
+      }
   }
 }
 
@@ -2060,70 +2135,6 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
 window['vectors_rearrangeChat'] = rearrangeChat;
 
-// 旧的全局事件绑定 - 已被 ActionButtons 组件替换
-// TODO: Remove these old handlers after ActionButtons component is tested and working
-/*
-$(document).on('click', '#vectors_enhanced_preview', async function (e) {
-  e.preventDefault();
-  console.log('预览按钮被点击 (全局绑定)');
-
-  if (!settings.master_enabled) {
-    toastr.warning('请先启用聊天记录超级管理器');
-    return;
-  }
-
-  try {
-    await MessageUI.previewContent(getVectorizableContent, shouldSkipContent, extractComplexTag, extractHtmlFormatTag, extractSimpleTag, settings, substituteParams);
-  } catch (error) {
-    console.error('预览错误:', error);
-    toastr.error('预览失败: ' + error.message);
-  }
-});
-
-$(document).on('click', '#vectors_enhanced_export', async function (e) {
-  e.preventDefault();
-  console.log('导出按钮被点击 (全局绑定)');
-
-  if (!settings.master_enabled) {
-    toastr.warning('请先启用聊天记录超级管理器');
-    return;
-  }
-
-  try {
-    await exportVectors();
-  } catch (error) {
-    console.error('导出错误:', error);
-    toastr.error('导出失败: ' + error.message);
-  }
-});
-
-$(document).on('click', '#vectors_enhanced_vectorize', async function (e) {
-  e.preventDefault();
-  console.log('向量化按钮被点击 (全局绑定)');
-
-  if (!settings.master_enabled) {
-    toastr.warning('请先启用聊天记录超级管理器');
-    return;
-  }
-
-  try {
-    await vectorizeContent();
-  } catch (error) {
-    console.error('向量化错误:', error);
-    toastr.error('向量化失败: ' + error.message);
-  }
-});
-
-$(document).on('click', '#vectors_enhanced_abort', async function (e) {
-  e.preventDefault();
-  console.log('中断向量化按钮被点击 (全局绑定)');
-
-  if (isVectorizing && vectorizationAbortController) {
-    vectorizationAbortController.abort();
-    toastr.info('正在中断向量化...', '中断');
-  }
-});
-*/
 
 
 /**
@@ -2353,16 +2364,79 @@ jQuery(async () => {
     }
   });
 
+  const contentSelectionSettings = new ContentSelectionSettings({
+    settings,
+    configManager,
+    onSettingsChange: (field, value) => {
+      console.debug(`ContentSelectionSettings: ${field} changed to:`, value);
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    },
+    // Inject dependency functions
+    updateFileList,
+    updateWorldInfoList,
+    updateChatSettings,
+    renderTagRulesUI,
+    showTagExamples,
+    scanAndSuggestTags: () => {
+      if (typeof scanAndSuggestTags === 'function') {
+        scanAndSuggestTags();
+      }
+    },
+    clearTagSuggestions,
+    toggleMessageRangeVisibility: (show) => {
+      // Implementation for message range visibility toggle
+      console.log(`Toggling message range visibility: ${show}`);
+    }
+  });
+
   // 初始化设置子组件
   console.log('Vectors Enhanced: Initializing settings sub-components...');
   await vectorizationSettings.init();
   await querySettings.init();
   await injectionSettings.init();
+  await contentSelectionSettings.init();
 
   // 将子组件添加到 SettingsPanel
   settingsPanel.addSubComponent('vectorizationSettings', vectorizationSettings);
   settingsPanel.addSubComponent('querySettings', querySettings);
   settingsPanel.addSubComponent('injectionSettings', injectionSettings);
+  settingsPanel.addSubComponent('contentSelectionSettings', contentSelectionSettings);
+
+  // 创建 UI Infrastructure 实例
+  console.log('Vectors Enhanced: Creating UI Infrastructure...');
+  
+  // 创建 StateManager
+  const stateManager = new StateManager({
+    eventBus,
+    settings,
+    configManager
+  });
+  
+  // 创建 ProgressManager
+  const progressManager = new ProgressManager({
+    eventBus
+  });
+  
+  // 创建 EventManager
+  const eventManager = new EventManager({
+    eventBus,
+    eventSource,
+    event_types,
+    progressManager,
+    stateManager
+  });
+
+  // 初始化 UI Infrastructure
+  console.log('Vectors Enhanced: Initializing UI Infrastructure...');
+  stateManager.init();
+  progressManager.init();
+  eventManager.init();
+
+  // 设置全局引用
+  globalStateManager = stateManager;
+  globalProgressManager = progressManager;
+  globalEventManager = eventManager;
 
   // 创建存储适配器实例
   console.log('Vectors Enhanced: Creating StorageAdapter...');
