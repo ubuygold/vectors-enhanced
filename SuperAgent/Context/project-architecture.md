@@ -147,7 +147,7 @@ index.js
    - MessageUI：消息相关UI逻辑
    - TagUI：标签相关UI管理
 
-### UI 模块 (新增)
+### UI 模块 (Phase 7重构)
 - **src/ui/domUtils.js**: 封装所有DOM操作，旨在将UI逻辑与业务逻辑分离。目前已包含：
   - 基础UI状态管理：`updateContentSelection`, `updateMasterSwitchState`, `toggleSettings`
   - 进度显示：`hideProgress`, `updateProgress`
@@ -156,8 +156,27 @@ index.js
   - 从 index.js 的 jQuery ready 处理器中提取了约373行设置初始化代码
   - 使用 SettingsManager 类组织所有设置的初始化逻辑
   - 通过 ConfigManager 处理设置的持久化
-- **src/ui/components/**: 存放可复用的UI组件。
-  - **MessageUI.js**: 管理与消息显示相关的UI逻辑，如隐藏消息提示、内容预览弹窗等。
+- **src/ui/components/**: 存放可复用的UI组件
+  - **ActionButtons.js**: 主要操作按钮组件 (Phase 7.1新增)
+    - 集中管理Preview/Export/Vectorize/Abort按钮处理逻辑
+    - 统一按钮状态管理和错误处理
+    - 智能按钮切换(向量化↔中断)
+  - **SettingsPanel.js**: 设置面板架构组件 (Phase 7.2新增)
+    - 统一模板加载和子组件协调
+    - 提供子组件管理接口
+  - **VectorizationSettings.js**: 向量化设置组件 (Phase 7.2新增)
+    - 向量化源选择(Transformers/vLLM/Ollama)
+    - 模型配置和参数设置
+    - 源配置验证和联动逻辑
+  - **QuerySettings.js**: 查询设置组件 (Phase 7.2新增)
+    - Rerank配置管理
+    - API参数验证
+    - 设置状态同步
+  - **InjectionSettings.js**: 注入设置组件 (Phase 7.2新增)
+    - 注入模板和位置配置
+    - 内容标签管理
+    - 深度设置控制
+  - **MessageUI.js**: 管理与消息显示相关的UI逻辑，如隐藏消息提示、内容预览弹窗等
   - **ChatSettings.js**: 聊天设置UI组件
   - **TagRulesEditor.js**: 标签规则编辑器UI组件
   - **TaskList.js**: 任务列表UI组件
@@ -246,7 +265,8 @@ index.js
 - **Phase 4**: 适配器层 ✅ 100%
 - **Phase 5**: 内容提取器 ✅ 100%
 - **Phase 6**: 任务系统 ✅ 100%
-- **Phase 7-10**: 等待后续实施
+- **Phase 7**: UI层重构 ✅ 80% (ActionButtons + SettingsPanel架构完成)
+- **Phase 8-10**: 等待后续实施
 
 ### 关键特性
 1. **双系统兼容**: 新任务系统与legacy系统完美共存

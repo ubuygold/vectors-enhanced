@@ -47,6 +47,11 @@ import { updateWorldInfoList } from './src/ui/components/WorldInfoList.js';
 import { TaskManager } from './src/application/TaskManager.js';
 import { clearTagSuggestions, displayTagSuggestions, showTagExamples } from './src/ui/components/TagUI.js';
 import { MessageUI } from './src/ui/components/MessageUI.js';
+import { ActionButtons } from './src/ui/components/ActionButtons.js';
+import { SettingsPanel } from './src/ui/components/SettingsPanel.js';
+import { VectorizationSettings } from './src/ui/components/VectorizationSettings.js';
+import { QuerySettings } from './src/ui/components/QuerySettings.js';
+import { InjectionSettings } from './src/ui/components/InjectionSettings.js';
 import { getMessages, createVectorItem, getHiddenMessages } from './src/utils/chatUtils.js';
 import { StorageAdapter } from './src/infrastructure/storage/StorageAdapter.js';
 import { VectorizationAdapter } from './src/infrastructure/api/VectorizationAdapter.js';
@@ -72,6 +77,12 @@ export const EXTENSION_PROMPT_TAG = '3_vectors';
 
 // Global TaskManager instance (initialized in jQuery ready)
 let globalTaskManager = null;
+
+// Global ActionButtons instance (initialized in jQuery ready)
+let globalActionButtons = null;
+
+// Global SettingsPanel instance (initialized in jQuery ready)
+let globalSettingsPanel = null;
 
 const settings = {
   // Master switch - controls all plugin functionality
@@ -1639,9 +1650,23 @@ async function synchronizeChat(batchSize = 5) {
  * @param {string} type Generation type
  */
 async function rearrangeChat(chat, contextSize, abort, type) {
+  // 开始计时 - 记录查询开始时间
+  const queryStartTime = performance.now();
+  
+  // 辅助函数：记录耗时并返回
+  const logTimingAndReturn = (reason = '', isError = false) => {
+    const queryEndTime = performance.now();
+    const totalDuration = queryEndTime - queryStartTime;
+    if (reason) {
+      const status = isError ? '失败' : '跳过';
+      console.log(`🔍 Vectors Enhanced: 查询${status} (${reason}) - 耗时: ${totalDuration.toFixed(2)}ms`);
+    }
+  };
+  
   try {
     if (type === 'quiet') {
       console.debug('Vectors: Skipping quiet prompt');
+      // quiet 模式不需要计时
       return;
     }
 
@@ -1657,18 +1682,21 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     // 检查主开关是否启用
     if (!settings.master_enabled) {
       console.debug('Vectors: Master switch disabled, skipping all functionality');
+      logTimingAndReturn('主开关已禁用');
       return;
     }
 
     // 检查是否启用向量查询
     if (!settings.enabled) {
       console.debug('Vectors: Query disabled by user');
+      logTimingAndReturn('向量查询已禁用');
       return;
     }
 
     const chatId = getCurrentChatId();
     if (!chatId) {
       console.debug('Vectors: No chat ID available');
+      logTimingAndReturn('无聊天ID');
       return;
     }
 
@@ -1678,7 +1706,10 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       .slice(-queryMessages)
       .map(x => x.mes)
       .join('\n');
-    if (!queryText.trim()) return;
+    if (!queryText.trim()) {
+      logTimingAndReturn('查询文本为空');
+      return;
+    }
 
     // Get all enabled tasks for this chat
     const allTasks = getChatTasks(chatId);
@@ -1691,6 +1722,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
     if (tasks.length === 0) {
       console.debug('Vectors: No enabled tasks for this chat');
+      logTimingAndReturn('无启用的任务');
       return;
     }
 
@@ -1974,6 +2006,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       // 防重复通知：检查冷却时间
       if (currentTime - lastNotificationTime < NOTIFICATION_COOLDOWN) {
         console.debug('Vectors: Notification skipped due to cooldown');
+        logTimingAndReturn('通知冷却中');
         return;
       }
 
@@ -2011,14 +2044,25 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       // 更新最后通知时间
       lastNotificationTime = currentTime;
     }
+
+    // 计算总耗时并输出到控制台
+    const queryEndTime = performance.now();
+    const totalDuration = queryEndTime - queryStartTime;
+    const resultCount = allResults.length;
+    const injectedCount = topResults.length;
+    console.log(`🔍 Vectors Enhanced: 查询到注入完成 - 总耗时: ${totalDuration.toFixed(2)}ms (查询${resultCount}条, 注入${injectedCount}条)`);
+    
   } catch (error) {
     console.error('Vectors: Failed to rearrange chat', error);
+    logTimingAndReturn('执行出错', true);
   }
 }
 
 window['vectors_rearrangeChat'] = rearrangeChat;
 
-// 全局事件绑定 - 确保按钮始终有效
+// 旧的全局事件绑定 - 已被 ActionButtons 组件替换
+// TODO: Remove these old handlers after ActionButtons component is tested and working
+/*
 $(document).on('click', '#vectors_enhanced_preview', async function (e) {
   e.preventDefault();
   console.log('预览按钮被点击 (全局绑定)');
@@ -2079,6 +2123,7 @@ $(document).on('click', '#vectors_enhanced_abort', async function (e) {
     toastr.info('正在中断向量化...', '中断');
   }
 });
+*/
 
 
 /**
@@ -2257,15 +2302,67 @@ jQuery(async () => {
   Object.assign(extension_settings[SETTINGS_KEY], settings);
   saveSettingsDebounced();
 
-  // 第三方插件需要使用完整路径
-  console.log('Vectors Enhanced: Loading template...');
-  const template = await renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings');
-  $('#extensions_settings2').append(template);
-  console.log('Vectors Enhanced: Template loaded and appended');
+  // 创建 SettingsPanel 实例
+  console.log('Vectors Enhanced: Creating SettingsPanel...');
+  const settingsPanel = new SettingsPanel({
+    renderExtensionTemplateAsync,
+    targetSelector: '#extensions_settings2'
+  });
+
+  // 初始化 SettingsPanel
+  console.log('Vectors Enhanced: Initializing SettingsPanel...');
+  await settingsPanel.init();
+
+  // 设置全局SettingsPanel引用
+  globalSettingsPanel = settingsPanel;
 
   // 创建 ConfigManager 实例
   console.log('Vectors Enhanced: Creating ConfigManager...');
   const configManager = new ConfigManager(extension_settings, saveSettingsDebounced);
+
+  // 创建并初始化设置子组件
+  console.log('Vectors Enhanced: Creating settings sub-components...');
+  
+  const vectorizationSettings = new VectorizationSettings({
+    settings,
+    configManager,
+    onSettingsChange: (field, value) => {
+      console.debug(`VectorizationSettings: ${field} changed to:`, value);
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    }
+  });
+
+  const querySettings = new QuerySettings({
+    settings,
+    configManager,
+    onSettingsChange: (field, value) => {
+      console.debug(`QuerySettings: ${field} changed to:`, value);
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    }
+  });
+
+  const injectionSettings = new InjectionSettings({
+    settings,
+    configManager,
+    onSettingsChange: (field, value) => {
+      console.debug(`InjectionSettings: ${field} changed to:`, value);
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    }
+  });
+
+  // 初始化设置子组件
+  console.log('Vectors Enhanced: Initializing settings sub-components...');
+  await vectorizationSettings.init();
+  await querySettings.init();
+  await injectionSettings.init();
+
+  // 将子组件添加到 SettingsPanel
+  settingsPanel.addSubComponent('vectorizationSettings', vectorizationSettings);
+  settingsPanel.addSubComponent('querySettings', querySettings);
+  settingsPanel.addSubComponent('injectionSettings', injectionSettings);
 
   // 创建存储适配器实例
   console.log('Vectors Enhanced: Creating StorageAdapter...');
@@ -2312,6 +2409,29 @@ jQuery(async () => {
 
   // 设置全局TaskManager引用
   globalTaskManager = taskManager;
+
+  // 创建 ActionButtons 实例
+  console.log('Vectors Enhanced: Creating ActionButtons...');
+  const actionButtons = new ActionButtons({
+    settings,
+    getVectorizableContent,
+    shouldSkipContent,
+    extractComplexTag,
+    extractHtmlFormatTag,
+    extractSimpleTag,
+    substituteParams,
+    exportVectors,
+    vectorizeContent,
+    isVectorizing: () => isVectorizing,
+    vectorizationAbortController: () => vectorizationAbortController
+  });
+
+  // 初始化 ActionButtons
+  console.log('Vectors Enhanced: Initializing ActionButtons...');
+  actionButtons.init();
+
+  // 设置全局ActionButtons引用
+  globalActionButtons = actionButtons;
 
   // 添加全局状态检查函数（调试用）
   window.vectorsTaskSystemStatus = () => {

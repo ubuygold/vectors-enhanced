@@ -939,3 +939,183 @@ class VectorizationAdapter {
 - 添加 `getHiddenMessages` 导入
 
 **结果**: 成功清理了 index.js 中约 600 行冗余代码，提高了代码的可维护性和清晰度
+
+---
+## 迭代 #17
+**开始时间**: 2025-07-12 15:30
+**请求**: 执行Phase 7.1和7.2的UI层重构，实现ActionButtons和SettingsPanel组件化
+**响应**: 我将实现ActionButtons组件提取按钮处理逻辑，然后创建SettingsPanel架构重构
+
+### 操作 17.1
+**时间**: 15:30:15
+**描述**: 创建ActionButtons组件
+**创建文件 `src/ui/components/ActionButtons.js`**:
+```javascript
+export class ActionButtons {
+    constructor(dependencies = {}) {
+        // 依赖注入避免循环引用
+        this.settings = dependencies.settings;
+        this.getVectorizableContent = dependencies.getVectorizableContent;
+        // ... 其他依赖
+        this.buttonStates = {
+            preview: { enabled: true, loading: false },
+            export: { enabled: true, loading: false },
+            vectorize: { enabled: true, loading: false },
+            abort: { enabled: false, loading: false }
+        };
+    }
+    
+    async handlePreviewClick(e) { /* 提取自index.js */ }
+    async handleExportClick(e) { /* 提取自index.js */ }
+    async handleVectorizeClick(e) { /* 提取自index.js */ }
+    async handleAbortClick(e) { /* 提取自index.js */ }
+    
+    // 集中式按钮状态管理
+    setButtonLoading(buttonName, loading) { /* 统一加载状态 */ }
+    switchToAbortMode() { /* 向量化时切换按钮 */ }
+    // 标准化错误处理
+    handleError(operation, error) { /* 统一错误格式 */ }
+}
+```
+
+### 操作 17.2
+**时间**: 15:45:30
+**描述**: 集成ActionButtons到index.js
+**修改文件 `index.js`**:
+- 添加ActionButtons导入
+- 在jQuery ready中初始化ActionButtons组件
+- 注释掉原始按钮事件处理器（保留备份）
+- 修复依赖注入参数格式
+
+### 操作 17.3
+**时间**: 16:00:45
+**描述**: 修复ActionButtons重复成功提示问题
+**问题**: 导出和预览按钮显示重复的成功提示
+**修复内容**:
+- 移除ActionButtons中的额外成功提示
+- 保留原函数内部的成功通知
+- 维持错误处理和主开关验证
+
+### 操作 17.4
+**时间**: 16:15:20
+**描述**: 创建SettingsPanel核心架构
+**创建文件 `src/ui/components/SettingsPanel.js`**:
+```javascript
+export class SettingsPanel {
+    constructor(dependencies = {}) {
+        this.renderExtensionTemplateAsync = dependencies.renderExtensionTemplateAsync;
+        this.targetSelector = dependencies.targetSelector || '#extensions_settings2';
+        this.subComponents = {};
+    }
+    
+    async loadTemplate() {
+        const template = await this.renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings');
+        $(this.targetSelector).append(template);
+    }
+    
+    addSubComponent(name, component) { /* 子组件管理 */ }
+}
+```
+
+### 操作 17.5
+**时间**: 16:30:10
+**描述**: 创建VectorizationSettings组件
+**创建文件 `src/ui/components/VectorizationSettings.js`**:
+```javascript
+export class VectorizationSettings {
+    constructor(dependencies = {}) {
+        this.settings = dependencies.settings;
+        this.configManager = dependencies.configManager;
+        this.sourceConfigs = {
+            transformers: { selector: '#vectors_enhanced_transformers_settings', fields: ['local_model'] },
+            vllm: { selector: '#vectors_enhanced_vllm_settings', fields: ['vllm_model', 'vllm_url'] },
+            ollama: { selector: '#vectors_enhanced_ollama_settings', fields: ['ollama_model', 'ollama_url', 'ollama_keep'] }
+        };
+    }
+    
+    handleSourceChange(newSource) { /* 向量化源切换逻辑 */ }
+    updateSourceVisibility() { /* 源特定设置显示/隐藏 */ }
+    validateSourceConfig(source) { /* 源配置验证 */ }
+}
+```
+
+### 操作 17.6
+**时间**: 16:45:25
+**描述**: 创建QuerySettings组件处理Rerank设置
+**创建文件 `src/ui/components/QuerySettings.js`**:
+```javascript
+export class QuerySettings {
+    constructor(dependencies = {}) {
+        this.settings = dependencies.settings;
+        this.rerankFields = ['rerank_enabled', 'rerank_success_notify', 'rerank_url', 'rerank_apiKey', 'rerank_model', 'rerank_top_n', 'rerank_hybrid_alpha'];
+    }
+    
+    handleRerankToggle(enabled) { /* Rerank启用/禁用处理 */ }
+    updateRerankVisibility() { /* Rerank字段可见性控制 */ }
+    validateRerankConfig() { /* Rerank配置验证 */ }
+}
+```
+
+### 操作 17.7
+**时间**: 17:00:40
+**描述**: 创建InjectionSettings组件
+**创建文件 `src/ui/components/InjectionSettings.js`**:
+```javascript
+export class InjectionSettings {
+    constructor(dependencies = {}) {
+        this.settings = dependencies.settings;
+        this.injectionFields = ['template', 'tag_chat', 'tag_wi', 'tag_file', 'depth', 'depth_role', 'include_wi', 'auto_vectorize'];
+        this.positionMap = { '2': 'before_prompt', '0': 'after_prompt', '1': 'at_depth' };
+    }
+    
+    handlePositionChange(positionValue) { /* 注入位置切换 */ }
+    updatePositionVisibility() { /* 深度控制显示/隐藏 */ }
+    validateTemplate(template) { /* 注入模板验证 */ }
+}
+```
+
+### 操作 17.8
+**时间**: 17:15:55
+**描述**: 集成SettingsPanel架构到index.js
+**修改内容**:
+- 替换原始模板加载逻辑为SettingsPanel组件
+- 初始化VectorizationSettings、QuerySettings、InjectionSettings子组件
+- 建立依赖注入和事件回调机制
+- 将子组件添加到SettingsPanel管理
+
+### 操作 17.9
+**时间**: 17:30:10
+**描述**: 修复InjectionSettings位置可见性bug
+**问题**: 选择"主提示前"后"聊天内@深度"选项消失
+**修复方案**: 修改updatePositionVisibility()只隐藏深度输入框和角色选择，保留选项文字和单选按钮
+
+### 操作 17.10
+**时间**: 17:45:20
+**描述**: 修复QuerySettings页面刷新后状态不一致问题
+**问题**: 取消勾选Rerank后刷新，选项变为可编辑
+**修复方案**: 在loadCurrentSettings()中调用updateRerankVisibility()，确保设置加载后立即应用UI状态
+
+### 操作 17.11
+**时间**: 18:00:35
+**描述**: 添加向量查询与Rerank联动逻辑
+**需求**: 取消勾选"启用向量查询"时自动取消勾选Rerank
+**实现方案**:
+```javascript
+// 在VectorizationSettings中添加
+disableRerank() {
+    this.settings.rerank_enabled = false;
+    $('#vectors_enhanced_rerank_enabled').prop('checked', false).trigger('change');
+    this.saveSettings();
+}
+```
+
+### 操作 17.12
+**时间**: 18:15:50
+**描述**: 添加查询到注入的完整耗时统计
+**实现方案**:
+- 在rearrangeChat函数开始时使用performance.now()记录开始时间
+- 创建logTimingAndReturn()辅助函数处理各种退出情况
+- 在所有return路径和正常完成时输出耗时统计
+- 控制台输出格式：`🔍 Vectors Enhanced: 查询到注入完成 - 总耗时: 45.67ms (查询12条, 注入8条)`
+
+**结果**: 成功实现Phase 7.1和7.2的UI层重构，提取约300-400行UI代码到模块化组件，保持100%向后兼容性
