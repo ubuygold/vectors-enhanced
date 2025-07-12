@@ -44,6 +44,7 @@ import { renderTagRulesUI } from './src/ui/components/TagRulesEditor.js';
 import { updateTaskList } from './src/ui/components/TaskList.js';
 import { updateFileList } from './src/ui/components/FileList.js';
 import { updateWorldInfoList } from './src/ui/components/WorldInfoList.js';
+import { TaskManager } from './src/application/TaskManager.js';
 import { clearTagSuggestions, displayTagSuggestions, showTagExamples } from './src/ui/components/TagUI.js';
 import { MessageUI } from './src/ui/components/MessageUI.js';
 import { getMessages, createVectorItem, getHiddenMessages } from './src/utils/chatUtils.js';
@@ -68,6 +69,9 @@ import { VectorizationAdapter } from './src/infrastructure/api/VectorizationAdap
 const MODULE_NAME = 'vectors-enhanced';
 
 export const EXTENSION_PROMPT_TAG = '3_vectors';
+
+// Global TaskManager instance (initialized in jQuery ready)
+let globalTaskManager = null;
 
 const settings = {
   // Master switch - controls all plugin functionality
@@ -173,6 +177,19 @@ function generateTaskId() {
  * @returns {Array} Array of tasks
  */
 function getChatTasks(chatId) {
+  // If TaskManager is available and initialized, use it for enhanced functionality
+  if (globalTaskManager && !globalTaskManager.legacyMode && globalTaskManager.storage) {
+    try {
+      // Use synchronous method for backward compatibility
+      const tasks = globalTaskManager.getTasksSync(chatId);
+      return tasks;
+    } catch (error) {
+      console.warn('TaskManager: Failed to get tasks synchronously, falling back to legacy:', error);
+      // Fall through to legacy implementation
+    }
+  }
+  
+  // Legacy implementation (always used as fallback)
   if (!settings.vector_tasks[chatId]) {
     settings.vector_tasks[chatId] = [];
   }
@@ -2284,6 +2301,29 @@ jQuery(async () => {
     showTagExamples,
     scanAndSuggestTags
   });
+
+  // 创建 TaskManager 实例
+  console.log('Vectors Enhanced: Creating TaskManager...');
+  const taskManager = new TaskManager(configManager);
+
+  // 初始化 TaskManager
+  console.log('Vectors Enhanced: Initializing TaskManager...');
+  await taskManager.initialize();
+
+  // 设置全局TaskManager引用
+  globalTaskManager = taskManager;
+
+  // 添加全局状态检查函数（调试用）
+  window.vectorsTaskSystemStatus = () => {
+    const status = {
+      taskManagerAvailable: !!globalTaskManager,
+      legacyMode: globalTaskManager?.legacyMode || false,
+      storageReady: globalTaskManager?.storage ? true : false,
+      systemMode: globalTaskManager && !globalTaskManager.legacyMode && globalTaskManager.storage ? 'TaskManager' : 'Legacy'
+    };
+    console.log('Vectors Enhanced Task System Status:', status);
+    return status;
+  };
 
   // 初始化所有设置UI
   console.log('Vectors Enhanced: Initializing settings UI...');
