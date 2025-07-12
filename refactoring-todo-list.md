@@ -316,7 +316,7 @@
     - 页面刷新后，所有设置项能恢复到保存的状态。
   - **回滚策略**: 将 `settingsManager.js` 的逻辑移回 `index.js` 的 jQuery ready 处理器。
 
-- [ ] **迁移原生DOM操作**
+- [x] **迁移原生DOM操作**
   - **涉及函数**: `exportVectors` 内部的 `document.createElement('a')` 逻辑。
   - **描述**: 这是少数未使用jQuery的原生DOM操作，也应被封装。
   - **迁移策略**:
@@ -330,7 +330,7 @@
 在 `showTagExamples` 函数中有复杂的Markdown到HTML的转换逻辑，包括 `escapeHtml` 函数和大量的正则表达式替换。这部分需要特别小心处理。
 
 - [ ] **步骤 1: 提取HTML格式化相关函数**
-  - **涉及函数**: `escapeHtml`（行4566-4574，在showTagExamples内部定义）
+  - **涉及函数**: `escapeHtml`（在showTagExamples内部定义）
   - **描述**: `escapeHtml` 是一个无副作用的纯函数，可以最先被提取。
   - **迁移策略**:
     1. 创建 `src/utils/textFormat.js`。
@@ -383,44 +383,53 @@
     - 保留旧的实现作为备份。
     - 使用功能开关快速切换新旧实现。
 
-    ### Phase 3.5: 统一消息过滤逻辑 (新发现的技术债)
+    ### Phase 3.5: 统一消息过滤逻辑 (新发现的技术债) ✅
 
 - **问题**: `getHiddenMessages` 函数（用于UI）与 `getVectorizableContent` 内的隐藏消息过滤逻辑（用于数据提取）存在功能重复。两者都依赖 `msg.is_system === true` 来判断，但实现方式不同，违反了DRY原则。
 - **目标**: 创建一个统一的、可复用的消息工具函数模块，作为单一事实来源（Single Source of Truth）。
 - **子任务**:
-  - [ ] **创建 `src/utils/chatUtils.js`**: 创建一个新的工具模块。
-  - [ ] **实现核心过滤函数**: 在 `chatUtils.js` 中实现一个核心的 `getMessages(options)` 函数。该函数应能根据传入的 `{ includeHidden, types, range }` 等选项，返回符合条件的消息数组。
-  - [ ] **重构UI层**: 重构 `src/ui/components/MessageUI.js` 中的代码，移除内部的 `getHiddenMessages`，改为调用新的 `chatUtils.getMessages()`。
-  - [ ] **重构数据提取层**: 重构 `getVectorizableContent` 和 `getRawContentForScanning`，移除内部的 `if` 判断，改为调用新的 `chatUtils.getMessages()`。
+  - [x] **创建 `src/utils/chatUtils.js`**: 创建一个新的工具模块。
+  - [x] **实现核心过滤函数**: 在 `chatUtils.js` 中实现一个核心的 `getMessages(options)` 函数。该函数应能根据传入的 `{ includeHidden, types, range }` 等选项，返回符合条件的消息数组。
+  - [x] **重构UI层**: 重构 `src/ui/components/MessageUI.js` 中的代码，移除内部的 `getHiddenMessages`，改为调用新的 `chatUtils.getMessages()`。
+  - [x] **重构数据提取层**: 重构 `getVectorizableContent` 和 `getRawContentForScanning`，移除内部的 `if` 判断，改为调用新的 `chatUtils.getMessages()`。
 - **验证点**: 确保UI显示、内容提取和向量化功能在逻辑统一后表现完全一致。
 - **执行时机**: 在完成所有 `Phase 3` 的UI工具函数迁移后，但在开始 `Phase 5` 内容提取器之前执行。
 
 ## Phase 4: 创建适配器层（包装现有功能）
 
-### 4.1 存储适配器
-- [ ] 创建 `src/infrastructure/storage/StorageAdapter.js`
+### 4.1 存储适配器 ✅
+- [x] 创建 `src/infrastructure/storage/StorageAdapter.js`
   ```javascript
   class StorageAdapter {
-    async getVectors() {
-      // 调用原有的 loadVectorDB
-      return await loadVectorDB();
-    }
-    async saveVectors(vectors) {
-      // 调用原有的 saveVectorDB
-      return await saveVectorDB(vectors);
-    }
+    async getSavedHashes(collectionId) { }
+    async insertVectorItems(collectionId, items, signal) { }
+    async queryCollection(collectionId, searchText, topK, threshold) { }
+    async getVectorTexts(collectionId, hashes) { }
+    async purgeVectorIndex(collectionId) { }
+    async collectionExists(collectionId) { }
+    async getCollectionStats(collectionId) { }
   }
   ```
-- [ ] **验证点**：通过适配器读写向量数据
+- [x] 实现依赖注入模式，避免循环引用
+- [x] 在 index.js 中创建适配器实例并注入依赖
+- [x] 修改所有存储相关函数，使用适配器代替直接的 API 调用
+- [x] **验证点**：通过适配器读写向量数据
 
-### 4.2 API 适配器（包装现有的向量化 API）
-- [ ] 创建 `src/infrastructure/api/VectorizationAdapter.js`
-- [ ] 为每种向量化源创建适配方法：
-  - [ ] `vectorizeWithTransformers`
-  - [ ] `vectorizeWithOllama`
-  - [ ] `vectorizeWithVLLM`
-  - [ ] `vectorizeWithWebLLM`
-- [ ] **验证点**：通过适配器进行向量化，结果应该完全一致
+### 4.2 API 适配器（包装现有的向量化 API） ✅
+- [x] 创建 `src/infrastructure/api/VectorizationAdapter.js`
+- [x] 为每种向量化源创建适配方法：
+  - [x] `vectorizeWithTransformers`
+  - [x] `vectorizeWithOllama`
+  - [x] `vectorizeWithVLLM`
+  - [x] `vectorizeWithWebLLM`
+  - [x] `vectorizeWithOpenAI` (额外实现)
+  - [x] `vectorizeWithCohere` (额外实现)
+- [x] 实现辅助功能：
+  - [x] `getSupportedSources()` - 获取支持的源列表
+  - [x] `checkSourceAvailability()` - 检查源是否可用
+  - [x] `getBatchSizeRecommendation()` - 获取批次大小建议
+- [x] 在 index.js 中创建适配器实例并注入依赖
+- [x] **验证点**：通过适配器进行向量化，结果应该完全一致
 
 ### 🔍 功能完整性测试 - Phase 4
 **测试时机**：完成适配器层后

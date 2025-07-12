@@ -3,36 +3,15 @@
 import { getContext } from '../../../../../../extensions.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../../../../popup.js';
 import { parseTagWithExclusions, removeExcludedTags } from '../../utils/tagParser.js';
-
-/**
- * 获取隐藏的消息列表
- * @returns {Array} 隐藏消息数组
- */
-function getHiddenMessages() {
-  const context = getContext();
-  if (!context.chat) return [];
-
-  const hidden = [];
-  context.chat.forEach((msg, index) => {
-    if (msg.is_system === true) {
-      hidden.push({
-        index: index,
-        text: msg.mes ? msg.mes.substring(0, 100) + (msg.mes.length > 100 ? '...' : '') : '',
-        is_user: msg.is_user,
-        name: msg.name,
-      });
-    }
-  });
-
-  return hidden;
-}
+import { getHiddenMessages } from '../../utils/chatUtils.js';
 
 export const MessageUI = {
   /**
    * 更新隐藏消息信息显示
    */
   updateHiddenMessagesInfo() {
-    const hidden = getHiddenMessages();
+    const context = getContext();
+    const hidden = getHiddenMessages(context.chat);
     const infoDiv = $('#vectors_enhanced_hidden_info');
     const countSpan = $('#vectors_enhanced_hidden_count');
     const listDiv = $('#vectors_enhanced_hidden_list');
@@ -70,7 +49,8 @@ export const MessageUI = {
    * @returns {Promise<void>}
    */
   async showHiddenMessages() {
-    const hidden = getHiddenMessages();
+    const context = getContext();
+    const hidden = getHiddenMessages(context.chat);
 
     if (hidden.length === 0) {
       await callGenericPopup('当前没有隐藏的消息', POPUP_TYPE.TEXT, '', { okButton: '关闭' });

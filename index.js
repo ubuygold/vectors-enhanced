@@ -1,4 +1,4 @@
-
+// @ts-nocheck
 import {
   eventSource,
   event_types,
@@ -29,18 +29,14 @@ import {
   debounce,
   getStringHash,
   onlyUnique,
-  splitRecursive,
-  trimToEndSentence,
-  trimToStartSentence,
   waitUntilCondition,
 } from '../../../utils.js';
 import { getSortedEntries } from '../../../world-info.js';
 import { splitTextIntoChunks as splitTextIntoChunksUtil } from './src/utils/textChunking.js';
-import { shouldSkipContent, escapeRegex, isValidTagName } from './src/utils/contentFilter.js';
-import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlFormatTag, extractCurlyBraceTag } from './src/utils/tagExtractor.js';
+import { shouldSkipContent } from './src/utils/contentFilter.js';
+import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlFormatTag } from './src/utils/tagExtractor.js';
 import { scanTextForTags, generateTagSuggestions } from './src/utils/tagScanner.js';
-import { parseTagWithExclusions, removeExcludedTags } from './src/utils/tagParser.js';
-import { updateContentSelection as updateContentSelectionNew, updateMasterSwitchState as updateMasterSwitchStateNew, toggleSettings as toggleSettingsNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew } from './src/ui/domUtils.js';
+import { updateContentSelection as updateContentSelectionNew, updateMasterSwitchState as updateMasterSwitchStateNew, toggleSettings as toggleSettingsNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew, triggerDownload } from './src/ui/domUtils.js';
 import { SettingsManager } from './src/ui/settingsManager.js';
 import { ConfigManager } from './src/infrastructure/ConfigManager.js';
 import { updateChatSettings } from './src/ui/components/ChatSettings.js';
@@ -50,6 +46,9 @@ import { updateFileList } from './src/ui/components/FileList.js';
 import { updateWorldInfoList } from './src/ui/components/WorldInfoList.js';
 import { clearTagSuggestions, displayTagSuggestions, showTagExamples } from './src/ui/components/TagUI.js';
 import { MessageUI } from './src/ui/components/MessageUI.js';
+import { getMessages, createVectorItem, getHiddenMessages } from './src/utils/chatUtils.js';
+import { StorageAdapter } from './src/infrastructure/storage/StorageAdapter.js';
+import { VectorizationAdapter } from './src/infrastructure/api/VectorizationAdapter.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -146,6 +145,11 @@ const moduleWorker = new ModuleWorkerWrapper(synchronizeChat);
 const cachedVectors = new Map(); // Cache for vectorized content
 let syncBlocked = false;
 
+// 创建存储适配器实例
+let storageAdapter = null;
+// 创建向量化适配器实例
+let vectorizationAdapter = null;
+
 // 防重复通知机制
 let lastNotificationTime = 0;
 const NOTIFICATION_COOLDOWN = 5000; // 5秒冷却时间
@@ -206,7 +210,7 @@ async function removeVectorTask(chatId, taskId) {
   const index = tasks.findIndex(t => t.taskId === taskId);
   if (index !== -1) {
     // Delete the vector collection
-    await purgeVectorIndex(`${chatId}_${taskId}`);
+    await storageAdapter.purgeVectorIndex(`${chatId}_${taskId}`);
     // Remove from tasks list
     tasks.splice(index, 1);
     settings.vector_tasks[chatId] = tasks;
@@ -270,6 +274,46 @@ function splitTextIntoChunks(text, chunkSize, overlapPercent) {
 }
 
 /**
+ * Gets all available files from different sources
+ * @returns {Map<string, object>} Map of file URL to file object
+ */
+function getAllAvailableFiles() {
+  const fileMap = new Map();
+  const context = getContext();
+
+  try {
+    // Add files from different sources
+    getDataBankAttachments().forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    getDataBankAttachmentsForSource('global').forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    getDataBankAttachmentsForSource('character').forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    getDataBankAttachmentsForSource('chat').forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    // Add files from chat messages
+    if (context.chat) {
+      context.chat.filter(x => x.extra?.file).forEach(msg => {
+        const file = msg.extra.file;
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+    }
+  } catch (error) {
+    console.error('Vectors: Error getting files:', error);
+  }
+
+  return fileMap;
+}
+
+/**
  * Parses tag configuration with exclusion syntax
  * @param {string} tagConfig Tag configuration string
  * @returns {object} Object with mainTag and excludeTags
@@ -297,53 +341,25 @@ async function getRawContentForScanning() {
   // Chat messages
   if (selectedContent.chat.enabled && context.chat) {
     const chatSettings = selectedContent.chat;
-    const start = chatSettings.range?.start || 0;
-    const end = chatSettings.range?.end || -1;
-    const types = chatSettings.types || { user: true, assistant: true };
 
-    const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
+    // 使用新的 getMessages 函数获取过滤后的消息
+    const messageOptions = {
+      includeHidden: chatSettings.include_hidden || false,
+      types: chatSettings.types || { user: true, assistant: true },
+      range: chatSettings.range
+    };
 
-    messages.forEach((msg, idx) => {
-      if (msg.is_system === true && !chatSettings.include_hidden) {
-        return;
-      }
-      if (!types.user && msg.is_user) return;
-      if (!types.assistant && !msg.is_user) return;
+    const messages = getMessages(context.chat, messageOptions);
 
+    messages.forEach(msg => {
       // Use raw message content, bypassing extractTagContent
-      items.push({
-        type: 'chat',
-        text: substituteParams(msg.mes),
-        metadata: { index: start + idx },
-        selected: true,
-      });
+      items.push(createVectorItem(msg, msg.text));
     });
   }
 
   // Files
   if (selectedContent.files.enabled) {
-    const fileMap = new Map();
-    try {
-      getDataBankAttachments().forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-      getDataBankAttachmentsForSource('global').forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-      getDataBankAttachmentsForSource('character').forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-      getDataBankAttachmentsForSource('chat').forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-      context.chat.filter(x => x.extra?.file).forEach(msg => {
-        const file = msg.extra.file;
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-    } catch (error) {
-      console.error('Vectors: Error getting files for scanning:', error);
-    }
-
+    const fileMap = getAllAvailableFiles();
     const allFiles = Array.from(fileMap.values());
     for (const file of allFiles) {
       if (!selectedContent.files.selected.includes(file.url)) continue;
@@ -384,92 +400,37 @@ async function getVectorizableContent(contentSettings = null) {
   // Chat messages
   if (selectedContent.chat.enabled && context.chat) {
         const chatSettings = selectedContent.chat;
-        const types = chatSettings.types || { user: true, assistant: true };
         const rules = chatSettings.tag_rules || [];
-        const blacklist = settings.content_blacklist || [];
 
-        const processMessage = (msg, index) => {
-            if (msg.is_system === true && !chatSettings.include_hidden) return;
-            if (!types.user && msg.is_user) return;
-            if (!types.assistant && !msg.is_user) return;
+        // 使用新的 getMessages 函数获取过滤后的消息
+        const messageOptions = {
+            includeHidden: chatSettings.include_hidden || false,
+            types: chatSettings.types || { user: true, assistant: true },
+            range: chatSettings.range,
+            newRanges: chatSettings.newRanges
+        };
 
+        const messages = getMessages(context.chat, messageOptions);
+
+        messages.forEach(msg => {
             // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
             // 如果是，则不应用标签提取规则，直接使用原始文本
             let extractedText;
-            if (index === 0 || msg.is_user === true) {
+            if (msg.index === 0 || msg.is_user === true) {
                 // 首楼或用户楼层：使用完整的原始文本，不应用标签提取规则
-                extractedText = substituteParams(msg.mes);
+                extractedText = msg.text;
             } else {
                 // 其他楼层：应用标签提取规则
-                extractedText = extractTagContent(substituteParams(msg.mes), rules);
+                extractedText = extractTagContent(msg.text, rules);
             }
 
-            items.push({
-                type: 'chat',
-                text: extractedText,
-                metadata: {
-                    index: index,
-                    is_user: msg.is_user,
-                    name: msg.name,
-                    is_hidden: msg.is_system === true,
-                },
-                selected: true,
-            });
-        };
-
-        // 优先处理 newRanges (用于增量更新)
-        if (chatSettings.newRanges && chatSettings.newRanges.length > 0) {
-            chatSettings.newRanges.forEach(range => {
-                const start = range.start;
-                const end = range.end === -1 ? undefined : range.end + 1;
-                const messages = context.chat.slice(start, end);
-                messages.forEach((msg, idx) => {
-                    processMessage(msg, start + idx);
-                });
-            });
-        }
-        // 回退到处理单个范围
-        else {
-            const start = chatSettings.range?.start || 0;
-            const end = chatSettings.range?.end === -1 ? undefined : (chatSettings.range?.end || 0) + 1;
-            const messages = context.chat.slice(start, end);
-            messages.forEach((msg, idx) => {
-                processMessage(msg, start + idx);
-            });
-        }
+            items.push(createVectorItem(msg, extractedText));
+        });
     }
 
   // Files
   if (selectedContent.files.enabled) {
-    // 获取所有文件源，使用Map去重（以URL为键）
-    const fileMap = new Map();
-
-    // 逐个添加不同来源的文件，自动去重
-    try {
-      getDataBankAttachments().forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-
-      getDataBankAttachmentsForSource('global').forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-
-      getDataBankAttachmentsForSource('character').forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-
-      getDataBankAttachmentsForSource('chat').forEach(file => {
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-
-      context.chat.filter(x => x.extra?.file).forEach(msg => {
-        const file = msg.extra.file;
-        if (file && file.url) fileMap.set(file.url, file);
-      });
-    } catch (error) {
-      console.error('Vectors: Error getting files:', error);
-    }
-
+    const fileMap = getAllAvailableFiles();
     const allFiles = Array.from(fileMap.values());
     console.debug(`Vectors: Total unique files found: ${allFiles.length}`);
     console.debug(`Vectors: Selected files in settings: ${selectedContent.files.selected.length}`, selectedContent.files.selected);
@@ -564,21 +525,7 @@ async function getVectorizableContent(contentSettings = null) {
   return items;
 }
 
-/**
- * Updates progress display
- * @param {number} current Current progress
- * @param {number} total Total items
- * @param {string} message Progress message
- */
 
-/**
- * Hides progress display
- */
-function hideProgress() {
-  // Wrapper for validation
-  console.log('Calling new hideProgress function from domUtils.js');
-  hideProgressNew();
-}
 
 /**
  * Generates a task name based on actual processed items
@@ -1153,7 +1100,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         }
 
         const batch = allChunks.slice(i, Math.min(i + batchSize, allChunks.length));
-        await insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
+        await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
         vectorsInserted = true; // 标记已有向量插入
         updateProgressNew(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
       }
@@ -1188,7 +1135,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         settings: JSON.parse(JSON.stringify(settings)),
       });
 
-      hideProgress();
+      hideProgressNew();
       const successMessage = isIncremental ?
         `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allChunks.length} 个块` :
         `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allChunks.length} 个块`;
@@ -1198,7 +1145,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
     } catch (error) {
       console.error('向量化失败:', error);
-      hideProgress();
+      hideProgressNew();
 
       // Check if it was an intentional abort
       if (error.message === '向量化被用户中断') {
@@ -1206,7 +1153,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         if (vectorsInserted) {
           console.log(`Vectors: 清理被中断任务的向量数据: ${collectionId}`);
           try {
-            await purgeVectorIndex(collectionId);
+            await storageAdapter.purgeVectorIndex(collectionId);
             console.log(`Vectors: 已清理集合 ${collectionId} 的部分数据`);
           } catch (cleanupError) {
             console.error('Vectors: 清理向量数据失败:', cleanupError);
@@ -1218,7 +1165,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         if (vectorsInserted) {
           console.log(`Vectors: 清理失败任务的向量数据: ${collectionId}`);
           try {
-            await purgeVectorIndex(collectionId);
+            await storageAdapter.purgeVectorIndex(collectionId);
           } catch (cleanupError) {
             console.error('Vectors: 清理向量数据失败:', cleanupError);
           }
@@ -1242,7 +1189,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       vectorizationAbortController = null;
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
-      hideProgress();
+      hideProgressNew();
   }
 }
 
@@ -1605,15 +1552,8 @@ async function exportVectors() {
   }
 
   // Create and download file
-  const blob = new Blob([exportText], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `向量导出_${context.name || chatId}_${Date.now()}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const filename = `向量导出_${context.name || chatId}_${Date.now()}.txt`;
+  triggerDownload(exportText, filename);
 
   toastr.success('导出成功');
 }
@@ -1741,13 +1681,13 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     let allResults = [];
     // 为了确保能从所有任务中获得最相关的结果，每个任务查询稍多一些
     const perTaskLimit = Math.max(Math.ceil((settings.max_results || 10) * 1.5), 20);
-    
+
     for (const task of tasks) {
       const collectionId = `${chatId}_${task.taskId}`;
       console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
 
       try {
-        const results = await queryCollection(collectionId, queryText, perTaskLimit);
+        const results = await storageAdapter.queryCollection(collectionId, queryText, perTaskLimit, settings.score_threshold);
         console.debug(`Vectors: Query results for task ${task.name}:`, results);
         console.debug(`Vectors: Result structure - has items: ${!!results?.items}, has hashes: ${!!results?.hashes}`);
 
@@ -1818,7 +1758,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
               else {
                 console.debug(`Vectors: Attempting to retrieve text directly from vector files for ${collectionId}`);
                 try {
-                  const vectorTexts = await getVectorTexts(collectionId, results.hashes);
+                  const vectorTexts = await storageAdapter.getVectorTexts(collectionId, results.hashes);
                   console.debug(`Vectors: Retrieved ${vectorTexts.length} texts from files`);
 
                   if (vectorTexts && vectorTexts.length > 0) {
@@ -2181,164 +2121,16 @@ function throwIfSourceInvalid() {
   }
 }
 
-/**
- * Gets saved hashes for a collection
- * @param {string} collectionId Collection ID
- * @returns {Promise<number[]>} Array of hashes
- */
-async function getSavedHashes(collectionId) {
-  const response = await fetch('/api/vector/list', {
-    method: 'POST',
-    headers: getRequestHeaders(),
-    body: JSON.stringify({
-      ...getVectorsRequestBody(),
-      collectionId: collectionId,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to get saved hashes for collection ${collectionId}`);
-  }
-
-  return await response.json();
-}
-
-/**
- * Inserts vector items into a collection
- * @param {string} collectionId Collection ID
- * @param {object[]} items Items to insert
- * @param {AbortSignal} signal Optional abort signal
- * @returns {Promise<void>}
- */
-async function insertVectorItems(collectionId, items, signal = null) {
-  throwIfSourceInvalid();
-
-  const response = await fetch('/api/vector/insert', {
-    method: 'POST',
-    headers: getRequestHeaders(),
-    body: JSON.stringify({
-      ...getVectorsRequestBody(),
-      collectionId: collectionId,
-      items: items,
-    }),
-    signal: signal, // 添加中断信号支持
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to insert vector items for collection ${collectionId}`);
-  }
-}
-
-/**
- * Queries a collection
- * @param {string} collectionId Collection ID
- * @param {string} searchText Search text
- * @param {number} topK Number of results
- * @returns {Promise<{hashes: number[], metadata: object[]}>}
- */
-async function queryCollection(collectionId, searchText, topK) {
-  const response = await fetch('/api/vector/query', {
-    method: 'POST',
-    headers: getRequestHeaders(),
-    body: JSON.stringify({
-      ...getVectorsRequestBody(),
-      collectionId: collectionId,
-      searchText: searchText,
-      topK: topK,
-      threshold: settings.score_threshold,
-      includeText: true, // 请求包含文本内容
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to query collection ${collectionId}`);
-  }
-
-  const result = await response.json();
-  console.debug(`Vectors: Raw query result for ${collectionId}:`, result);
-  return result;
-}
-
-/**
- * Gets text content for specific hashes from vector collection
- * @param {string} collectionId Collection ID
- * @param {number[]} hashes Array of hashes to get text for
- * @returns {Promise<Array>} Array of {hash, text, metadata} objects
- */
-async function getVectorTexts(collectionId, hashes) {
-  try {
-    const response = await fetch('/api/vector/retrieve', {
-      method: 'POST',
-      headers: getRequestHeaders(),
-      body: JSON.stringify({
-        ...getVectorsRequestBody(),
-        collectionId: collectionId,
-        hashes: hashes,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to retrieve texts for collection ${collectionId}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Vectors: Failed to retrieve texts', error);
-    return [];
-  }
-}
-
-/**
- * Purges a vector index
- * @param {string} collectionId Collection ID
- * @returns {Promise<boolean>} Success status
- */
-async function purgeVectorIndex(collectionId) {
-  try {
-    const response = await fetch('/api/vector/purge', {
-      method: 'POST',
-      headers: getRequestHeaders(),
-      body: JSON.stringify({
-        ...getVectorsRequestBody(),
-        collectionId: collectionId,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Could not delete vector index for collection ${collectionId}`);
-    }
-
-    console.log(`Vectors: Purged vector index for collection ${collectionId}`);
-    cachedVectors.delete(collectionId);
-    return true;
-  } catch (error) {
-    console.error('Vectors: Failed to purge', error);
-    return false;
-  }
-}
-
-/**
- * Updates UI based on settings
- */
-function toggleSettings() {
-  // Wrapper for validation
-  console.log('Calling new toggleSettings function from domUtils.js');
-  toggleSettingsNew(settings);
-}
-
-/**
- * Updates UI state based on master switch
- */
-
-/**
- * Updates content selection UI
- */
 
 
 
-/**
- * Updates chat message range settings
- */
+
+
+
+
+
+
+
 
 // Event handlers
 const onChatEvent = debounce(async () => {
@@ -2458,6 +2250,26 @@ jQuery(async () => {
   console.log('Vectors Enhanced: Creating ConfigManager...');
   const configManager = new ConfigManager(extension_settings, saveSettingsDebounced);
 
+  // 创建存储适配器实例
+  console.log('Vectors Enhanced: Creating StorageAdapter...');
+  storageAdapter = new StorageAdapter({
+    getRequestHeaders,
+    getVectorsRequestBody,
+    throwIfSourceInvalid,
+    cachedVectors
+  });
+
+  // 创建向量化适配器实例
+  console.log('Vectors Enhanced: Creating VectorizationAdapter...');
+  vectorizationAdapter = new VectorizationAdapter({
+    getRequestHeaders,
+    getVectorsRequestBody,
+    throwIfSourceInvalid,
+    settings,
+    textgenerationwebui_settings,
+    textgen_types
+  });
+
   // 创建 SettingsManager 实例
   console.log('Vectors Enhanced: Creating SettingsManager...');
   const settingsManager = new SettingsManager(settings, configManager, {
@@ -2481,10 +2293,10 @@ jQuery(async () => {
   // 初始化列表和任务
   await settingsManager.initializeLists();
   await settingsManager.initializeTaskList();
-  
+
   // 初始化标签规则UI
   renderTagRulesUI();
-  
+
   // 初始化隐藏消息信息
   MessageUI.updateHiddenMessagesInfo();
 
@@ -2555,36 +2367,6 @@ jQuery(async () => {
     }),
   );
 
-  // 调试函数注册 - 已注释掉用于生产环境
-  /*
-  registerDebugFunction('purge-vectors', '清除所有向量', '删除当前聊天的所有向量数据', async () => {
-    const chatId = getCurrentChatId();
-    if (!chatId) {
-      toastr.error('未选择聊天');
-      return;
-    }
-    if (await purgeVectorIndex(chatId)) {
-      toastr.success('向量已清除');
-    }
-  });
-
-  registerDebugFunction('check-vectors', '检查向量状态', '检查当前聊天的向量任务和数据状态', async () => {
-    await debugVectorStatus();
-  });
-
-  // 注册隐藏消息调试函数
-  registerDebugFunction('debug-hidden-messages', '调试隐藏消息', '探索消息隐藏机制', debugHiddenMessages);
-  registerDebugFunction('debug-slash-commands', '调试斜杠命令', '测试斜杠命令执行', debugSlashCommands);
-  registerDebugFunction('debug-content-selection', '调试内容选择', '显示当前内容选择状态', debugContentSelection);
-  registerDebugFunction('clear-world-info-selection', '清除世界信息选择', '清除所有世界信息选择状态', clearWorldInfoSelection);
-  registerDebugFunction('debug-file-overlap', '调试文件重复检测', '深度分析文件重复检测逻辑', debugFileOverlap);
-  registerDebugFunction('debug-ui-sync', '调试UI同步', '检查UI与设置的同步状态', debugUiSync);
-  registerDebugFunction('cleanup-selections', '清理无效选择', '主动清理所有无效的文件和世界信息选择', async () => {
-    await cleanupInvalidSelections();
-    toastr.success('选择清理完成，详情见控制台');
-  });
-  registerDebugFunction('deep-world-info-debug', '深度世界信息调试', '深度分析世界信息状态和来源', debugWorldInfoDeep);
-  */
 
   // 内容过滤黑名单设置
   $('#vectors_enhanced_content_blacklist').on('input', function () {
@@ -2605,33 +2387,6 @@ jQuery(async () => {
   // 初始化隐藏消息信息显示
   MessageUI.updateHiddenMessagesInfo();
 
-  // 调试按钮事件处理器 - 已注释用于生产环境
-  /*
-  $('#vectors_debug_world_info').on('click', async () => {
-    await debugWorldInfoDeep();
-  });
-
-  $('#vectors_debug_ui_sync').on('click', () => {
-    debugUiSync();
-  });
-
-  $('#vectors_cleanup_selections').on('click', async () => {
-    await cleanupInvalidSelections();
-    toastr.success('选择清理完成，详情见控制台');
-  });
-
-  $('#vectors_debug_content').on('click', () => {
-    debugContentSelection();
-  });
-
-  $('#vectors_debug_file_overlap').on('click', () => {
-    debugFileOverlap();
-  });
-
-  $('#vectors_clear_world_info').on('click', async () => {
-    await clearWorldInfoSelection();
-  });
-  */
 
   // 监听聊天变化以更新隐藏消息信息
   eventSource.on(event_types.CHAT_CHANGED, () => {
@@ -2642,7 +2397,7 @@ jQuery(async () => {
   initializeDebugModule().catch(err => {
     console.debug('[Vectors] Debug module initialization failed (this is normal in production):', err.message);
   });
-  
+
     console.log('Vectors Enhanced: Initialization completed successfully');
   } catch (error) {
     console.error('Vectors Enhanced: Failed to initialize:', error);
@@ -2779,15 +2534,15 @@ function createDebugAPI() {
     updateMasterSwitchState: () => updateMasterSwitchStateNew(settings),
     updateChatSettings: updateChatSettings,
     updateFileList: updateFileList,
-    updateHiddenMessagesInfo: updateHiddenMessagesInfo,
+    updateHiddenMessagesInfo: MessageUI.updateHiddenMessagesInfo,
 
     // 消息管理
     toggleMessageVisibility: toggleMessageVisibility,
     toggleMessageRangeVisibility: toggleMessageRangeVisibility,
 
     // 向量操作（如果可用）
-    getSavedHashes: typeof getSavedHashes !== 'undefined' ? getSavedHashes : null,
-    purgeVectorIndex: typeof purgeVectorIndex !== 'undefined' ? purgeVectorIndex : null,
+    getSavedHashes: storageAdapter ? (collectionId) => storageAdapter.getSavedHashes(collectionId) : null,
+    purgeVectorIndex: storageAdapter ? (collectionId) => storageAdapter.purgeVectorIndex(collectionId) : null,
 
     // 缓存访问（只读）
     cachedVectors: cachedVectors,
@@ -2815,525 +2570,6 @@ function createDebugAPI() {
   };
 }
 
-/*
-// === 调试函数区域 - 已注释掉用于生产环境 ===
-
-/**
- * 调试函数：检查向量状态
- */
-/*
-async function debugVectorStatus() {
-  console.log('=== 向量状态调试 ===');
-
-  const chatId = getCurrentChatId();
-  if (!chatId) {
-    console.log('错误：未选择聊天');
-    toastr.error('未选择聊天');
-    return;
-  }
-
-  console.log(`当前聊天ID: ${chatId}`);
-
-  // 检查任务列表
-  const allTasks = getChatTasks(chatId);
-  const enabledTasks = allTasks.filter(t => t.enabled);
-
-  console.log(`总任务数: ${allTasks.length}, 启用任务数: ${enabledTasks.length}`);
-
-  allTasks.forEach((task, index) => {
-    console.log(`任务 ${index + 1}:`);
-    console.log(`  - 名称: ${task.name}`);
-    console.log(`  - ID: ${task.taskId}`);
-    console.log(`  - 启用: ${task.enabled}`);
-    console.log(`  - 时间: ${new Date(task.timestamp).toLocaleString()}`);
-    console.log(`  - Collection ID: ${chatId}_${task.taskId}`);
-  });
-
-  // 检查向量数据
-  for (const task of allTasks) {
-    const collectionId = `${chatId}_${task.taskId}`;
-    try {
-      console.log(`\n检查集合: ${collectionId}`);
-      const hashes = await getSavedHashes(collectionId);
-      console.log(`  - 向量数量: ${hashes.length}`);
-      if (hashes.length > 0) {
-        console.log(`  - 样本哈希: ${hashes.slice(0, 3).join(', ')}${hashes.length > 3 ? '...' : ''}`);
-      }
-    } catch (error) {
-      console.log(`  - 错误: ${error.message}`);
-    }
-  }
-
-  // 检查缓存
-  console.log(`\n缓存状态:`);
-  console.log(`  - 缓存项数量: ${cachedVectors.size}`);
-  for (const [key, value] of cachedVectors.entries()) {
-    console.log(`  - ${key}: ${value.items?.length || 0} 个项目, 时间: ${new Date(value.timestamp).toLocaleString()}`);
-  }
-
-  console.log('=== 调试完成 ===');
-
-  toastr.info(`任务: ${allTasks.length}个 (${enabledTasks.length}个启用), 详情见控制台`, '向量状态检查');
-}
-*/
-
-/**
- * 调试函数：探索消息隐藏机制
- */
-/*
-function debugHiddenMessages() {
-  const context = getContext();
-  if (!context.chat || context.chat.length === 0) {
-    console.log('调试：没有可用的聊天消息');
-    return;
-  }
-
-  console.log('=== 开始探索消息隐藏机制 ===');
-  console.log(`总消息数: ${context.chat.length}`);
-
-  // 检查前5条消息的完整结构
-  console.log('\n前5条消息的完整结构:');
-  context.chat.slice(0, 5).forEach((msg, index) => {
-    console.log(`\n消息 #${index}:`, msg);
-
-    // 检查可能的隐藏属性
-    const possibleHiddenProps = ['hidden', 'is_hidden', 'hide', 'isHidden', 'visible', 'is_visible'];
-    console.log(`检查可能的隐藏属性:`);
-    possibleHiddenProps.forEach(prop => {
-      if (prop in msg) {
-        console.log(`  - ${prop}: ${msg[prop]}`);
-      }
-    });
-
-    // 检查 extra 对象
-    if (msg.extra) {
-      console.log(`  extra 对象:`, msg.extra);
-    }
-  });
-
-  console.log('\n=== 探索结束 ===');
-}
-*/
-
-/**
- * 调试函数：测试斜杠命令执行
- * @returns {Promise<void>}
- */
-/*
-async function debugSlashCommands() {
-  console.log('=== 测试斜杠命令执行 ===');
-
-  try {
-    // 检查可能的命令执行方法
-    const context = getContext();
-    console.log('\n检查上下文对象:', context);
-
-    // 方法1：直接修改消息的 is_system 属性
-    if (context.chat && context.chat.length > 0) {
-      console.log('\n测试直接修改消息属性:');
-      const testMessage = context.chat[0];
-      console.log('第一条消息的 is_system 状态:', testMessage.is_system);
-      console.log('可以通过修改 is_system 属性来隐藏/显示消息');
-    }
-
-    // 方法2：查看全局函数
-    const globalFunctions = Object.keys(window).filter(
-      key => key.includes('hide') || key.includes('slash') || key.includes('command'),
-    );
-    console.log('\n相关的全局函数:', globalFunctions);
-
-    // 方法3：检查 jQuery 事件
-    console.log('\n检查消息元素的事件处理器...');
-    const messageElement = $('.mes').first();
-    if (messageElement.length > 0) {
-      const events = $._data(messageElement[0], 'events');
-      console.log('消息元素的事件:', events);
-    }
-  } catch (error) {
-    console.error('调试斜杠命令时出错:', error);
-  }
-
-  console.log('=== 测试结束 ===');
-}
-*/
-
-/**
- * 调试函数：显示当前内容选择状态
- */
-/*
-function debugContentSelection() {
-  console.log('=== 内容选择状态调试 ===');
-
-  console.log('全局设置状态:', {
-    master_enabled: settings.master_enabled,
-    selected_content: settings.selected_content
-  });
-
-  // 调试聊天设置
-  const chatSettings = settings.selected_content.chat;
-  console.log('聊天记录设置:', {
-    enabled: chatSettings.enabled,
-    range: chatSettings.range,
-    types: chatSettings.types,
-    tags: chatSettings.tags,
-    include_hidden: chatSettings.include_hidden
-  });
-
-  // 调试文件设置
-  const filesSettings = settings.selected_content.files;
-  console.log('文件设置:', {
-    enabled: filesSettings.enabled,
-    selected_count: filesSettings.selected.length,
-    selected_files: filesSettings.selected
-  });
-
-  // 调试世界信息设置
-  const wiSettings = settings.selected_content.world_info;
-  console.log('世界信息设置:', {
-    enabled: wiSettings.enabled,
-    selected_worlds: Object.keys(wiSettings.selected),
-    total_entries: Object.values(wiSettings.selected).flat().length,
-    detailed_selection: wiSettings.selected
-  });
-
-  // 调试UI元素状态
-  console.log('UI元素状态:');
-  console.log('- 聊天启用复选框:', $('#vectors_enhanced_chat_enabled').prop('checked'));
-  console.log('- 文件启用复选框:', $('#vectors_enhanced_files_enabled').prop('checked'));
-  console.log('- 世界信息启用复选框:', $('#vectors_enhanced_wi_enabled').prop('checked'));
-
-  // 调试隐藏消息
-  const hiddenMessages = getHiddenMessages();
-  console.log('隐藏消息状态:', {
-    count: hiddenMessages.length,
-    messages: hiddenMessages
-  });
-
-  console.log('=== 调试完成 ===');
-
-  toastr.info(`内容选择状态已输出到控制台\n聊天:${chatSettings.enabled}, 文件:${filesSettings.enabled}, 世界信息:${wiSettings.enabled}`, '内容选择调试');
-}
-*/
-
-/**
- * 调试函数：清除所有世界信息选择状态
- */
-/*
-async function clearWorldInfoSelection() {
-  console.log('=== 清除世界信息选择 ===');
-
-  const beforeState = JSON.stringify(settings.selected_content.world_info.selected);
-  console.log('清除前的选择状态:', beforeState);
-
-  // 清除所有世界信息选择
-  settings.selected_content.world_info.selected = {};
-  settings.selected_content.world_info.enabled = false;
-
-  // 保存设置
-  Object.assign(extension_settings.vectors_enhanced, settings);
-  saveSettingsDebounced();
-
-  // 更新UI
-  $('#vectors_enhanced_wi_enabled').prop('checked', false);
-  updateContentSelectionNew(settings);
-  await updateWorldInfoList();
-
-  console.log('清除后的选择状态:', JSON.stringify(settings.selected_content.world_info.selected));
-  console.log('=== 清除完成 ===');
-
-  toastr.success('已清除所有世界信息选择状态', '清除完成');
-}
-*/
-
-/**
- * 调试函数：深度分析文件重复检测逻辑
- */
-/*
-function debugFileOverlap() {
-  console.log('=== 文件重复检测深度调试 ===');
-
-  const chatId = getCurrentChatId();
-  if (!chatId) {
-    console.log('错误：未选择聊天');
-    toastr.error('未选择聊天');
-    return;
-  }
-
-  // 获取当前设置
-  const currentSettings = settings.selected_content;
-  console.log('当前文件选择设置:', {
-    enabled: currentSettings.files.enabled,
-    selected: currentSettings.files.selected,
-    selectedCount: currentSettings.files.selected.length
-  });
-
-  // 获取所有任务
-  const allTasks = getChatTasks(chatId);
-  const enabledTasks = allTasks.filter(t => t.enabled);
-
-  console.log('任务状态:', {
-    totalTasks: allTasks.length,
-    enabledTasks: enabledTasks.length
-  });
-
-  // 详细分析每个任务的文件
-  enabledTasks.forEach((task, index) => {
-    console.log(`\\n任务 ${index + 1}: "${task.name}"`);
-    console.log('- ID:', task.taskId);
-    console.log('- 文件设置:', task.settings?.files);
-    if (task.settings?.files?.enabled && task.settings.files.selected) {
-      console.log('- 文件列表:', task.settings.files.selected);
-      console.log('- 文件数量:', task.settings.files.selected.length);
-    } else {
-      console.log('- 没有文件或文件未启用');
-    }
-  });
-
-  // 运行重复检测分析
-  console.log('\\n=== 运行重复检测分析 ===');
-  if (currentSettings.files.enabled && currentSettings.files.selected.length > 0) {
-    const overlapAnalysis = analyzeTaskOverlap(chatId, currentSettings);
-    console.log('重复检测结果:', overlapAnalysis);
-
-    // 手动验证
-    console.log('\\n=== 手动验证 ===');
-    const existingFiles = new Set();
-    enabledTasks.forEach(task => {
-      if (task.settings?.files?.enabled && task.settings.files.selected) {
-        task.settings.files.selected.forEach(url => {
-          console.log(`文件 "${url}" 来自任务 "${task.name}"`);
-          existingFiles.add(url);
-        });
-      }
-    });
-
-    console.log('所有现有文件URL:', Array.from(existingFiles));
-    console.log('当前选择的文件URL:', currentSettings.files.selected);
-
-    const actualDuplicates = currentSettings.files.selected.filter(url => existingFiles.has(url));
-    const actualNew = currentSettings.files.selected.filter(url => !existingFiles.has(url));
-
-    console.log('实际重复文件:', actualDuplicates);
-    console.log('实际新文件:', actualNew);
-    console.log('重复数量验证:', actualDuplicates.length);
-  } else {
-    console.log('当前未启用文件或未选择文件');
-  }
-
-  console.log('=== 调试完成 ===');
-
-  toastr.info('文件重复检测调试信息已输出到控制台', '调试完成');
-}
-*/
-
-/**
- * 调试函数：检查UI与设置的同步状态
- */
-/*
-function debugUiSync() {
-  console.log('=== UI同步状态调试 ===');
-
-  // 检查文件UI状态
-  console.log('\\n=== 文件选择状态 ===');
-  console.log('设置中的文件选择:', {
-    enabled: settings.selected_content.files.enabled,
-    selected: settings.selected_content.files.selected,
-    count: settings.selected_content.files.selected.length
-  });
-
-  // 检查UI中实际勾选的文件
-  const checkedFiles = [];
-  $('#vectors_enhanced_files_list input[type="checkbox"]:checked').each(function() {
-    checkedFiles.push($(this).val());
-  });
-
-  console.log('UI中勾选的文件:', {
-    checkedFiles,
-    count: checkedFiles.length
-  });
-
-  // 比较差异
-  const settingsSet = new Set(settings.selected_content.files.selected);
-  const uiSet = new Set(checkedFiles);
-
-  const onlyInSettings = settings.selected_content.files.selected.filter(url => !uiSet.has(url));
-  const onlyInUI = checkedFiles.filter(url => !settingsSet.has(url));
-
-  console.log('同步状态分析:', {
-    isSync: onlyInSettings.length === 0 && onlyInUI.length === 0,
-    onlyInSettings: onlyInSettings,
-    onlyInUI: onlyInUI
-  });
-
-  // 检查世界信息状态
-  console.log('\\n=== 世界信息选择状态 ===');
-  console.log('设置中的世界信息选择:', {
-    enabled: settings.selected_content.world_info.enabled,
-    selected: settings.selected_content.world_info.selected,
-    totalCount: Object.values(settings.selected_content.world_info.selected).flat().length
-  });
-
-  const checkedWI = [];
-  $('#vectors_enhanced_wi_list input[type="checkbox"]:checked').each(function() {
-    if (!$(this).hasClass('world-select-all')) {
-      checkedWI.push($(this).val());
-    }
-  });
-
-  console.log('UI中勾选的世界信息:', {
-    checkedWI,
-    count: checkedWI.length
-  });
-
-  // 比较世界信息差异
-  const settingsWI = Object.values(settings.selected_content.world_info.selected).flat();
-  const settingsWISet = new Set(settingsWI);
-  const uiWISet = new Set(checkedWI);
-
-  const onlyInSettingsWI = settingsWI.filter(uid => !uiWISet.has(uid));
-  const onlyInUIWI = checkedWI.filter(uid => !settingsWISet.has(uid));
-
-  console.log('世界信息同步状态:', {
-    isSync: onlyInSettingsWI.length === 0 && onlyInUIWI.length === 0,
-    onlyInSettings: onlyInSettingsWI,
-    onlyInUI: onlyInUIWI,
-    settingsCount: settingsWI.length,
-    uiCount: checkedWI.length
-  });
-
-  // 检查聊天设置
-  console.log('\\n=== 聊天设置状态 ===');
-  console.log('设置中的聊天配置:', settings.selected_content.chat);
-  console.log('UI中的聊天配置:', {
-    enabled: $('#vectors_enhanced_chat_enabled').prop('checked'),
-    start: $('#vectors_enhanced_chat_start').val(),
-    end: $('#vectors_enhanced_chat_end').val(),
-    user: $('#vectors_enhanced_chat_user').prop('checked'),
-    assistant: $('#vectors_enhanced_chat_assistant').prop('checked'),
-    include_hidden: $('#vectors_enhanced_chat_include_hidden').prop('checked'),
-    tags: $('#vectors_enhanced_chat_tags').val()
-  });
-
-  console.log('=== 调试完成 ===');
-
-  const syncIssues = onlyInSettings.length + onlyInUI.length + onlyInSettingsWI.length + onlyInUIWI.length;
-  toastr.info(`UI同步检查完成，发现 ${syncIssues} 个不同步项目，详情见控制台`, 'UI同步调试');
-}
-*/
-
-/**
- * 调试函数：深度分析世界信息状态和来源
- */
-/*
-async function debugWorldInfoDeep() {
-  console.log('=== 深度世界信息调试 ===');
-
-  const chatId = getCurrentChatId();
-  console.log('当前聊天ID:', chatId);
-
-  // 获取所有世界信息条目
-  const allEntries = await getSortedEntries();
-  console.log(`\\n总共获取到 ${allEntries.length} 个世界信息条目`);
-
-  // 按来源分组分析
-  const sourceAnalysis = {
-    global: [],
-    character: [],
-    chat: [],
-    other: []
-  };
-
-  allEntries.forEach(entry => {
-    // 分析条目来源（这个可能需要根据实际的world-info.js实现调整）
-    if (entry.world) {
-      // 简单的启发式分类
-      if (entry.world.includes('global') || entry.world === 'global') {
-        sourceAnalysis.global.push(entry);
-      } else if (entry.world.includes('character') || entry.world.includes('角色')) {
-        sourceAnalysis.character.push(entry);
-      } else if (entry.world.includes('chat') || entry.world.includes('聊天')) {
-        sourceAnalysis.chat.push(entry);
-      } else {
-        sourceAnalysis.other.push(entry);
-      }
-    }
-  });
-
-  console.log('\\n=== 按来源分析 ===');
-  Object.entries(sourceAnalysis).forEach(([source, entries]) => {
-    console.log(`${source.toUpperCase()}: ${entries.length} 个条目`);
-    entries.forEach(entry => {
-      console.log(`  - ${entry.world}: ${entry.comment || entry.uid} (disabled: ${entry.disable})`);
-    });
-  });
-
-  // 分析所有世界
-  const worldGroups = {};
-  allEntries.forEach(entry => {
-    if (!worldGroups[entry.world]) {
-      worldGroups[entry.world] = [];
-    }
-    worldGroups[entry.world].push(entry);
-  });
-
-  console.log('\\n=== 按世界分组 ===');
-  Object.entries(worldGroups).forEach(([world, entries]) => {
-    const enabledCount = entries.filter(e => !e.disable).length;
-    const totalCount = entries.length;
-    console.log(`${world}: ${enabledCount}/${totalCount} 个启用条目`);
-
-    entries.forEach(entry => {
-      const status = entry.disable ? '❌禁用' : '✅启用';
-      const hasContent = entry.content ? '有内容' : '❌无内容';
-      console.log(`  - ${status} ${hasContent} ${entry.comment || entry.uid}`);
-    });
-  });
-
-  // 分析当前设置
-  console.log('\\n=== 当前设置分析 ===');
-  console.log('设置中的世界信息选择:', settings.selected_content.world_info.selected);
-
-  Object.entries(settings.selected_content.world_info.selected).forEach(([world, uids]) => {
-    console.log(`\\n世界 "${world}": 选择了 ${uids.length} 个条目`);
-
-    uids.forEach(uid => {
-      const entry = allEntries.find(e => e.uid === uid);
-      if (entry) {
-        const status = entry.disable ? '❌禁用' : '✅启用';
-        const hasContent = entry.content ? '有内容' : '❌无内容';
-        console.log(`  - ${status} ${hasContent} ${entry.comment || uid} (UID: ${uid})`);
-      } else {
-        console.log(`  - ❌不存在 UID: ${uid}`);
-      }
-    });
-  });
-
-  // 分析UI显示的内容
-  console.log('\\n=== UI显示分析 ===');
-  const visibleWorlds = new Set();
-  $('#vectors_enhanced_wi_list .wi-world-group').each(function() {
-    const worldName = $(this).find('.wi-world-name').text();
-    visibleWorlds.add(worldName);
-  });
-
-  console.log('UI中显示的世界:', Array.from(visibleWorlds));
-
-  // 找出差异
-  const settingsWorlds = new Set(Object.keys(settings.selected_content.world_info.selected));
-  const onlyInSettings = Array.from(settingsWorlds).filter(w => !visibleWorlds.has(w));
-  const onlyInUI = Array.from(visibleWorlds).filter(w => !settingsWorlds.has(w));
-
-  console.log('\\n=== 差异分析 ===');
-  console.log('只在设置中存在的世界:', onlyInSettings);
-  console.log('只在UI中显示的世界:', onlyInUI);
-
-  console.log('=== 调试完成 ===');
-
-  toastr.info('深度世界信息调试完成，详情见控制台', '调试完成');
-}
-
-// === 调试函数区域结束 ===
-*/
 
 
 

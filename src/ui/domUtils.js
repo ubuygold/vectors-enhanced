@@ -88,3 +88,26 @@ export function updateProgress(current, total, message) {
   $('#vectors_enhanced_progress .progress-bar-inner').css('width', `${percent}%`);
   $('#vectors_enhanced_progress .progress-text').text(`${message} (${current}/${total})`);
 }
+
+/**
+ * Triggers a file download in the browser
+ * @param {string} content The file content
+ * @param {string} filename The filename to use for download
+ * @param {string} mimeType The MIME type of the file (default: 'text/plain;charset=utf-8')
+ */
+export function triggerDownload(content, filename, mimeType = 'text/plain;charset=utf-8') {
+  logger.log(`Triggering download: ${filename}`);
+  
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  logger.log('Download triggered successfully');
+}
