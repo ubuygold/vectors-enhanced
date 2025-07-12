@@ -41,6 +41,8 @@ import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlForm
 import { scanTextForTags, generateTagSuggestions } from './src/utils/tagScanner.js';
 import { parseTagWithExclusions, removeExcludedTags } from './src/utils/tagParser.js';
 import { updateContentSelection as updateContentSelectionNew, updateMasterSwitchState as updateMasterSwitchStateNew, toggleSettings as toggleSettingsNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew } from './src/ui/domUtils.js';
+import { SettingsManager } from './src/ui/settingsManager.js';
+import { ConfigManager } from './src/infrastructure/ConfigManager.js';
 import { updateChatSettings } from './src/ui/components/ChatSettings.js';
 import { renderTagRulesUI } from './src/ui/components/TagRulesEditor.js';
 import { updateTaskList } from './src/ui/components/TaskList.js';
@@ -1737,12 +1739,15 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
     // Query all enabled tasks
     let allResults = [];
+    // 为了确保能从所有任务中获得最相关的结果，每个任务查询稍多一些
+    const perTaskLimit = Math.max(Math.ceil((settings.max_results || 10) * 1.5), 20);
+    
     for (const task of tasks) {
       const collectionId = `${chatId}_${task.taskId}`;
       console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
 
       try {
-        const results = await queryCollection(collectionId, queryText, settings.max_results || 10);
+        const results = await queryCollection(collectionId, queryText, perTaskLimit);
         console.debug(`Vectors: Query results for task ${task.name}:`, results);
         console.debug(`Vectors: Result structure - has items: ${!!results?.items}, has hashes: ${!!results?.hashes}`);
 
@@ -1907,6 +1912,12 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
     }
 
+    // 在排序后，限制结果数量为 max_results
+    const maxResults = settings.max_results || 10;
+    if (allResults.length > maxResults) {
+      console.debug(`Vectors: Limiting results from ${allResults.length} to ${maxResults}`);
+      allResults = allResults.slice(0, maxResults);
+    }
 
     // 初始化变量
     let topResults = [];
@@ -1917,11 +1928,11 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     if (allResults.length === 0) {
       console.debug('Vectors: No query results found');
     } else {
-      console.debug(`Vectors: Found ${allResults.length} total results`);
+      console.debug(`Vectors: Found ${allResults.length} total results after limiting`);
 
-      // take top results
-      const finalResultCount = settings.rerank_enabled ? settings.rerank_top_n : settings.max_results;
-      topResults = allResults.slice(0, finalResultCount || 10);
+      // 如果启用了rerank，可能会进一步减少结果数
+      const finalResultCount = settings.rerank_enabled ? Math.min(settings.rerank_top_n, allResults.length) : allResults.length;
+      topResults = allResults.slice(0, finalResultCount);
 
       console.debug(`Vectors: Using top ${topResults.length} results`);
 
@@ -2009,14 +2020,15 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         return;
       }
 
-      const recalledCount = allResults.length; // 召回的总数
       const finalCount = topResults.length;    // 最终注入的数量
 
       let message;
       if (settings.rerank_enabled && finalCount > 0) {
-        message = `查询到 ${recalledCount} 个块，重排后注入 ${finalCount} 个块。`;
+        // 如果启用了重排，显示重排后的数量
+        message = `查询到 ${allResults.length} 个块，重排后注入 ${finalCount} 个块。`;
       } else {
-        message = `查询到 ${finalCount} 个块` + (finalCount > 0 ? '，已注入。' : '。');
+        // 如果没有启用重排，allResults 已经被限制为 max_results
+        message = `查询到 ${allResults.length} 个块` + (finalCount > 0 ? '，已注入。' : '。');
       }
 
       // 详细模式：显示来源分布
@@ -2386,16 +2398,18 @@ function migrateTagSettings() {
 }
 
 jQuery(async () => {
+  try {
+    console.log('Vectors Enhanced: Starting initialization...');
 
-  // 使用独立的设置键避免冲突
-  const SETTINGS_KEY = 'vectors_enhanced';
+    // 使用独立的设置键避免冲突
+    const SETTINGS_KEY = 'vectors_enhanced';
 
-  if (!extension_settings[SETTINGS_KEY]) {
-    extension_settings[SETTINGS_KEY] = settings;
-  }
+    if (!extension_settings[SETTINGS_KEY]) {
+      extension_settings[SETTINGS_KEY] = settings;
+    }
 
-  // 深度合并设置，确保所有必需的属性都存在
-  Object.assign(settings, extension_settings[SETTINGS_KEY]);
+    // 深度合并设置，确保所有必需的属性都存在
+    Object.assign(settings, extension_settings[SETTINGS_KEY]);
 
   // 在设置加载后运行迁移
   migrateTagSettings();
@@ -2435,421 +2449,43 @@ jQuery(async () => {
   saveSettingsDebounced();
 
   // 第三方插件需要使用完整路径
+  console.log('Vectors Enhanced: Loading template...');
   const template = await renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings');
   $('#extensions_settings2').append(template);
+  console.log('Vectors Enhanced: Template loaded and appended');
 
-  // Initialize master switch first
-$('#vectors_enhanced_master_enabled')
-  .prop('checked', settings.master_enabled)
-  .on('change', function () {
-    settings.master_enabled = $(this).prop('checked');
-    Object.assign(extension_settings.vectors_enhanced, settings);
+  // 创建 ConfigManager 实例
+  console.log('Vectors Enhanced: Creating ConfigManager...');
+  const configManager = new ConfigManager(extension_settings, saveSettingsDebounced);
 
-    saveSettingsDebounced();
-    updateMasterSwitchStateNew(settings);
+  // 创建 SettingsManager 实例
+  console.log('Vectors Enhanced: Creating SettingsManager...');
+  const settingsManager = new SettingsManager(settings, configManager, {
+    extension_settings,
+    saveSettingsDebounced,
+    updateFileList,
+    updateWorldInfoList,
+    getChatTasks,
+    renameVectorTask,
+    removeVectorTask,
+    toggleMessageRangeVisibility,
+    showTagExamples,
+    scanAndSuggestTags
   });
 
-  // Initialize master switch state
-  updateMasterSwitchStateNew(settings);
+  // 初始化所有设置UI
+  console.log('Vectors Enhanced: Initializing settings UI...');
+  await settingsManager.initialize();
+  console.log('Vectors Enhanced: Settings UI initialized');
 
-  // Initialize UI elements
-  $('#vectors_enhanced_source')
-    .val(settings.source)
-    .on('change', () => {
-      settings.source = String($('#vectors_enhanced_source').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      toggleSettings();
-    });
-
-  $('#vectors_enhanced_vllm_model')
-    .val(settings.vllm_model)
-    .on('input', () => {
-      settings.vllm_model = String($('#vectors_enhanced_vllm_model').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_vllm_url')
-    .val(settings.vllm_url)
-    .on('input', () => {
-      settings.vllm_url = String($('#vectors_enhanced_vllm_url').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_local_model')
-    .val(settings.local_model)
-    .on('input', () => {
-      settings.local_model = String($('#vectors_enhanced_local_model').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // Ollama settings handlers
-  $('#vectors_enhanced_ollama_model')
-    .val(settings.ollama_model)
-    .on('input', () => {
-      settings.ollama_model = String($('#vectors_enhanced_ollama_model').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_ollama_url')
-    .val(settings.ollama_url)
-    .on('input', () => {
-      settings.ollama_url = String($('#vectors_enhanced_ollama_url').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_ollama_keep')
-    .prop('checked', settings.ollama_keep)
-    .on('input', () => {
-      settings.ollama_keep = $('#vectors_enhanced_ollama_keep').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_auto_vectorize')
-    .prop('checked', settings.auto_vectorize)
-    .on('input', () => {
-      settings.auto_vectorize = $('#vectors_enhanced_auto_vectorize').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_chunk_size')
-    .val(settings.chunk_size)
-    .on('input', () => {
-      settings.chunk_size = Number($('#vectors_enhanced_chunk_size').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_overlap_percent')
-    .val(settings.overlap_percent)
-    .on('input', () => {
-      settings.overlap_percent = Number($('#vectors_enhanced_overlap_percent').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_score_threshold')
-    .val(settings.score_threshold)
-    .on('input', () => {
-      settings.score_threshold = Number($('#vectors_enhanced_score_threshold').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_force_chunk_delimiter')
-    .val(settings.force_chunk_delimiter)
-    .on('input', () => {
-      settings.force_chunk_delimiter = String($('#vectors_enhanced_force_chunk_delimiter').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_enabled')
-    .prop('checked', settings.enabled)
-    .on('input', () => {
-      settings.enabled = $('#vectors_enhanced_enabled').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_query_messages')
-    .val(settings.query_messages)
-    .on('input', () => {
-      settings.query_messages = Number($('#vectors_enhanced_query_messages').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_max_results')
-    .val(settings.max_results)
-    .on('input', () => {
-      settings.max_results = Number($('#vectors_enhanced_max_results').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // Rerank settings handlers
-  $('#vectors_enhanced_rerank_enabled').prop('checked', settings.rerank_enabled).on('input', function() {
-      settings.rerank_enabled = $(this).prop('checked');
-
-    // --- 新增逻辑开始 ---
-    if (settings.rerank_enabled) {
-        // 如果 Rerank 被启用，确保向量查询也被启用
-        $('#vectors_enhanced_enabled').prop('checked', true);
-        settings.enabled = true;
-    }
-    // --- 新增逻辑结束 ---
-
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-  $('#vectors_enhanced_rerank_url').val(settings.rerank_url).on('input', function() {
-      settings.rerank_url = $(this).val();
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-  $('#vectors_enhanced_rerank_apiKey').val(settings.rerank_apiKey).on('input', function() {
-      settings.rerank_apiKey = $(this).val();
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-  $('#vectors_enhanced_rerank_model').val(settings.rerank_model).on('input', function() {
-      settings.rerank_model = $(this).val();
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-   $('#vectors_enhanced_rerank_top_n').val(settings.rerank_top_n).on('input', function() {
-      settings.rerank_top_n = Number($(this).val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-  $('#vectors_enhanced_rerank_hybrid_alpha').val(settings.rerank_hybrid_alpha).on('input', function() {
-      settings.rerank_hybrid_alpha = Number($(this).val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-
-  $('#vectors_enhanced_rerank_success_notify').prop('checked', settings.rerank_success_notify).on('input', function() {
-      settings.rerank_success_notify = $(this).prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-  });
-
-   // 显示查询结果通知设置
-   $('#vectors_enhanced_show_query_notification')
-    .prop('checked', settings.show_query_notification)
-    .on('input', () => {
-      settings.show_query_notification = $('#vectors_enhanced_show_query_notification').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      // 控制详细选项的显示/隐藏
-      $('#vectors_enhanced_notification_details').toggle(settings.show_query_notification);
-    });
-
-  // 详细通知模式设置
-  $('#vectors_enhanced_detailed_notification')
-    .prop('checked', settings.detailed_notification)
-    .on('input', () => {
-      settings.detailed_notification = $('#vectors_enhanced_detailed_notification').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // 内容标签设置事件处理器
-  $('#vectors_enhanced_tag_chat').on('input', () => {
-    const value = $('#vectors_enhanced_tag_chat').val().trim() || 'past_chat';
-    settings.content_tags.chat = value;
-    Object.assign(extension_settings.vectors_enhanced, settings);
-    saveSettingsDebounced();
-  });
-
-  $('#vectors_enhanced_tag_wi').on('input', () => {
-    const value = $('#vectors_enhanced_tag_wi').val().trim() || 'world_part';
-    settings.content_tags.world_info = value;
-    Object.assign(extension_settings.vectors_enhanced, settings);
-    saveSettingsDebounced();
-  });
-
-  $('#vectors_enhanced_tag_file').on('input', () => {
-    const value = $('#vectors_enhanced_tag_file').val().trim() || 'databank';
-    settings.content_tags.file = value;
-    Object.assign(extension_settings.vectors_enhanced, settings);
-    saveSettingsDebounced();
-  });
-
-  $('#vectors_enhanced_template')
-    .val(settings.template)
-    .on('input', () => {
-      settings.template = String($('#vectors_enhanced_template').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_depth')
-    .val(settings.depth)
-    .on('input', () => {
-      settings.depth = Number($('#vectors_enhanced_depth').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $(`input[name="vectors_position"][value="${settings.position}"]`).prop('checked', true);
-  $('input[name="vectors_position"]').on('change', () => {
-    settings.position = Number($('input[name="vectors_position"]:checked').val());
-    Object.assign(extension_settings.vectors_enhanced, settings);
-    saveSettingsDebounced();
-  });
-
-  $('#vectors_enhanced_depth_role')
-    .val(settings.depth_role)
-    .on('change', () => {
-      settings.depth_role = Number($('#vectors_enhanced_depth_role').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_include_wi')
-    .prop('checked', settings.include_wi)
-    .on('input', () => {
-      settings.include_wi = $('#vectors_enhanced_include_wi').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // Content selection handlers
-  $('#vectors_enhanced_chat_enabled')
-    .prop('checked', settings.selected_content.chat.enabled)
-    .on('input', () => {
-      settings.selected_content.chat.enabled = $('#vectors_enhanced_chat_enabled').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      updateContentSelectionNew(settings);
-    });
-
-  $('#vectors_enhanced_files_enabled')
-    .prop('checked', settings.selected_content.files.enabled)
-    .on('input', async () => {
-      settings.selected_content.files.enabled = $('#vectors_enhanced_files_enabled').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      updateContentSelectionNew(settings);
-      if (settings.selected_content.files.enabled) {
-        await updateFileList();
-      }
-    });
-
-  $('#vectors_enhanced_wi_enabled')
-    .prop('checked', settings.selected_content.world_info.enabled)
-    .on('input', async () => {
-      settings.selected_content.world_info.enabled = $('#vectors_enhanced_wi_enabled').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      updateContentSelectionNew(settings);
-      if (settings.selected_content.world_info.enabled) {
-        await updateWorldInfoList();
-      }
-
-      // Initial render of the tag rules UI
-      renderTagRulesUI();
-    });
-
-  // Chat settings handlers - 确保所有属性都存在
-  const chatRange = settings.selected_content.chat.range || { start: 0, end: -1 };
-  const chatTypes = settings.selected_content.chat.types || { user: true, assistant: true };
-  const chatTags = settings.selected_content.chat.tags || '';
-
-  $('#vectors_enhanced_chat_start')
-    .val(chatRange.start)
-    .on('input', () => {
-      if (!settings.selected_content.chat.range) {
-        settings.selected_content.chat.range = { start: 0, end: -1 };
-      }
-      settings.selected_content.chat.range.start = Number($('#vectors_enhanced_chat_start').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_chat_end')
-    .val(chatRange.end)
-    .on('input', () => {
-      if (!settings.selected_content.chat.range) {
-        settings.selected_content.chat.range = { start: 0, end: -1 };
-      }
-      settings.selected_content.chat.range.end = Number($('#vectors_enhanced_chat_end').val());
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // Message type checkboxes
-  $('#vectors_enhanced_chat_user')
-    .prop('checked', chatTypes.user)
-    .on('input', () => {
-      if (!settings.selected_content.chat.types) {
-        settings.selected_content.chat.types = { user: true, assistant: true };
-      }
-      settings.selected_content.chat.types.user = $('#vectors_enhanced_chat_user').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  $('#vectors_enhanced_chat_assistant')
-    .prop('checked', chatTypes.assistant)
-    .on('input', () => {
-      if (!settings.selected_content.chat.types) {
-        settings.selected_content.chat.types = { user: true, assistant: true };
-      }
-      settings.selected_content.chat.types.assistant = $('#vectors_enhanced_chat_assistant').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // Tags input - REMOVED
-
-  // Include hidden messages checkbox
-  $('#vectors_enhanced_chat_include_hidden')
-    .prop('checked', settings.selected_content.chat.include_hidden || false)
-    .on('input', () => {
-      if (!settings.selected_content.chat) {
-        settings.selected_content.chat = {};
-      }
-      settings.selected_content.chat.include_hidden = $('#vectors_enhanced_chat_include_hidden').prop('checked');
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    });
-
-  // Refresh buttons
-  $('#vectors_enhanced_files_refresh').on('click', async () => {
-    await updateFileList();
-    toastr.info('文件列表已刷新');
-  });
-
-  $('#vectors_enhanced_wi_refresh').on('click', async () => {
-    await updateWorldInfoList();
-    toastr.info('世界信息列表已刷新');
-  });
-
-  // Initialize UI
-  toggleSettings();
-  updateContentSelectionNew(settings);
-  updateChatSettings();
-
-  // 初始化通知详细选项的显示状态
-  $('#vectors_enhanced_notification_details').toggle(settings.show_query_notification);
-
-  // 加载内容标签设置（确保向后兼容）
-  if (!settings.content_tags) {
-    settings.content_tags = {
-      chat: 'past_chat',
-      file: 'databank',
-      world_info: 'world_part',
-    };
-  }
-  $('#vectors_enhanced_tag_chat').val(settings.content_tags.chat);
-  $('#vectors_enhanced_tag_wi').val(settings.content_tags.world_info);
-  $('#vectors_enhanced_tag_file').val(settings.content_tags.file);
-
-  // Initialize lists if enabled
-  if (settings.selected_content.files.enabled) {
-    await updateFileList();
-  }
-  if (settings.selected_content.world_info.enabled) {
-    await updateWorldInfoList();
-  }
-
-  // Initial render of the tag rules UI
+  // 初始化列表和任务
+  await settingsManager.initializeLists();
+  await settingsManager.initializeTaskList();
+  
+  // 初始化标签规则UI
   renderTagRulesUI();
-
-  // Initialize task list
-  await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
-
-  // Initialize hidden messages info
+  
+  // 初始化隐藏消息信息
   MessageUI.updateHiddenMessagesInfo();
 
   // Event listeners
@@ -2966,82 +2602,6 @@ $('#vectors_enhanced_master_enabled')
     Array.isArray(settings.content_blacklist) ? settings.content_blacklist.join('\n') : '',
   );
 
-  // 隐藏消息管理按钮事件处理器
-  $('#vectors_enhanced_hide_range').on('click', async () => {
-    const start = Number($('#vectors_enhanced_chat_start').val()) || 0;
-    const end = Number($('#vectors_enhanced_chat_end').val()) || -1;
-    await toggleMessageRangeVisibility(start, end, true);
-    MessageUI.updateHiddenMessagesInfo();
-  });
-
-  $('#vectors_enhanced_unhide_range').on('click', async () => {
-    const start = Number($('#vectors_enhanced_chat_start').val()) || 0;
-    const end = Number($('#vectors_enhanced_chat_end').val()) || -1;
-    await toggleMessageRangeVisibility(start, end, false);
-    MessageUI.updateHiddenMessagesInfo();
-  });
-
-  $('#vectors_enhanced_show_hidden').on('click', async () => {
-    await MessageUI.showHiddenMessages();
-  });
-
-  // 标签示例按钮事件
-  $('#vectors_enhanced_tag_examples').on('click', async () => {
-    await showTagExamples();
-  });
-
-  // 标签扫描按钮事件
-  $('#vectors_enhanced_tag_scanner').on('click', async () => {
-    await scanAndSuggestTags();
-  });
-
-  // 添加新规则按钮事件
-  $('#vectors_enhanced_add_rule').on('click', () => {
-      if (!settings.selected_content.chat.tag_rules) {
-          settings.selected_content.chat.tag_rules = [];
-      }
-      settings.selected_content.chat.tag_rules.push({
-          type: 'include',
-          value: '',
-          enabled: true,
-      });
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-      renderTagRulesUI();
-  });
-
-  // 清除标签建议按钮事件
-  $('#vectors_enhanced_clear_suggestions').on('click', () => {
-    clearTagSuggestions();
-  });
-
-// 排除小CoT按钮事件
-  $('#vectors_enhanced_exclude_cot').on('click', () => {
-    if (!settings.selected_content.chat.tag_rules) {
-        settings.selected_content.chat.tag_rules = [];
-    }
-
-    const cotRule = {
-        type: 'regex_exclude',
-        value: '<!--[\\s\\S]*?-->',
-        enabled: true,
-    };
-
-    const alreadyExists = settings.selected_content.chat.tag_rules.some(
-        rule => rule.type === cotRule.type && rule.value === cotRule.value
-    );
-
-    if (alreadyExists) {
-        toastr.info('已存在排除HTML注释的规则。');
-        return;
-    }
-
-    settings.selected_content.chat.tag_rules.push(cotRule);
-    Object.assign(extension_settings.vectors_enhanced, settings);
-    saveSettingsDebounced();
-    renderTagRulesUI();
-    toastr.success('已添加规则：排除HTML注释');
-  });
   // 初始化隐藏消息信息显示
   MessageUI.updateHiddenMessagesInfo();
 
@@ -3082,6 +2642,12 @@ $('#vectors_enhanced_master_enabled')
   initializeDebugModule().catch(err => {
     console.debug('[Vectors] Debug module initialization failed (this is normal in production):', err.message);
   });
+  
+    console.log('Vectors Enhanced: Initialization completed successfully');
+  } catch (error) {
+    console.error('Vectors Enhanced: Failed to initialize:', error);
+    toastr.error(`Vectors Enhanced 初始化失败: ${error.message}`);
+  }
 });
 
 /**
