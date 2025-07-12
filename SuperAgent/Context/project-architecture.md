@@ -15,13 +15,36 @@ vectors-enhanced/
 │   ├── README.md        # 源代码目录说明
 │   ├── index.js        # 模块化入口文件 (新增)
 │   ├── core/           # 核心业务逻辑
-│   │   └── entities/   # 实体类定义
+│   │   ├── entities/   # 实体类定义
+│   │   │   ├── Content.js      # 内容实体类 (新增)
+│   │   │   ├── Vector.js       # 向量实体类 (新增)
+│   │   │   ├── Task.js         # 任务实体类 (新增)
+│   │   │   └── README.md
+│   │   ├── extractors/ # 内容提取器 (新增)
+│   │   │   ├── IContentExtractor.js    # 提取器接口 (新增)
+│   │   │   ├── ChatExtractor.js        # 聊天消息提取器 (新增)
+│   │   │   ├── FileExtractor.js        # 文件提取器 (新增)
+│   │   │   ├── WorldInfoExtractor.js   # 世界信息提取器 (新增)
+│   │   │   └── README.md
+│   │   └── tasks/      # 任务系统 (新增)
+│   │       ├── ITask.js                # 任务接口 (新增)
+│   │       ├── BaseTask.js             # 基础任务类 (新增)
+│   │       ├── VectorizationTask.js    # 向量化任务 (新增)
+│   │       ├── TaskFactory.js          # 任务工厂 (新增)
+│   │       ├── taskTypes.js            # 任务类型常量 (新增)
 │   │       └── README.md
+│   ├── application/    # 应用层服务 (新增)
+│   │   ├── TaskManager.js              # 任务管理器 (新增)
+│   │   └── TaskQueue.js                # 任务队列 (新增)
 │   ├── infrastructure/ # 基础设施层
+│   │   ├── ConfigManager.js            # 配置管理器 (新增)
 │   │   ├── events/    # 事件系统
+│   │   │   ├── EventBus.js             # 事件总线 (新增)
+│   │   │   ├── eventBus.instance.js    # 事件总线实例 (新增)
 │   │   │   └── README.md
 │   │   ├── storage/   # 存储适配器
-│   │   │   └── StorageAdapter.js  # 封装所有向量存储API调用 (新增)
+│   │   │   ├── StorageAdapter.js       # 向量存储API适配器 (新增)
+│   │   │   └── TaskStorageAdapter.js   # 任务存储适配器 (新增)
 │   │   └── api/       # API适配器
 │   │       └── VectorizationAdapter.js  # 封装所有向量化源的调用 (新增)
 │   ├── utils/         # 工具函数
@@ -85,42 +108,44 @@ index.js
 
 ## 模块描述
 
-### 核心模块（当前在index.js中混合）
-1. **设置管理**
-   - 扩展设置的读写
-   - UI设置项的同步
-   - 默认值管理
+### 核心模块（已重构模块化）
+1. **设置管理**（已重构 ✅）
+   - ConfigManager：统一配置管理接口
+   - SettingsManager：UI设置初始化和事件处理
+   - 与extension_settings深度集成
 
-2. **内容提取**
-   - 聊天消息提取
-   - 文件内容获取
-   - 世界信息读取
+2. **内容提取**（已重构 ✅）
+   - IContentExtractor：统一提取器接口
+   - ChatExtractor：聊天消息提取，集成chatUtils
+   - FileExtractor：文件内容获取
+   - WorldInfoExtractor：世界信息读取
 
-3. **向量化处理**
-   - 向量化任务创建
-   - 多引擎适配
-   - 批量处理逻辑
+3. **向量化处理**（已重构 ✅）
+   - VectorizationAdapter：多引擎适配统一接口
+   - 支持Transformers/Ollama/vLLM/WebLLM/OpenAI/Cohere
+   - 批量处理和错误恢复机制
 
-4. **任务管理**
-   - 任务队列维护
-   - 并发控制
-   - 进度跟踪
+4. **任务管理**（已重构 ✅）
+   - TaskManager：新旧任务系统协调器
+   - TaskQueue：任务队列和并发控制
+   - TaskFactory：任务创建和格式转换
+   - 双写模式确保向后兼容
 
-5. **向量存储**
-   - 向量数据库CRUD
-   - 数据持久化
-   - 导入导出功能
+5. **向量存储**（已重构 ✅）
+   - StorageAdapter：向量数据库CRUD统一接口
+   - TaskStorageAdapter：任务持久化存储
+   - 依赖注入避免循环引用
 
-6. **内容注入**
-   - 相似度匹配
-   - 注入位置计算
-   - 标签系统
+6. **内容注入**（部分重构）
+   - 相似度匹配（保持原有逻辑）
+   - 注入位置计算（保持原有逻辑）
+   - 标签系统（已重构TagExtractor/TagParser/TagScanner）
 
-7. **UI交互**
-   - 设置面板
-   - 任务列表
-   - 进度显示
-   - 通知系统
+7. **UI交互**（已重构 ✅）
+   - 组件化UI：TaskList/FileList/WorldInfoList等
+   - domUtils：统一DOM操作
+   - MessageUI：消息相关UI逻辑
+   - TagUI：标签相关UI管理
 
 ### UI 模块 (新增)
 - **src/ui/domUtils.js**: 封装所有DOM操作，旨在将UI逻辑与业务逻辑分离。目前已包含：
@@ -149,38 +174,82 @@ index.js
 - **src/infrastructure/storage/StorageAdapter.js**: 存储适配器，封装所有向量存储相关的 API 调用，使用依赖注入模式避免循环引用。
 - **src/infrastructure/api/VectorizationAdapter.js**: 向量化 API 适配器，统一封装所有向量化源（Transformers、Ollama、vLLM、WebLLM、OpenAI、Cohere）的调用接口。
 
-## 待解决的架构问题
-1. **单一职责违反**: index.js承担了过多职责
-2. **高耦合度**: UI与业务逻辑严重耦合
-3. **扩展困难**: 添加新功能需要修改核心代码
-4. **测试困难**: 无法进行单元测试
-5. **代码重复**: 多处存在相似逻辑
-6. **消息过滤逻辑不一致**: 存在多处重复的消息过滤逻辑需要统一
+### 任务系统模块 (Phase 6 完成)
+- **src/core/tasks/**: 任务系统核心
+  - **ITask.js**: 任务接口定义，规范所有任务的基本方法
+  - **BaseTask.js**: 基础任务类，提供通用任务功能和状态管理
+  - **VectorizationTask.js**: 向量化任务实现，支持新旧格式转换
+  - **TaskFactory.js**: 任务工厂，负责任务创建、类型识别和格式转换
+- **src/application/**: 应用层服务
+  - **TaskManager.js**: 任务管理器，协调新旧任务系统，实现双写模式
+  - **TaskQueue.js**: 任务队列，支持优先级、并发控制和取消机制
+- **src/infrastructure/storage/TaskStorageAdapter.js**: 任务存储适配器，处理新旧格式任务的持久化
 
-## 发现的代码问题
+### 内容提取系统 (Phase 5 完成)
+- **src/core/extractors/**: 内容提取器系统
+  - **IContentExtractor.js**: 提取器统一接口
+  - **ChatExtractor.js**: 聊天消息提取器，集成统一的消息过滤逻辑
+  - **FileExtractor.js**: 文件内容提取器，处理各种文件格式
+  - **WorldInfoExtractor.js**: 世界信息提取器，按世界和条目组织内容
 
-### 消息过滤逻辑重复
-发现以下几处消息过滤相关的代码存在重复和不一致：
+## 重构进展状态
 
-1. **getHiddenMessages** (MessageUI.js:11-28)
-   - 位置：`src/ui/components/MessageUI.js`
-   - 逻辑：过滤 `msg.is_system === true` 的消息
-   - 用途：显示隐藏消息的UI功能
+### 已解决的架构问题 ✅
+1. **单一职责违反**: 已通过模块化重构大幅改善
+   - UI逻辑迁移至 `src/ui/components/`
+   - 业务逻辑迁移至 `src/core/`
+   - 基础设施迁移至 `src/infrastructure/`
 
-2. **getVectorizableContent** (index.js:379-565)
-   - 位置：`index.js`
-   - 逻辑：根据 `msg.is_system === true && !chatSettings.include_hidden` 过滤
-   - 特殊处理：首楼（index === 0）或用户楼层（msg.is_user === true）不应用标签提取规则
-   - 用途：获取可向量化的内容
+2. **高耦合度**: 已大幅改善
+   - UI与业务逻辑分离（domUtils、各UI组件）
+   - 依赖注入模式避免循环引用
+   - 适配器模式统一外部接口
 
-3. **getRawContentForScanning** (index.js)
-   - 位置：`index.js`
-   - 逻辑：与 getVectorizableContent 相似，但绕过标签提取规则
-   - 过滤：`msg.is_system === true && !chatSettings.include_hidden`
-   - 用途：扫描原始内容
+3. **扩展困难**: 已解决
+   - 插件式架构（提取器、任务、适配器）
+   - 工厂模式支持新类型扩展
+   - 统一接口便于功能添加
 
-### 建议的重构方案
-1. 创建统一的消息过滤器模块 `src/utils/messageFilter.js`
-2. 定义一致的过滤规则接口
-3. 将所有消息过滤逻辑集中管理
-4. 确保所有地方使用相同的过滤逻辑
+4. **测试困难**: 已大幅改善
+   - 模块化代码便于单元测试
+   - 依赖注入支持Mock测试
+   - 接口规范化
+
+5. **代码重复**: 已解决
+   - 统一工具函数（chatUtils、tagExtractor等）
+   - 复用组件（UI components）
+   - 统一适配器模式
+
+6. **消息过滤逻辑不一致**: 已解决 ✅
+   - 创建统一的 `chatUtils.js` 模块
+   - 所有消息过滤使用统一接口
+   - 消除了UI和数据层的重复逻辑
+
+### 待完成的架构改进
+1. **完全模块化入口**: 创建新的模块化入口文件
+2. **插件系统**: 实现完整的插件架构
+3. **样式模块化**: CSS拆分和组织
+4. **性能优化**: 缓存和批处理优化
+
+## 当前系统状态
+
+### TaskManager系统运行状态
+- **运行模式**: TaskManager（新任务系统）
+- **向后兼容**: 完全保持，所有现有任务正常访问
+- **系统健康**: 全部模块正常运行
+- **状态检查**: 使用 `vectorsTaskSystemStatus()` 可查看详细状态
+
+### 重构完成度
+- **Phase 0-1**: 基础设施层 ✅ 100%
+- **Phase 2**: 核心实体 ✅ 100% 
+- **Phase 3**: 工具函数提取 ✅ 100%
+- **Phase 4**: 适配器层 ✅ 100%
+- **Phase 5**: 内容提取器 ✅ 100%
+- **Phase 6**: 任务系统 ✅ 100%
+- **Phase 7-10**: 等待后续实施
+
+### 关键特性
+1. **双系统兼容**: 新任务系统与legacy系统完美共存
+2. **零停机迁移**: 重构过程中功能始终可用
+3. **渐进式架构**: 每个阶段都是可独立验证的改进
+4. **向后兼容**: 所有现有数据和功能完全保留
