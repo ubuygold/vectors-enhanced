@@ -1,6 +1,7 @@
 import { extension_settings } from '../../../../../../extensions.js';
 import { getCurrentChatId, saveSettingsDebounced } from '../../../../../../../script.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../../../../popup.js';
+import { TaskNameGenerator } from '../../utils/taskNaming.js';
 
 const settings = extension_settings.vectors_enhanced;
 
@@ -25,11 +26,31 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
 
     const incrementalBadge = task.isIncremental ? '<span style="background: var(--SmartThemeQuoteColor); color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; margin-left: 0.5rem;">增量</span>' : '';
 
+    // Generate smart task name if actualProcessedItems is available
+    let displayName = task.name;
+    if (task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
+      // Construct items for name generation
+      const items = [];
+      
+      // Add chat items
+      if (task.actualProcessedItems.chat) {
+        task.actualProcessedItems.chat.forEach(index => {
+          items.push({
+            type: 'chat',
+            metadata: { index: index, is_user: index % 2 === 1 }
+          });
+        });
+      }
+      
+      // Generate smart name
+      displayName = TaskNameGenerator.generateSmartName(items, task.settings);
+    }
+
     const checkbox = $(`
             <label class="checkbox_label flex-container alignItemsCenter">
                 <input type="checkbox" ${task.enabled ? 'checked' : ''} />
                 <span class="flex1">
-                    <strong>${task.name}</strong>${incrementalBadge}
+                    <strong title="${task.name}">${displayName}</strong>${incrementalBadge}
                     <small class="text-muted"> - ${new Date(task.timestamp).toLocaleString('zh-CN')}</small>
                 </span>
             </label>

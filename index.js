@@ -265,18 +265,43 @@ async function removeVectorTask(chatId, taskId) {
  * @param {string} currentName Current task name
  */
 async function renameVectorTask(chatId, taskId, currentName) {
+  // Try to generate a smart name as default if we have task data
+  let defaultName = currentName;
+  const tasks = getChatTasks(chatId);
+  const task = tasks.find(t => t.taskId === taskId);
+  
+  if (task && task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
+    // Import TaskNameGenerator
+    const { TaskNameGenerator } = await import('./src/utils/taskNaming.js');
+    
+    // Construct items for name generation
+    const items = [];
+    
+    // Add chat items
+    if (task.actualProcessedItems.chat) {
+      task.actualProcessedItems.chat.forEach(index => {
+        items.push({
+          type: 'chat',
+          metadata: { index: index, is_user: index % 2 === 1 }
+        });
+      });
+    }
+    
+    // Generate smart name as default
+    defaultName = TaskNameGenerator.generateSmartName(items, task.settings);
+  }
+  
   const newName = await callGenericPopup(
     '请输入新的任务名称：',
     POPUP_TYPE.INPUT,
-    currentName,
+    defaultName,
     {
       okButton: '确认',
       cancelButton: '取消',
     }
   );
 
-  if (newName && newName.trim() && newName.trim() !== currentName) {
-    const tasks = getChatTasks(chatId);
+  if (newName && newName.trim() && newName.trim() !== task.name) {
     const taskIndex = tasks.findIndex(t => t.taskId === taskId);
 
     if (taskIndex !== -1) {

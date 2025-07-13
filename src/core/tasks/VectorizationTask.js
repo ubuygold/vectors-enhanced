@@ -1,4 +1,5 @@
 import { BaseTask } from './BaseTask.js';
+import { TaskNameGenerator } from '../../utils/taskNaming.js';
 
 /**
  * Vectorization task implementation.
@@ -171,5 +172,84 @@ export class VectorizationTask extends BaseTask {
      */
     getCollectionId() {
         return `${this.chatId}_${this.id}`;
+    }
+
+    /**
+     * Generate smart task name based on actual processed items
+     * @param {Array} items - Array of content items (optional, will use this.textContent if not provided)
+     * @param {Object} settings - Settings object (optional, will use this.settings if not provided)
+     * @returns {string} Generated task name
+     */
+    generateSmartName(items = null, settings = null) {
+        // Use provided items or construct from actualProcessedItems
+        const contentItems = items || this._constructItemsFromProcessed();
+        const taskSettings = settings || this.settings;
+        
+        return TaskNameGenerator.generateSmartName(contentItems, taskSettings);
+    }
+
+    /**
+     * Update task name based on actual processed items
+     */
+    updateName() {
+        this.name = this.generateSmartName();
+    }
+
+    /**
+     * Construct items array from actualProcessedItems for name generation
+     * @private
+     * @returns {Array} Array of items with metadata
+     */
+    _constructItemsFromProcessed() {
+        const items = [];
+        
+        // Add chat items
+        if (this.actualProcessedItems.chat && this.actualProcessedItems.chat.length > 0) {
+            this.actualProcessedItems.chat.forEach(index => {
+                items.push({
+                    type: 'chat',
+                    metadata: {
+                        index: index,
+                        is_user: this._inferMessageType(index)
+                    }
+                });
+            });
+        }
+        
+        // Add file items (for counting purposes)
+        if (this.actualProcessedItems.files) {
+            this.actualProcessedItems.files.forEach(fileUrl => {
+                items.push({
+                    type: 'file',
+                    metadata: { url: fileUrl }
+                });
+            });
+        }
+        
+        // Add world info items (for counting purposes)
+        if (this.actualProcessedItems.world_info) {
+            this.actualProcessedItems.world_info.forEach(uid => {
+                items.push({
+                    type: 'world_info',
+                    metadata: { uid: uid }
+                });
+            });
+        }
+        
+        return items;
+    }
+
+    /**
+     * Infer message type from index (odd = user, even = AI)
+     * This is a heuristic - actual implementation should check real message data
+     * @private
+     * @param {number} index - Message index
+     * @returns {boolean} True if user message
+     */
+    _inferMessageType(index) {
+        // This is a simple heuristic - in real usage, should check actual message data
+        // Typically, user messages are at odd indices (1, 3, 5...) 
+        // and AI messages at even indices (0, 2, 4...)
+        return index % 2 === 1;
     }
 }
