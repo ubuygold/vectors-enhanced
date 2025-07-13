@@ -3,10 +3,11 @@
 ## 文件结构
 ```
 vectors-enhanced/
-├── index.js              # 主入口文件 (5000+行，UI逻辑逐步迁移至 src/ui/ 模块)
+├── index.js              # 主入口文件 (3300+行，部分功能已模块化)
 ├── webllm.js            # WebLLM 引擎适配器
-├── settings.html        # 设置界面 (500+行，待模块化)
-├── style.css            # 样式文件 (待优化)
+├── settings.html        # 原始设置界面 (561行)
+├── settings-modular.html # 模块化设置界面 (已实现)
+├── style.css            # 样式文件
 ├── manifest.json        # 扩展配置文件
 ├── package.json         # Node.js 项目配置 (新增)
 ├── webpack.config.js    # Webpack 构建配置 (新增)
@@ -33,10 +34,11 @@ vectors-enhanced/
 │   │   │   ├── TaskFactory.js          # 任务工厂 (新增)
 │   │   │   ├── taskTypes.js            # 任务类型常量 (新增)
 │   │   │   └── README.md
-│   │   └── plugins/    # 插件系统 (Phase 8 - 计划中)
+│   │   ├── plugins/    # 插件系统 (已实现)
 │   │       ├── IVectorizationPlugin.js # 插件接口定义
 │   │       ├── PluginManager.js        # 插件管理器
-│   │       └── PluginLoader.js         # 插件加载器
+│   │       ├── PluginLoader.js         # 插件加载器
+│   │       └── README.md
 │   ├── application/    # 应用层服务 (新增)
 │   │   ├── TaskManager.js              # 任务管理器 (新增)
 │   │   └── TaskQueue.js                # 任务队列 (新增)
@@ -93,7 +95,7 @@ vectors-enhanced/
 │   │       ├── tags.css         # 标签样式
 │   │       ├── tasks.css        # 任务列表样式
 │   │       └── responsive.css   # 响应式样式
-│   ├── plugins/       # 内置插件 (Phase 8 - 计划中)
+│   ├── plugins/       # 内置插件 (已实现)
 │   │   └── builtin/
 │   │       ├── TransformersPlugin.js  # Transformers向量化插件
 │   │       ├── OllamaPlugin.js        # Ollama向量化插件
@@ -101,17 +103,8 @@ vectors-enhanced/
 │   │       ├── WebLLMPlugin.js        # WebLLM向量化插件
 │   │       ├── OpenAIPlugin.js        # OpenAI向量化插件
 │   │       └── CoherePlugin.js        # Cohere向量化插件
-│   ├── legacy/        # 将被重构的旧代码
-│   │   └── README.md
-│   ├── build-setup-plan.md  # 构建环境设置计划 (新增)
-│   └── refactoring-progress.md  # 重构进度报告 (新增)
-├── plugins/            # 外部插件目录 (Phase 8 - 计划中)
-│   └── example/
-│       └── MockVectorizerPlugin.js  # 示例插件
-├── docs/               # 文档目录 (Phase 8 - 计划中)
-│   └── plugin-development.md  # 插件开发指南
-├── scripts/            # 脚本目录 (Phase 8 - 计划中)
-│   └── create-plugin.js  # 插件模板生成器
+│   └── legacy/        # 预留给旧代码迁移
+│       └── README.md
 ├── debug/               # 调试工具目录
 │   ├── debugger.js
 │   ├── ui-manager.js
@@ -119,11 +112,14 @@ vectors-enhanced/
 │   ├── templates/       # UI模板
 │   └── tools/          # 辅助工具
 └── SuperAgent/         # 项目管理目录
-    ├── tech-structure.md
-    ├── project-brief.md
+    ├── tech-structure.md         # 技术栈说明
+    ├── project-brief.md          # 项目简介
+    ├── architecture-patterns.md  # 架构设计模式总览
+    ├── code-quality-analysis.md  # 代码质量分析报告
+    ├── future-roadmap.md         # 未来发展路线图
     └── Context/
-        ├── project-architecture.md
-        └── iterations-log.md
+        ├── project-architecture.md  # 项目架构文档
+        └── iterations-log.md        # 迭代日志
 ```
 
 ## 依赖关系图
@@ -143,7 +139,8 @@ index.js
 └──> 调试工具 (debug/*)
 
 目标架构（分层解耦）：
-见 refactoring-architecture.md
+应用层 → 核心层 → UI层 → 基础设施层
+详见架构深度分析总结部分
 ```
 
 ## 模块描述
@@ -188,6 +185,29 @@ index.js
    - TagUI：标签相关UI管理
 
 ### UI 模块 (Phase 7重构)
+
+#### 架构特点
+1. **组件化设计**
+   - 15+ 独立UI组件
+   - 统一的生命周期（constructor → init → destroy）
+   - 防重复初始化机制
+
+2. **状态管理**
+   - StateManager 集中管理UI状态
+   - 支持撤销/重做和状态历史
+   - 自动同步设置和UI状态
+
+3. **事件系统**
+   - EventManager 统一处理DOM和自定义事件
+   - 事件委托提高性能
+   - 防抖处理高频事件
+
+4. **样式架构**
+   - 模块化CSS文件组织
+   - BEM命名约定
+   - CSS变量集成主题系统
+
+### UI 模块 (Phase 7重构)
 - **src/ui/domUtils.js**: 封装所有DOM操作，旨在将UI逻辑与业务逻辑分离。目前已包含：
   - 基础UI状态管理：`updateContentSelection`, `updateMasterSwitchState`, `toggleSettings`
   - 进度显示：`hideProgress`, `updateProgress`
@@ -201,6 +221,29 @@ index.js
 - **src/ui/ProgressManager.js**: 集中进度条管理（Phase 7.3）
 - **src/ui/EventManager.js**: UI事件协调器（Phase 7.4）
 - **src/ui/StateManager.js**: UI状态管理器（Phase 7.5）
+
+### 文本处理管道模块 (Phase 9已完成)
+
+#### 架构特点
+1. **管道处理流程**
+   - 内容提取 → 文本处理 → 任务分发 → 处理器执行
+   - 支持多种输入格式（字符串、数组、对象）
+   - 批量处理和流式处理支持
+
+2. **中间件系统**
+   - 标准化的 IMiddleware 接口
+   - 洋葱圈执行模型
+   - 内置验证、日志、转换中间件
+
+3. **生命周期管理**
+   - 完整的组件生命周期（注册→初始化→运行→暂停→停止）
+   - 健康检查和自动重启机制
+   - 统一的状态管理
+
+4. **事件系统**
+   - 专用的 PipelineEventBus
+   - 事件历史记录和统计
+   - 事件监听器工厂模式
 
 ### 文本处理管道模块 (Phase 9已完成)
 - **src/core/pipeline/ITextProcessor.js**: 文本处理器抽象接口，支持生命周期管理
@@ -280,8 +323,67 @@ index.js
 - **src/utils/tagScanner.js**: 包含 `scanTextForTags` 函数，负责在UI中扫描和识别文本中的标签，以便进行高亮或其他界面操作。
 - **src/utils/tagParser.js**: 提供解析标签配置的工具函数，特别是处理带有排除规则的复杂标签字符串（例如 "include,tags - exclude,tags"）。
 - **src/utils/chatUtils.js**: 统一的消息过滤工具，提供 `getMessages` 等函数，消除了之前在 UI 和数据处理层的重复逻辑。
-- **src/infrastructure/storage/StorageAdapter.js**: 存储适配器，封装所有向量存储相关的 API 调用，使用依赖注入模式避免循环引用。
-- **src/infrastructure/api/VectorizationAdapter.js**: 向量化 API 适配器，统一封装所有向量化源（Transformers、Ollama、vLLM、WebLLM、OpenAI、Cohere）的调用接口。
+
+### 基础设施层 (Phase 1 & 4 完成)
+
+#### 配置管理
+- **src/infrastructure/ConfigManager.js**: 统一的配置管理器
+  - 封装extension_settings的读写操作
+  - 提供get/set/getAll接口
+  - 自动触发保存回调
+  - 简化设置管理逻辑
+
+#### 存储适配器
+- **src/infrastructure/storage/StorageAdapter.js**: 向量存储适配器
+  - 封装所有向量数据库操作 (/api/vector/*)
+  - 依赖注入模式避免循环引用
+  - 方法：getSavedHashes, insertVectorItems, queryCollection, purgeVectorIndex等
+  - 支持集合存在性检查和统计信息
+  - 处理SillyTavern的向量存储API特殊性（如通过query获取文本）
+
+- **src/infrastructure/storage/TaskStorageAdapter.js**: 任务存储适配器
+  - 处理新旧任务格式的兼容性
+  - 支持版本标记（version字段）
+  - 自动迁移legacy任务到新格式
+  - 双写模式确保向后兼容
+  - 提供getAllChatsWithTasks等便捷方法
+
+#### API适配器
+- **src/infrastructure/api/VectorizationAdapter.js**: 向量化API适配器
+  - 统一封装不同向量化源的调用
+  - 支持6种向量化源（Transformers、Ollama、vLLM、WebLLM、OpenAI、Cohere）
+  - 重要：不直接向量化，而是准备数据并验证配置
+  - 实际向量化由SillyTavern的/api/vector/insert处理
+  - 支持插件管理器集成（可选）
+  - 提供源可用性检查和批量大小建议
+
+#### 事件系统
+- **src/infrastructure/events/EventBus.js**: 简单事件总线实现
+  - 基础的发布/订阅模式
+  - on/emit/off方法
+  - 不依赖外部代码
+
+- **src/infrastructure/events/eventBus.instance.js**: 事件总线单例
+  - 全局共享的事件总线实例
+  - 用于组件间通信
+
+### 任务系统模块 (Phase 6 完成)
+
+#### 架构特点
+1. **向后兼容设计**
+   - 双格式存储支持新旧任务
+   - 自动格式转换确保平滑迁移
+   - 版本标记区分任务格式
+
+2. **生命周期管理**
+   - 完整的状态流转：pending → queued → running → completed/failed/cancelled
+   - 事件驱动的状态变化通知
+   - 支持任务取消和重试
+
+3. **扩展性设计**
+   - 预留多种任务类型（summary、auto-update、export、import）
+   - 简单的任务类型注册机制
+   - 支持任务依赖和优先级（预留接口）
 
 ### 任务系统模块 (Phase 6 完成)
 - **src/core/tasks/**: 任务系统核心
@@ -301,7 +403,59 @@ index.js
   - **FileExtractor.js**: 文件内容提取器，处理各种文件格式
   - **WorldInfoExtractor.js**: 世界信息提取器，按世界和条目组织内容
 
+## 架构深度分析总结
+
+### 核心架构设计模式
+
+#### 1. 任务系统架构
+- **工厂模式**: TaskFactory 负责创建和管理任务实例
+- **策略模式**: 通过 ITask 接口实现不同任务类型
+- **模板方法模式**: BaseTask 提供生命周期管理模板
+- **适配器模式**: TaskStorageAdapter 处理新旧格式转换
+- **事件驱动**: 任务状态变化触发相应事件
+
+#### 2. 文本处理管道架构
+- **管道模式**: TextPipeline 管理处理器执行流程
+- **责任链模式**: MiddlewareManager 实现中间件链
+- **观察者模式**: PipelineEventBus 提供事件监控
+- **工厂模式**: ProcessorFactory 动态创建处理器
+- **洋葱圈模型**: 中间件前置/后置处理逻辑
+
+#### 3. UI层架构
+- **基于类的组件系统**: 每个UI组件都是独立的类
+- **依赖注入模式**: 避免循环依赖，提高可测试性
+- **集中式状态管理**: StateManager 管理所有UI状态
+- **事件驱动架构**: EventManager 统一处理各类事件
+- **模块化CSS**: BEM命名和CSS变量集成
+
+#### 4. 基础设施层架构
+- **适配器模式**: 统一外部API接口
+- **依赖注入**: 所有适配器使用构造函数注入
+- **单例模式**: EventBus 全局共享实例
+- **发布订阅模式**: 松耦合的组件通信
+
 ## 重构进展状态
+
+### 基础设施层特点
+1. **适配器模式应用**
+   - StorageAdapter: 封装向量存储API
+   - TaskStorageAdapter: 处理任务存储和版本兼容
+   - VectorizationAdapter: 统一6种向量化源接口
+
+2. **依赖注入设计**
+   - 避免循环引用
+   - 提高可测试性
+   - 运行时灵活切换实现
+
+3. **配置管理**
+   - ConfigManager 统一配置接口
+   - 自动持久化
+   - 简洁的 get/set API
+
+4. **事件总线**
+   - EventBus 单例实现
+   - 发布/订阅模式
+   - 组件间松耦合通信
 
 ### 已解决的架构问题 ✅
 1. **单一职责违反**: 已通过模块化重构大幅改善
@@ -357,10 +511,11 @@ index.js
    - 计划通过模块化减少约30-40%的代码量
 
 ### 待完成的架构改进
-1. **完全模块化入口**: 创建新的模块化入口文件
-2. **插件系统**: 实现完整的插件架构
-3. **样式模块化**: CSS拆分和组织
-4. **性能优化**: 缓存和批处理优化
+1. **index.js进一步拆分**: 将剩余的3300+行代码继续模块化
+2. **外部插件支持**: 实现插件的动态加载和管理
+3. **构建系统**: 完善webpack配置和生产环境优化
+4. **文档完善**: 创建用户指南和API文档
+5. **测试覆盖**: 添加单元测试和集成测试
 
 ## 当前系统状态
 
@@ -378,7 +533,7 @@ index.js
 - **Phase 5**: 内容提取器 ✅ 100%
 - **Phase 6**: 任务系统 ✅ 100%
 - **Phase 7**: UI层重构 ✅ 95% (ActionButtons + SettingsPanel架构 + ProgressManager/EventManager/StateManager完成)
-- **Phase 8**: 任务系统兼容性扩展 📋 待实施
+- **Phase 8**: 插件系统基础 ✅ 100% (插件接口和内置插件已实现)
 - **Phase 9**: 文本处理管道 ✅ 100%
   - **Phase 9.1**: 管道架构基础 ✅ 100%
   - **Phase 9.2**: 适配器模式集成 ✅ 100%
@@ -396,3 +551,16 @@ index.js
 2. **零停机迁移**: 重构过程中功能始终可用
 3. **渐进式架构**: 每个阶段都是可独立验证的改进
 4. **向后兼容**: 所有现有数据和功能完全保留
+
+### 现代化模块使用情况 (2025-07-13更新)
+根据深度分析（见`SuperAgent/modernization-usage-analysis.md`）：
+- **代码编写完成度**: 约90%
+- **实际使用率**: 约60%
+- **主要问题**: 
+  - 新旧实现并存（如performVectorization的两个版本）
+  - 部分模块已创建未使用（如插件系统、提取器仅在管道模式使用）
+  - 存在代码冗余（如进度管理的三层实现）
+- **建议优先完成**:
+  1. ProgressManager完全替代updateProgressNew
+  2. 默认启用管道模式
+  3. 激活插件系统
