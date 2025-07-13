@@ -165,6 +165,8 @@ const settings = {
   vector_tasks: {}, // { chatId: [{ taskId, name, timestamp, settings, enabled }] }
   tag_rules_version: 2,
   
+  // Pipeline settings
+  use_pipeline: false, // Feature flag for new pipeline implementation
 };
 
 const moduleWorker = new ModuleWorkerWrapper(synchronizeChat);
@@ -1016,6 +1018,286 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  * @param {string} chatId Chat ID
  * @param {boolean} isIncremental Whether this is incremental vectorization
  */
+async function performVectorization(contentSettings, chatId, isIncremental, items) {
+  console.log('Debug: Performing vectorization with settings:', JSON.stringify(contentSettings, null, 2));
+  try {
+    // Generate task name
+    const context = getContext();
+
+    // 调试：显示传给generateTaskName的数据
+    console.debug('Vectors: Content settings for task name generation:', {
+      chat: contentSettings.chat,
+      files: contentSettings.files,
+      world_info: contentSettings.world_info,
+      itemCount: items.length
+    });
+
+    let taskName = await generateTaskName(contentSettings, items);
+    console.debug(`Vectors: Generated task name: ${taskName}`);
+
+    // Add incremental prefix if needed
+    if (isIncremental) {
+      taskName = '[增量] ' + taskName;
+    }
+
+    // 设置向量化状态
+    isVectorizing = true;
+    vectorizationAbortController = new AbortController();
+
+    // 更新UI状态
+    $('#vectors_enhanced_vectorize').hide();
+    $('#vectors_enhanced_abort').show();
+
+    // Create new task and collection ID first
+    const taskId = generateTaskId();
+    const collectionId = `${chatId}_${taskId}`;
+    let vectorsInserted = false; // 标记是否有向量被插入
+
+    try {
+      const progressMessage = isIncremental ? '增量向量化开始...' : '向量化开始...';
+      toastr.info(progressMessage, '处理中');
+      
+      // Use ProgressManager instead of old updateProgress
+      if (globalProgressManager) {
+        globalProgressManager.show(0, items.length, '准备向量化');
+      } else {
+        updateProgressNew(0, items.length, '准备向量化');
+      }
+
+      // Create corrected settings based on actually processed items
+      const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
+
+      // Correct chat range based on actual items
+    if (correctedSettings.chat.enabled) {
+        const chatItems = items.filter(item => item.type === 'chat');
+        if (chatItems.length > 0) {
+            const indices = chatItems.map(item => item.metadata.index);
+            correctedSettings.chat.range.start = Math.min(...indices);
+            correctedSettings.chat.range.end = Math.max(...indices);
+        } else {
+            // If no chat items are actually processed, disable it in the saved settings
+            correctedSettings.chat.enabled = false;
+        }
+    }
+
+      // Update file list to only include actually processed files
+      if (correctedSettings.files.enabled) {
+        const actuallyProcessedFiles = items
+          .filter(item => item.type === 'file')
+          .map(item => item.metadata.url);
+        correctedSettings.files.selected = actuallyProcessedFiles;
+
+        console.debug('Vectors: Corrected file settings:', {
+          originalSelected: contentSettings.files.selected,
+          actuallyProcessed: actuallyProcessedFiles,
+          originalCount: contentSettings.files.selected.length,
+          actualCount: actuallyProcessedFiles.length
+        });
+      }
+
+      // Update world info list to only include actually processed entries
+      if (correctedSettings.world_info.enabled) {
+        const actuallyProcessedEntries = items
+          .filter(item => item.type === 'world_info')
+          .map(item => item.metadata.uid);
+
+        // Rebuild world_info.selected based on actually processed entries
+        const newWorldInfoSelected = {};
+        for (const uid of actuallyProcessedEntries) {
+          // Find which world this entry belongs to
+          const originalWorld = Object.keys(contentSettings.world_info.selected).find(world =>
+            contentSettings.world_info.selected[world].includes(uid)
+          );
+          if (originalWorld) {
+            if (!newWorldInfoSelected[originalWorld]) {
+              newWorldInfoSelected[originalWorld] = [];
+            }
+            newWorldInfoSelected[originalWorld].push(uid);
+          }
+        }
+        correctedSettings.world_info.selected = newWorldInfoSelected;
+
+        console.debug('Vectors: Corrected world info settings:', {
+          originalSelected: contentSettings.world_info.selected,
+          actuallyProcessed: newWorldInfoSelected
+        });
+      }
+
+      const task = {
+        taskId: taskId,
+        name: taskName,
+        timestamp: Date.now(),
+        settings: correctedSettings,
+        enabled: true,
+        itemCount: items.length,
+        isIncremental: isIncremental
+      };
+
+      // Process items in chunks
+      const allChunks = [];
+      let processedItems = 0;
+
+      for (const item of items) {
+        // 检查是否被中断
+        if (vectorizationAbortController.signal.aborted) {
+          throw new Error('向量化被用户中断');
+        }
+
+        const chunks = splitTextIntoChunks(item.text, settings.chunk_size, settings.overlap_percent);
+        chunks.forEach((chunk, idx) => {
+          allChunks.push({
+            hash: getHashValue(chunk),
+            text: chunk,
+            index: allChunks.length,
+            metadata: {
+              ...item.metadata,
+              type: item.type,
+              chunk_index: idx,
+              chunk_total: chunks.length,
+            },
+          });
+        });
+
+        processedItems++;
+        
+        // Use ProgressManager instead of old updateProgress
+        if (globalProgressManager) {
+          globalProgressManager.update(processedItems, items.length, '正在处理内容');
+        } else {
+          updateProgressNew(processedItems, items.length, '正在处理内容');
+        }
+      }
+
+      // Insert vectors in batches
+      if (globalProgressManager) {
+        globalProgressManager.update(0, allChunks.length, '正在插入向量');
+      } else {
+        updateProgressNew(0, allChunks.length, '正在插入向量');
+      }
+      const batchSize = 50;
+      for (let i = 0; i < allChunks.length; i += batchSize) {
+        // 检查是否被中断
+        if (vectorizationAbortController.signal.aborted) {
+          throw new Error('向量化被用户中断');
+        }
+
+        const batch = allChunks.slice(i, Math.min(i + batchSize, allChunks.length));
+        await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
+        vectorsInserted = true; // 标记已有向量插入
+        
+        // Use ProgressManager instead of old updateProgress
+        if (globalProgressManager) {
+          globalProgressManager.update(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
+        } else {
+          updateProgressNew(Math.min(i + batchSize, allChunks.length), allChunks.length, '正在插入向量');
+        }
+      }
+
+      // 可选：为大量内容优化存储
+      if (settings.lightweight_storage && allChunks.length > 100) {
+        // 大内容模式：不保存文本到任务中，依赖文件读取
+        console.debug(`Vectors: Large content detected (${allChunks.length} chunks), using lightweight storage`);
+        task.lightweight = true;
+      } else {
+        // 普通模式：保存文本内容到任务中
+        task.textContent = allChunks.map(chunk => ({
+          hash: chunk.hash,
+          text: chunk.text,
+          metadata: chunk.metadata
+        }));
+      }
+
+      // Add task to list
+      console.debug('Vectors: Final task settings before saving:', {
+        originalContentSettings: contentSettings,
+        correctedSettings: correctedSettings,
+        taskName: taskName,
+        actualItemsProcessed: items.length
+      });
+      addVectorTask(chatId, task);
+
+      // Update cache for this task
+      cachedVectors.set(collectionId, {
+        timestamp: Date.now(),
+        items: allChunks,
+        settings: JSON.parse(JSON.stringify(settings)),
+      });
+
+      // Use ProgressManager instead of old hideProgress
+      if (globalProgressManager) {
+        globalProgressManager.complete('向量化完成');
+      } else {
+        hideProgressNew();
+      }
+      
+      const successMessage = isIncremental ?
+        `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allChunks.length} 个块` :
+        `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allChunks.length} 个块`;
+      toastr.success(successMessage, '向量化完成');
+
+      // Refresh task list UI
+      await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
+    } catch (error) {
+      console.error('向量化失败:', error);
+      
+      // Use ProgressManager instead of old hideProgress
+      if (globalProgressManager) {
+        globalProgressManager.error('向量化失败');
+      } else {
+        hideProgressNew();
+      }
+
+      // Check if it was an intentional abort
+      if (error.message === '向量化被用户中断') {
+        // 清理已插入的部分数据
+        if (vectorsInserted) {
+          console.log(`Vectors: 清理被中断任务的向量数据: ${collectionId}`);
+          try {
+            await storageAdapter.purgeVectorIndex(collectionId);
+            console.log(`Vectors: 已清理集合 ${collectionId} 的部分数据`);
+          } catch (cleanupError) {
+            console.error('Vectors: 清理向量数据失败:', cleanupError);
+          }
+        }
+        toastr.info('向量化已中断，已清理部分数据', '中断');
+      } else {
+        // 非中断错误也清理可能的部分数据
+        if (vectorsInserted) {
+          console.log(`Vectors: 清理失败任务的向量数据: ${collectionId}`);
+          try {
+            await storageAdapter.purgeVectorIndex(collectionId);
+          } catch (cleanupError) {
+            console.error('Vectors: 清理向量数据失败:', cleanupError);
+          }
+        }
+        toastr.error('向量化内容失败', '错误');
+      }
+    } finally {
+      // 重置向量化状态
+      isVectorizing = false;
+      vectorizationAbortController = null;
+
+      // 重置UI状态
+      $('#vectors_enhanced_vectorize').show();
+      $('#vectors_enhanced_abort').hide();
+    }
+  } catch (error) {
+      console.error('向量化主流程发生意外错误:', error);
+      toastr.error('向量化处理中发生严重错误，请检查控制台。');
+      // 确保UI状态被重置
+      isVectorizing = false;
+      vectorizationAbortController = null;
+      $('#vectors_enhanced_vectorize').show();
+      $('#vectors_enhanced_abort').hide();
+      
+      // Use ProgressManager instead of old hideProgress
+      if (globalProgressManager) {
+        globalProgressManager.error('严重错误');
+      } else {
+        hideProgressNew();
+      }
+  }
+}
 
 /**
  * Pipeline version of performVectorization
@@ -1026,7 +1308,7 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  * @param {Array} items - Items to vectorize
  * @returns {Promise<Object>} Result with success status and metadata
  */
-async function performVectorization(contentSettings, chatId, isIncremental, items) {
+async function performVectorizationPipeline(contentSettings, chatId, isIncremental, items) {
   console.log('Pipeline: Starting FULL pipeline processing with settings:', JSON.stringify(contentSettings, null, 2));
   
   // Import all pipeline components
@@ -1724,8 +2006,16 @@ async function vectorizeContent() {
     }
 
     // 6. Perform vectorization with the final, clean set of items
-    console.log('Vectors: Using pipeline implementation for vectorization');
-    await performVectorization(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
+    // Check if pipeline mode is enabled
+    const usePipeline = settings.use_pipeline || false;
+    
+    if (usePipeline) {
+        console.log('Vectors: Using pipeline implementation for vectorization');
+        await performVectorizationPipeline(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
+    } else {
+        console.log('Vectors: Using original implementation for vectorization');
+        await performVectorization(JSON.parse(JSON.stringify(settings.selected_content)), chatId, isIncremental, itemsToProcess);
+    }
 }
 
 /**
@@ -2657,6 +2947,53 @@ jQuery(async () => {
     };
     console.log('Vectors Enhanced Task System Status:', status);
     return status;
+  };
+  
+  // 添加管道A/B测试函数（调试用）
+  window.vectorsPipelineABTest = async () => {
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+      console.error('No chat selected for A/B test');
+      return;
+    }
+    
+    console.log('Starting Pipeline A/B Test...');
+    
+    // Get test content
+    const items = await getVectorizableContent();
+    const validItems = items.filter(item => item.text && item.text.trim() !== '').slice(0, 5); // Use first 5 items for test
+    
+    if (validItems.length === 0) {
+      console.error('No valid content for A/B test');
+      return;
+    }
+    
+    // Import pipeline integration
+    const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
+    
+    // Initialize pipeline if needed
+    if (!pipelineIntegration.initialized) {
+      await pipelineIntegration.initialize({
+        vectorizationAdapter: vectorizationAdapter,
+        settings: settings
+      });
+    }
+    
+    // Set original function
+    pipelineIntegration.setOriginalFunction(performVectorization);
+    
+    // Create A/B test wrapper
+    const abTestWrapper = pipelineIntegration.createABTestWrapper();
+    
+    // Run test
+    const testSettings = JSON.parse(JSON.stringify(settings.selected_content));
+    
+    try {
+      const result = await abTestWrapper(testSettings, chatId, false, validItems);
+      console.log('A/B Test completed:', result);
+    } catch (error) {
+      console.error('A/B Test failed:', error);
+    }
   };
 
   // 初始化所有设置UI
