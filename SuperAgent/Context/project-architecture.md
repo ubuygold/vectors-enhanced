@@ -390,6 +390,8 @@ index.js
   - **ITask.js**: 任务接口定义，规范所有任务的基本方法
   - **BaseTask.js**: 基础任务类，提供通用任务功能和状态管理
   - **VectorizationTask.js**: 向量化任务实现，支持新旧格式转换
+    - **新增**: `actualProcessedItems` 字段，精确记录实际处理的项目（考虑标签筛选）
+    - **改进**: 支持基于实际处理记录的精确去重，而非简单的设置范围
   - **TaskFactory.js**: 任务工厂，负责任务创建、类型识别和格式转换
 - **src/application/**: 应用层服务
   - **TaskManager.js**: 任务管理器，协调新旧任务系统，实现双写模式

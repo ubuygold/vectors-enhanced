@@ -1066,17 +1066,17 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     let vectorsInserted = false;
     
     try {
-      const progressMessage = isIncremental ? '增量向量化开始 (Full Pipeline)...' : '向量化开始 (Full Pipeline)...';
-      toastr.info(progressMessage, 'Pipeline处理中');
+      const progressMessage = isIncremental ? '增量向量化开始...' : '向量化开始...';
+      toastr.info(progressMessage, '处理中');
       
       // === PHASE 1: USE PRE-EXTRACTED ITEMS (Skip Re-extraction) ===
       console.log('Pipeline: Phase 1 - Using pre-extracted items (Skip Re-extraction)');
       console.log(`Pipeline: getVectorizableContent() already provided ${items.length} items`);
       
       if (globalProgressManager) {
-        globalProgressManager.show(0, items.length, 'Phase 1: 准备预提取项目 (Pipeline)');
+        globalProgressManager.show(0, items.length, '准备项目');
       } else {
-        updateProgressNew(0, items.length, 'Phase 1: 准备预提取项目 (Pipeline)');
+        updateProgressNew(0, items.length, '准备项目');
       }
       
       // Group items by type without re-extraction
@@ -1128,7 +1128,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       }
       
       if (globalProgressManager) {
-        globalProgressManager.update(items.length, items.length, 'Phase 1: 项目准备完成');
+        globalProgressManager.update(items.length, items.length, '项目准备完成');
       }
       
       console.log(`Pipeline: Prepared ${extractedContent.length} content blocks containing ${items.length} total items`);
@@ -1144,7 +1144,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       // === PHASE 2: TEXT PROCESSING ===
       console.log('Pipeline: Phase 2 - Text Processing through Pipeline');
       if (globalProgressManager) {
-        globalProgressManager.show(0, extractedContent.length, 'Phase 2: 文本处理 (Pipeline)');
+        globalProgressManager.show(0, extractedContent.length, '文本处理');
       }
       
       // Get pipeline components
@@ -1242,7 +1242,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         }
         
         if (globalProgressManager) {
-          globalProgressManager.update(i + 1, extractedContent.length, `Phase 2-3: 处理 ${contentBlock.type} 完成`);
+          globalProgressManager.update(i + 1, extractedContent.length, `处理 ${contentBlock.type} 完成`);
         }
       }
       
@@ -1258,7 +1258,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       // === PHASE 4: VECTOR STORAGE ===
       console.log('Pipeline: Phase 4 - Vector Storage');
       if (globalProgressManager) {
-        globalProgressManager.show(0, allProcessedChunks.length, 'Phase 4: 向量存储 (Pipeline)');
+        globalProgressManager.show(0, allProcessedChunks.length, '向量存储');
       }
       
       // Store vectors using existing storage adapter
@@ -1273,7 +1273,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorsInserted = true;
         
         if (globalProgressManager) {
-          globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, 'Phase 4: 向量存储中...');
+          globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, '向量存储中...');
         }
       }
       
@@ -1318,6 +1318,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         correctedSettings.world_info.selected = newWorldInfoSelected;
       }
       
+      // Extract actually processed items by type
+      const actualProcessedItems = {
+        chat: items.filter(item => item.type === 'chat').map(item => item.metadata.index),
+        files: items.filter(item => item.type === 'file').map(item => item.metadata.url),
+        world_info: items.filter(item => item.type === 'world_info').map(item => item.metadata.uid)
+      };
+      
       // Create task object
       const task = {
         taskId: taskId,
@@ -1328,6 +1335,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         itemCount: allProcessedChunks.length,
         originalItemCount: items.length,
         isIncremental: isIncremental,
+        actualProcessedItems: actualProcessedItems,
         version: '2.0' // Mark as pipeline version
       };
       
@@ -1357,14 +1365,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       
       // Complete progress
       if (globalProgressManager) {
-        globalProgressManager.complete('向量化完成 (Pipeline)');
+        globalProgressManager.complete('向量化完成');
       } else {
         hideProgressNew();
       }
       
       const successMessage = isIncremental ?
-        `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allProcessedChunks.length} 个块 (Pipeline)` :
-        `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allProcessedChunks.length} 个块 (Pipeline)`;
+        `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allProcessedChunks.length} 个块` :
+        `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allProcessedChunks.length} 个块`;
       toastr.success(successMessage, '向量化完成');
       
       // Refresh task list UI
@@ -1384,7 +1392,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       
       // Use ProgressManager
       if (globalProgressManager) {
-        globalProgressManager.error('向量化失败 (Pipeline)');
+        globalProgressManager.error('向量化失败');
       } else {
         hideProgressNew();
       }
@@ -1531,21 +1539,36 @@ function getProcessedItemIdentifiers(chatId) {
     const enabledTasks = getChatTasks(chatId).filter(t => t.enabled);
 
     for (const task of enabledTasks) {
-        const taskSettings = task.settings;
-        if (taskSettings.chat && taskSettings.chat.enabled) {
-            const start = taskSettings.chat.range.start;
-            const end = taskSettings.chat.range.end === -1
-                ? getContext().chat.length - 1
-                : taskSettings.chat.range.end;
-            for (let i = start; i <= end; i++) {
-                identifiers.chat.add(i);
+        // Use actualProcessedItems if available (new tasks)
+        if (task.actualProcessedItems) {
+            // New tasks with actual processed items tracking
+            if (task.actualProcessedItems.chat) {
+                task.actualProcessedItems.chat.forEach(index => identifiers.chat.add(index));
             }
-        }
-        if (taskSettings.files && taskSettings.files.enabled) {
-            taskSettings.files.selected.forEach(url => identifiers.file.add(url));
-        }
-        if (taskSettings.world_info && taskSettings.world_info.enabled) {
-            Object.values(taskSettings.world_info.selected).flat().forEach(uid => identifiers.world_info.add(uid));
+            if (task.actualProcessedItems.files) {
+                task.actualProcessedItems.files.forEach(url => identifiers.file.add(url));
+            }
+            if (task.actualProcessedItems.world_info) {
+                task.actualProcessedItems.world_info.forEach(uid => identifiers.world_info.add(uid));
+            }
+        } else {
+            // Legacy tasks without actualProcessedItems - fallback to settings ranges
+            const taskSettings = task.settings;
+            if (taskSettings.chat && taskSettings.chat.enabled) {
+                const start = taskSettings.chat.range.start;
+                const end = taskSettings.chat.range.end === -1
+                    ? getContext().chat.length - 1
+                    : taskSettings.chat.range.end;
+                for (let i = start; i <= end; i++) {
+                    identifiers.chat.add(i);
+                }
+            }
+            if (taskSettings.files && taskSettings.files.enabled) {
+                taskSettings.files.selected.forEach(url => identifiers.file.add(url));
+            }
+            if (taskSettings.world_info && taskSettings.world_info.enabled) {
+                Object.values(taskSettings.world_info.selected).flat().forEach(uid => identifiers.world_info.add(uid));
+            }
         }
     }
     return identifiers;
@@ -1658,26 +1681,88 @@ async function vectorizeContent() {
     let isIncremental = hasProcessedItems; // Any task with pre-existing items is considered incremental
 
     if (newItems.length === 0) {
-        toastr.info('所有选定内容均已被向量化，没有需要处理的新项目。');
-        return;
+        // Analyze what was already processed
+        const processedChatItems = validItems.filter(i => i.type === 'chat' && processedIdentifiers.chat.has(i.metadata.index));
+        const processedFileItems = validItems.filter(i => i.type === 'file' && processedIdentifiers.file.has(i.metadata.url));
+        const processedWorldInfoItems = validItems.filter(i => i.type === 'world_info' && processedIdentifiers.world_info.has(i.metadata.uid));
+        
+        const processedParts = [];
+        if (processedChatItems.length > 0) {
+            processedParts.push(`聊天记录: ${formatRanges(processedChatItems)}`);
+        }
+        if (processedFileItems.length > 0) {
+            processedParts.push(`文件: ${processedFileItems.length}个`);
+        }
+        if (processedWorldInfoItems.length > 0) {
+            processedParts.push(`世界信息: ${processedWorldInfoItems.length}条`);
+        }
+        
+        const confirm = await callGenericPopup(
+            `<div>
+                <p>所有选定内容均已被向量化：</p>
+                <ul style="text-align: left; margin: 10px 0;">
+                    ${processedParts.map(part => `<li>${part}</li>`).join('')}
+                </ul>
+                <p>是否强制重新向量化这些内容？</p>
+            </div>`,
+            POPUP_TYPE.CONFIRM,
+            { okButton: '强制重新向量化', cancelButton: '取消' }
+        );
+        
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
+            return;
+        }
+        
+        // Force re-vectorization
+        itemsToProcess = validItems;
+        isIncremental = false;
     }
 
-    if (hasProcessedItems) {
+    if (hasProcessedItems && !isIncremental) {
         const newChatItems = newItems.filter(i => i.type === 'chat');
         const newFileItems = newItems.filter(i => i.type === 'file');
         const newWorldInfoItems = newItems.filter(i => i.type === 'world_info');
+        
+        // Also analyze already processed items
+        const processedChatItems = validItems.filter(i => i.type === 'chat' && processedIdentifiers.chat.has(i.metadata.index));
+        const processedFileItems = validItems.filter(i => i.type === 'file' && processedIdentifiers.file.has(i.metadata.url));
+        const processedWorldInfoItems = validItems.filter(i => i.type === 'world_info' && processedIdentifiers.world_info.has(i.metadata.uid));
 
         const newParts = [];
-        if (newChatItems.length > 0) newParts.push(formatRanges(newChatItems));
-        if (newFileItems.length > 0) newParts.push(`${newFileItems.length}个新文件`);
-        if (newWorldInfoItems.length > 0) newParts.push(`${newWorldInfoItems.length}个新世界信息`);
+        const processedParts = [];
+        
+        if (newChatItems.length > 0) newParts.push(`新增聊天: ${formatRanges(newChatItems)}`);
+        if (newFileItems.length > 0) newParts.push(`新增文件: ${newFileItems.length}个`);
+        if (newWorldInfoItems.length > 0) newParts.push(`新增世界信息: ${newWorldInfoItems.length}条`);
+        
+        if (processedChatItems.length > 0) processedParts.push(`已处理聊天: ${formatRanges(processedChatItems)}`);
+        if (processedFileItems.length > 0) processedParts.push(`已处理文件: ${processedFileItems.length}个`);
+        if (processedWorldInfoItems.length > 0) processedParts.push(`已处理世界信息: ${processedWorldInfoItems.length}条`);
 
         const confirm = await callGenericPopup(
-            `检测到部分内容已被处理。是否只处理新增的 ${newParts.join('、')}？`,
+            `<div>
+                <p><strong>检测到部分内容已被处理：</strong></p>
+                <div style="text-align: left; margin: 10px 0;">
+                    <p>已处理：</p>
+                    <ul style="margin: 5px 0 15px 20px;">
+                        ${processedParts.map(part => `<li>${part}</li>`).join('')}
+                    </ul>
+                    <p>新增内容：</p>
+                    <ul style="margin: 5px 0 10px 20px;">
+                        ${newParts.map(part => `<li>${part}</li>`).join('')}
+                    </ul>
+                </div>
+                <p>是否只处理新增内容？</p>
+            </div>`,
             POPUP_TYPE.CONFIRM,
-            { okButton: '只处理新增', cancelButton: '取消' }
+            { okButton: '只处理新增', cancelButton: '处理全部' }
         );
-        if (confirm !== POPUP_RESULT.AFFIRMATIVE) return;
+        
+        if (confirm === POPUP_RESULT.NEGATIVE) {
+            // User chose to process all
+            itemsToProcess = validItems;
+            isIncremental = false;
+        }
     }
     else if (hasEmptyItems) {
         // 分析有效项目的详细信息

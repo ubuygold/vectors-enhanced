@@ -3649,3 +3649,91 @@ use_pipeline: true, // Default to pipeline implementation
 - 删除了所有旧实现相关代码
 - 简化了代码结构，提高了可维护性
 - 管道架构和提取器模块现在被默认使用
+
+---
+
+## 迭代 #56
+**开始时间**: 2025-07-13 11:10
+**请求**: 实现11.4去重逻辑改进，解决标签筛选导致的去重误判问题
+**响应**: 成功改进去重逻辑，支持精确的增量处理
+
+### 操作 56.1
+**时间**: 11:10:30
+**描述**: 问题分析
+**问题描述**:
+- 当选中向量化1-80层，使用标签content进行筛选
+- 实际只执行了50-80层（因为标签筛选）
+- 系统误认为1-80层全部被向量化过了
+- 再次执行向量化换别的标签时，提示无新增内容
+
+### 操作 56.2
+**时间**: 11:11:00
+**描述**: 添加actualProcessedItems字段到VectorizationTask
+**修改文件 `src/core/tasks/VectorizationTask.js`**:
+```javascript
+// 在构造函数中添加
+this.actualProcessedItems = config.actualProcessedItems || {
+    chat: [],      // Array of message indices
+    files: [],     // Array of file URLs
+    world_info: [] // Array of entry UIDs
+};
+```
+**更新方法**:
+- toLegacyFormat()：包含actualProcessedItems
+- toJSON()：包含actualProcessedItems
+- fromLegacyTask()：支持读取actualProcessedItems
+
+### 操作 56.3
+**时间**: 11:12:00
+**描述**: 更新向量化处理流程记录实际处理的项目
+**修改文件 `index.js`**:
+```javascript
+// 在创建任务前提取实际处理的项目
+const actualProcessedItems = {
+    chat: items.filter(item => item.type === 'chat').map(item => item.metadata.index),
+    files: items.filter(item => item.type === 'file').map(item => item.metadata.url),
+    world_info: items.filter(item => item.type === 'world_info').map(item => item.metadata.uid)
+};
+
+// 添加到任务对象
+const task = {
+    // ... 其他字段
+    actualProcessedItems: actualProcessedItems,
+    // ...
+};
+```
+
+### 操作 56.4
+**时间**: 11:13:00
+**描述**: 修改getProcessedItemIdentifiers使用实际记录
+**修改文件 `index.js`**:
+- 优先使用task.actualProcessedItems（新任务）
+- 对于旧任务，回退到原有的基于设置范围的逻辑
+- 支持向后兼容
+
+### 操作 56.5
+**时间**: 11:14:00
+**描述**: 改进增量处理的提示信息
+**添加功能**:
+1. **无新增内容时**：
+   - 显示已处理的具体范围
+   - 提供"强制重新向量化"选项
+   - 详细列出已处理的内容
+
+2. **有新增内容时**：
+   - 同时显示已处理和新增内容
+   - 用户可选择"只处理新增"或"处理全部"
+   - 清晰的对比展示
+
+### 操作 56.6
+**时间**: 11:15:00
+**描述**: 更新项目架构文档
+**修改文件 `SuperAgent/Context/project-architecture.md`**:
+- 记录VectorizationTask新增的actualProcessedItems功能
+- 说明精确去重的改进
+
+**结果**：
+- 解决了标签筛选导致的去重误判问题
+- 提供了更友好的增量处理体验
+- 支持强制重新向量化选项
+- 保持向后兼容性

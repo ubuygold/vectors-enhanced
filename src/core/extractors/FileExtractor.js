@@ -15,14 +15,22 @@ export class FileExtractor {
      */
     async extract(source, config = {}) {
         // Handle different input formats
-        let filePaths = [];
+        let fileItems = [];
         
         if (Array.isArray(source)) {
             // Pipeline mode: array of file items
-            filePaths = source.map(item => item.metadata?.url || item.metadata?.path || item.text);
+            fileItems = source.map(item => ({
+                path: item.metadata?.url || item.metadata?.path || item.url || item.text,
+                name: item.metadata?.name || item.name || 'unknown',
+                text: item.text || null
+            }));
         } else if (source && source.filePaths) {
             // Original mode: source object with filePaths
-            filePaths = source.filePaths;
+            fileItems = source.filePaths.map(path => ({
+                path: path,
+                name: path.split('/').pop(),
+                text: null // Will be fetched
+            }));
         } else {
             throw new Error('Invalid source format: expected array of items or object with filePaths');
         }

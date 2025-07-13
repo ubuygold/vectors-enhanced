@@ -14,6 +14,7 @@ export class VectorizationTask extends BaseTask {
      * @param {Array} [config.textContent=[]] - Stored text content (for non-lightweight mode)
      * @param {number} [config.timestamp] - Creation timestamp (for legacy compatibility)
      * @param {string} [config.taskId] - Legacy task ID (for backward compatibility)
+     * @param {Object} [config.actualProcessedItems] - Actually processed items by type
      */
     constructor(config) {
         super({
@@ -31,6 +32,13 @@ export class VectorizationTask extends BaseTask {
         this.isIncremental = config.isIncremental || false;
         this.lightweight = config.lightweight || false;
         this.textContent = config.textContent || [];
+        
+        // Track actually processed items (not just settings ranges)
+        this.actualProcessedItems = config.actualProcessedItems || {
+            chat: [],      // Array of message indices
+            files: [],     // Array of file URLs
+            world_info: [] // Array of entry UIDs
+        };
         
         // For legacy compatibility
         this.timestamp = config.timestamp || this.createdAt;
@@ -58,7 +66,8 @@ export class VectorizationTask extends BaseTask {
             settings: this.settings,
             textContent: this.textContent,
             lightweight: this.lightweight,
-            isIncremental: this.isIncremental
+            isIncremental: this.isIncremental,
+            actualProcessedItems: this.actualProcessedItems
         };
     }
 
@@ -77,6 +86,11 @@ export class VectorizationTask extends BaseTask {
             textContent: legacyTask.textContent || [],
             lightweight: legacyTask.lightweight || false,
             isIncremental: legacyTask.isIncremental || false,
+            actualProcessedItems: legacyTask.actualProcessedItems || {
+                chat: [],
+                files: [],
+                world_info: []
+            },
             status: 'completed', // Legacy tasks are always completed
             createdAt: legacyTask.timestamp || Date.now()
         });
@@ -94,6 +108,7 @@ export class VectorizationTask extends BaseTask {
             isIncremental: this.isIncremental,
             lightweight: this.lightweight,
             textContent: this.textContent,
+            actualProcessedItems: this.actualProcessedItems,
             timestamp: this.timestamp,
             taskId: this.taskId // Include for legacy compatibility
         };
