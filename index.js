@@ -93,6 +93,7 @@ let globalSettingsPanel = null;
 let globalProgressManager = null;
 let globalEventManager = null;
 let globalStateManager = null;
+let globalSettingsManager = null;
 
 const settings = {
   // Master switch - controls all plugin functionality
@@ -1051,8 +1052,9 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  * @param {Array} items - Items to vectorize
  * @returns {Promise<Object>} Result with success status and metadata
  */
-async function performVectorization(contentSettings, chatId, isIncremental, items) {
+async function performVectorization(contentSettings, chatId, isIncremental, items, options = {}) {
   console.log('Pipeline: Starting FULL pipeline processing with settings:', JSON.stringify(contentSettings, null, 2));
+  const { skipDeduplication = false, taskType = 'vectorization' } = options;
 
   // Import all pipeline components
   const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
@@ -1294,7 +1296,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         }
 
         const batch = allProcessedChunks.slice(i, Math.min(i + batchSize, allProcessedChunks.length));
-        await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
+        await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal, { skipDeduplication });
         vectorsInserted = true;
 
         if (globalProgressManager) {
@@ -1465,6 +1467,72 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       success: false,
       error: error.message
     };
+  }
+}
+
+/**
+ * Process an external vectorization task
+ * @param {ExternalVectorizationTask} task - External task to process
+ * @returns {Promise<Object>} Result with success status
+ */
+async function processExternalVectorizationTask(task) {
+  console.log(`Processing external task: ${task.id} from chat ${task.sourceChat}`);
+  
+  try {
+    // Validate task
+    if (!task || !task.isExternal) {
+      throw new Error('Invalid external task');
+    }
+    
+    // Get task content (already vectorized)
+    let textContent = task.textContent;
+    
+    // Apply content mapping if needed
+    if (task.needsContentMapping && task.needsContentMapping()) {
+      textContent = task.applyContentMapping(textContent);
+    }
+    
+    // Process the task with skipDeduplication flag
+    const result = await performVectorization(
+      task.settings,
+      task.chatId,
+      task.isIncremental,
+      textContent,
+      {
+        skipDeduplication: task.skipDeduplication,
+        taskType: 'external-vectorization'
+      }
+    );
+    
+    // Update task status based on result
+    if (result.success) {
+      task.updateStatus('completed');
+      task.result = result;
+    } else {
+      task.updateStatus('failed');
+      task.result = { error: result.error };
+    }
+    
+    // Save task status
+    if (taskManager) {
+      await taskManager.updateTask(task);
+    }
+    
+    return result;
+    
+  } catch (error) {
+    console.error('External task processing failed:', error);
+    
+    // Update task status
+    task.updateStatus('failed');
+    task.result = { error: error.message };
+    
+    // Save task status
+    if (taskManager) {
+      await taskManager.updateTask(task);
+    }
+    
+    throw error;
   }
 }
 
@@ -2729,6 +2797,173 @@ jQuery(async () => {
 
   // 设置全局TaskManager引用
   globalTaskManager = taskManager;
+  window.globalTaskManager = taskManager; // 暴露给其他模块使用
+  
+  // 添加全局处理函数作为后备
+  window.handleExternalTaskImport = async () => {
+    console.log('handleExternalTaskImport called');
+    if (globalSettingsManager?.externalTaskUI?.showImportDialog) {
+      try {
+        await globalSettingsManager.externalTaskUI.showImportDialog();
+      } catch (error) {
+        console.error('Error in showImportDialog:', error);
+        if (typeof toastr !== 'undefined') {
+          toastr.error('无法打开导入对话框: ' + error.message);
+        } else {
+          alert('无法打开导入对话框: ' + error.message);
+        }
+      }
+    } else {
+      console.error('ExternalTaskUI not initialized');
+      if (typeof toastr !== 'undefined') {
+        toastr.error('外挂任务UI未初始化，请稍后重试');
+      } else {
+        alert('外挂任务UI未初始化，请稍后重试');
+      }
+    }
+  };
+  
+  
+  
+  
+  
+  // 添加调试函数：打印所有向量化任务
+  window.showAllVectorTasks = function() {
+    console.log('\n=== 所有向量化任务 ===');
+    console.log('当前时间:', new Date().toLocaleString());
+    
+    // 从 settings 获取任务
+    const allTasks = settings.vector_tasks || {};
+    const chatIds = Object.keys(allTasks);
+    
+    if (chatIds.length === 0) {
+      console.log('没有找到任何向量化任务');
+      return;
+    }
+    
+    console.log(`找到 ${chatIds.length} 个聊天包含任务\n`);
+    
+    let totalTaskCount = 0;
+    
+    // 遍历每个聊天
+    chatIds.forEach((chatId, index) => {
+      const tasks = allTasks[chatId];
+      if (!tasks || tasks.length === 0) {
+        return;
+      }
+      
+      console.log(`\n[聊天 #${index + 1}] Chat ID: ${chatId}`);
+      console.log(`任务数量: ${tasks.length}`);
+      console.log('---');
+      
+      // 打印每个任务的详细信息
+      tasks.forEach((task, taskIndex) => {
+        totalTaskCount++;
+        console.log(`  任务 ${taskIndex + 1}:`);
+        console.log(`    - ID: ${task.taskId}`);
+        console.log(`    - 名称: ${task.name}`);
+        console.log(`    - 创建时间: ${new Date(task.timestamp).toLocaleString()}`);
+        console.log(`    - 启用状态: ${task.enabled ? '✓ 启用' : '✗ 禁用'}`);
+        console.log(`    - 类型: ${task.type || 'vectorization (默认)'}`);
+        
+        // 显示内容统计
+        if (task.textContent) {
+          console.log(`    - 内容项数: ${task.textContent.length}`);
+          
+          // 统计内容类型
+          const contentTypes = {};
+          task.textContent.forEach(item => {
+            const type = item.metadata?.type || 'unknown';
+            contentTypes[type] = (contentTypes[type] || 0) + 1;
+          });
+          
+          console.log(`    - 内容类型分布:`);
+          Object.entries(contentTypes).forEach(([type, count]) => {
+            console.log(`        ${type}: ${count}`);
+          });
+        } else {
+          console.log(`    - 内容: 无`);
+        }
+        
+        // 显示设置摘要
+        if (task.settings) {
+          console.log(`    - 设置摘要:`);
+          console.log(`        聊天: ${task.settings.chat?.enabled ? '✓' : '✗'}`);
+          console.log(`        文件: ${task.settings.files?.enabled ? '✓' : '✗'}`);
+          console.log(`        世界信息: ${task.settings.world_info?.enabled ? '✓' : '✗'}`);
+        }
+        
+        console.log('');
+      });
+    });
+    
+    console.log(`\n总计: ${totalTaskCount} 个任务`);
+    console.log('=== 结束 ===\n');
+    
+    // 返回统计信息
+    return {
+      chatCount: chatIds.length,
+      totalTasks: totalTaskCount,
+      tasksByChat: Object.fromEntries(
+        chatIds.map(chatId => [chatId, allTasks[chatId].length])
+      )
+    };
+  };
+  
+  // 添加简洁版的任务查看函数
+  window.showVectorTasksSummary = function() {
+    console.log('\n=== 向量化任务摘要 ===');
+    
+    const allTasks = settings.vector_tasks || {};
+    const chatIds = Object.keys(allTasks);
+    
+    if (chatIds.length === 0) {
+      console.log('没有找到任何向量化任务');
+      return;
+    }
+    
+    console.table(
+      chatIds.map(chatId => {
+        const tasks = allTasks[chatId] || [];
+        return {
+          'Chat ID': chatId.substring(0, 20) + '...',
+          '任务数': tasks.length,
+          '启用的任务': tasks.filter(t => t.enabled).length,
+          '最近创建': tasks.length > 0 ? new Date(Math.max(...tasks.map(t => t.timestamp))).toLocaleDateString() : 'N/A'
+        };
+      })
+    );
+    
+    const totalTasks = chatIds.reduce((sum, chatId) => sum + (allTasks[chatId]?.length || 0), 0);
+    console.log(`\n总计: ${chatIds.length} 个聊天, ${totalTasks} 个任务\n`);
+  };
+  
+  // 添加获取当前聊天任务的函数
+  window.showCurrentChatTasks = function() {
+    const chatId = getCurrentChatId();
+    if (!chatId) {
+      console.log('没有打开的聊天');
+      return;
+    }
+    
+    console.log(`\n=== 当前聊天的任务 (${chatId}) ===`);
+    
+    const tasks = settings.vector_tasks[chatId] || [];
+    if (tasks.length === 0) {
+      console.log('当前聊天没有任务');
+      return;
+    }
+    
+    tasks.forEach((task, index) => {
+      console.log(`\n任务 ${index + 1}: ${task.name}`);
+      console.log(`  ID: ${task.taskId}`);
+      console.log(`  启用: ${task.enabled ? '是' : '否'}`);
+      console.log(`  内容项: ${task.textContent?.length || 0}`);
+    });
+  };
+  
+  
+  
 
   // 创建 ActionButtons 实例
   console.log('Vectors Enhanced: Creating ActionButtons...');
@@ -2769,6 +3004,9 @@ jQuery(async () => {
   console.log('Vectors Enhanced: Initializing settings UI...');
   await settingsManager.initialize();
   console.log('Vectors Enhanced: Settings UI initialized');
+  
+  // 保存全局引用
+  globalSettingsManager = settingsManager;
 
   // 初始化列表和任务
   await settingsManager.initializeLists();
@@ -2868,10 +3106,6 @@ jQuery(async () => {
   MessageUI.updateHiddenMessagesInfo();
 
 
-  // 监听聊天变化以更新隐藏消息信息
-  eventSource.on(event_types.CHAT_CHANGED, () => {
-    MessageUI.updateHiddenMessagesInfo();
-  });
 
   // 初始化调试模块（如果启用）- 不阻塞主初始化
   initializeDebugModule().catch(err => {

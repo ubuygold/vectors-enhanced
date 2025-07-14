@@ -185,6 +185,24 @@ export class TaskManager {
     }
 
     /**
+     * Get all tasks from all chats
+     * @returns {Promise<Object>} Object with chatId as key and tasks array as value
+     */
+    async getAllTasks() {
+        try {
+            // 从配置中获取所有任务
+            const settings = this.configManager.getAll();
+            const allTasks = settings.vector_tasks || {};
+            
+            console.log('TaskManager: Getting all tasks:', Object.keys(allTasks).length, 'chats');
+            return allTasks;
+        } catch (error) {
+            console.error('TaskManager: Failed to get all tasks:', error);
+            return {};
+        }
+    }
+
+    /**
      * Get a single task by ID
      * @param {string} chatId - Chat identifier
      * @param {string} taskId - Task identifier
@@ -363,5 +381,98 @@ export class TaskManager {
         }
         
         return migrated;
+    }
+
+    /**
+     * Import an external task from another chat
+     * @param {string} sourceChatId - Source chat ID
+     * @param {string} sourceTaskId - Source task ID
+     * @param {string} targetChatId - Target chat ID
+     * @param {Object} options - Import options
+     * @returns {Promise<ExternalVectorizationTask>} Imported task
+     */
+    async importExternalTask(sourceChatId, sourceTaskId, targetChatId, options = {}) {
+        try {
+            // Get source task
+            const sourceTask = await this.getTask(sourceChatId, sourceTaskId);
+            if (!sourceTask) {
+                throw new Error(`Source task not found: ${sourceTaskId} in chat ${sourceChatId}`);
+            }
+
+            // Only allow importing vectorization tasks
+            if (sourceTask.type !== 'vectorization') {
+                throw new Error(`Can only import vectorization tasks, got: ${sourceTask.type}`);
+            }
+
+            // Import ExternalVectorizationTask class dynamically
+            const { ExternalVectorizationTask } = await import('../core/tasks/ExternalVectorizationTask.js');
+
+            // Create external task
+            const externalTask = ExternalVectorizationTask.fromVectorizationTask(
+                sourceTask,
+                targetChatId,
+                options
+            );
+
+            // Validate external task
+            if (!await externalTask.validate()) {
+                throw new Error('External task validation failed');
+            }
+
+            // Save external task
+            await this.storage.saveTask(externalTask);
+            
+            // Clear cache
+            this.clearCacheForChat(targetChatId);
+
+            // Emit event
+            if (this.eventBus) {
+                this.eventBus.emit('task:external-imported', {
+                    sourceTask,
+                    externalTask,
+                    targetChatId
+                });
+            }
+
+            return externalTask;
+
+        } catch (error) {
+            console.error('TaskManager: Failed to import external task:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get all external tasks for a chat
+     * @param {string} chatId - Chat identifier
+     * @returns {Promise<Array<ExternalVectorizationTask>>} Array of external tasks
+     */
+    async getExternalTasks(chatId) {
+        const allTasks = await this.getTasks(chatId);
+        return allTasks.filter(task => task.type === 'external-vectorization');
+    }
+
+    /**
+     * Process external task with special handling
+     * @param {string} taskId - Task ID
+     * @param {string} chatId - Chat ID
+     * @returns {Promise<void>}
+     */
+    async processExternalTask(taskId, chatId) {
+        const task = await this.getTask(chatId, taskId);
+        if (!task || task.type !== 'external-vectorization') {
+            throw new Error(`External task not found: ${taskId}`);
+        }
+
+        // Set high priority for external tasks
+        task.metadata = task.metadata || {};
+        task.metadata.priority = 10; // Higher than normal tasks
+
+        // Update and enqueue
+        task.updateStatus('queued');
+        await this.updateTask(task);
+        
+        // Add to queue with special handling
+        await this.queue.enqueue(task);
     }
 }
