@@ -51,23 +51,23 @@
 }
 
 /* Import button styles */
-#vectors_import_external_task {
+#vectors_enhanced_import_external_task {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     transition: all 0.2s ease;
 }
 
-#vectors_import_external_task:hover {
+#vectors_enhanced_import_external_task:hover {
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-#vectors_import_external_task:active {
+#vectors_enhanced_import_external_task:active {
     transform: translateY(0);
 }
 
-#vectors_import_external_task i {
+#vectors_enhanced_import_external_task i {
     font-size: 1em;
 }
 

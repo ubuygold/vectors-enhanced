@@ -714,9 +714,9 @@ export class SettingsManager {
       // 创建并初始化外挂任务UI
       const externalTaskUI = new ExternalTaskUI();
       
-      // 获取taskManager实例
-      if (window.globalTaskManager) {
-        await externalTaskUI.init(window.globalTaskManager);
+      // 使用 null 作为 taskManager（已移除）
+      // 传入 null、settings 和 dependencies 对象
+      await externalTaskUI.init(null, this.settings, this.dependencies);
         
         // 监听聊天切换事件以更新外挂任务列表
         if (window.eventSource) {
@@ -728,7 +728,7 @@ export class SettingsManager {
         // 初始更新
         try {
           const currentChatId = window.getContext?.()?.chatId;
-          if (currentChatId) {
+          if (currentChatId && currentChatId !== 'null' && currentChatId !== 'undefined') {
             await externalTaskUI.updateChatContext(currentChatId);
           }
         } catch (error) {
@@ -738,10 +738,7 @@ export class SettingsManager {
         // 保存引用以便后续使用
         this.externalTaskUI = externalTaskUI;
         
-        console.log('External Task UI initialized successfully');
-      } else {
-        console.warn('TaskManager not available, External Task UI disabled');
-      }
+        console.log('External Task UI initialized successfully (legacy mode)');
     } catch (error) {
       console.error('Failed to initialize External Task UI:', error);
     }

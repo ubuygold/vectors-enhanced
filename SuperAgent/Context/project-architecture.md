@@ -27,22 +27,13 @@ vectors-enhanced/
 │   │   │   ├── FileExtractor.js        # 文件提取器 (新增)
 │   │   │   ├── WorldInfoExtractor.js   # 世界信息提取器 (新增)
 │   │   │   └── README.md
-│   │   ├── tasks/      # 任务系统 (新增)
-│   │   │   ├── ITask.js                # 任务接口 (新增)
-│   │   │   ├── BaseTask.js             # 基础任务类 (新增)
-│   │   │   ├── VectorizationTask.js    # 向量化任务 (新增)
-│   │   │   ├── ExternalVectorizationTask.js # 外挂向量化任务 (新增)
-│   │   │   ├── TaskFactory.js          # 任务工厂 (新增)
-│   │   │   ├── taskTypes.js            # 任务类型常量 (新增)
-│   │   │   └── README.md
+│   │   # 任务系统 (已删除) - 使用旧格式
 │   │   ├── plugins/    # 插件系统 (已实现)
 │   │       ├── IVectorizationPlugin.js # 插件接口定义
 │   │       ├── PluginManager.js        # 插件管理器
 │   │       ├── PluginLoader.js         # 插件加载器
 │   │       └── README.md
-│   ├── application/    # 应用层服务 (新增)
-│   │   ├── TaskManager.js              # 任务管理器 (新增)
-│   │   └── TaskQueue.js                # 任务队列 (新增)
+│   # 应用层服务 (已删除) - 使用旧格式
 │   ├── infrastructure/ # 基础设施层
 │   │   ├── ConfigManager.js            # 配置管理器 (新增)
 │   │   ├── events/    # 事件系统
@@ -50,8 +41,7 @@ vectors-enhanced/
 │   │   │   ├── eventBus.instance.js    # 事件总线实例 (新增)
 │   │   │   └── README.md
 │   │   ├── storage/   # 存储适配器
-│   │   │   ├── StorageAdapter.js       # 向量存储API适配器 (新增)
-│   │   │   └── TaskStorageAdapter.js   # 任务存储适配器 (新增)
+│   │   │   └── StorageAdapter.js       # 向量存储API适配器 (新增)
 │   │   └── api/       # API适配器
 │   │       └── VectorizationAdapter.js  # 封装所有向量化源的调用 (新增)
 │   ├── utils/         # 工具函数
@@ -612,9 +602,9 @@ index.js
 - **Phase 11**: 清理优化和新功能 📋 待实施
 
 ### 关键特性
-1. **双系统兼容**: 新任务系统与legacy系统完美共存
-2. **零停机迁移**: 重构过程中功能始终可用
-3. **渐进式架构**: 每个阶段都是可独立验证的改进
+1. **简化系统**: 使用旧格式直接存储，简化了架构
+2. **性能优化**: 减少了过度工程化的抽象层
+3. **维护性改善**: 代码更加简洁，易于理解和维护
 4. **向后兼容**: 所有现有数据和功能完全保留
 
 ### 现代化模块使用情况 (2025-07-13更新)

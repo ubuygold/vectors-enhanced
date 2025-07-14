@@ -44,7 +44,6 @@ import { renderTagRulesUI } from './src/ui/components/TagRulesEditor.js';
 import { updateTaskList } from './src/ui/components/TaskList.js';
 import { updateFileList } from './src/ui/components/FileList.js';
 import { updateWorldInfoList } from './src/ui/components/WorldInfoList.js';
-import { TaskManager } from './src/application/TaskManager.js';
 import { clearTagSuggestions, displayTagSuggestions, showTagExamples } from './src/ui/components/TagUI.js';
 import { MessageUI } from './src/ui/components/MessageUI.js';
 import { ActionButtons } from './src/ui/components/ActionButtons.js';
@@ -80,8 +79,6 @@ const MODULE_NAME = 'vectors-enhanced';
 
 export const EXTENSION_PROMPT_TAG = '3_vectors';
 
-// Global TaskManager instance (initialized in jQuery ready)
-let globalTaskManager = null;
 
 // Global ActionButtons instance (initialized in jQuery ready)
 let globalActionButtons = null;
@@ -200,19 +197,10 @@ function generateTaskId() {
  * @returns {Array} Array of tasks
  */
 function getChatTasks(chatId) {
-  // If TaskManager is available and initialized, use it for enhanced functionality
-  if (globalTaskManager && !globalTaskManager.legacyMode && globalTaskManager.storage) {
-    try {
-      // Use synchronous method for backward compatibility
-      const tasks = globalTaskManager.getTasksSync(chatId);
-      return tasks;
-    } catch (error) {
-      console.warn('TaskManager: Failed to get tasks synchronously, falling back to legacy:', error);
-      // Fall through to legacy implementation
-    }
+  if (!chatId || chatId === 'null' || chatId === 'undefined') {
+    console.warn('Vectors: getChatTasks called with invalid chatId:', chatId);
+    return [];
   }
-
-  // Legacy implementation (always used as fallback)
   if (!settings.vector_tasks[chatId]) {
     settings.vector_tasks[chatId] = [];
   }
@@ -225,6 +213,10 @@ function getChatTasks(chatId) {
  * @param {object} task Task object
  */
 function addVectorTask(chatId, task) {
+  if (!chatId || chatId === 'null' || chatId === 'undefined') {
+    console.error('Vectors: addVectorTask called with invalid chatId:', chatId);
+    return;
+  }
   const tasks = getChatTasks(chatId);
   tasks.push(task);
   settings.vector_tasks[chatId] = tasks;
@@ -246,6 +238,10 @@ function addVectorTask(chatId, task) {
  * @param {string} taskId Task ID to remove
  */
 async function removeVectorTask(chatId, taskId) {
+  if (!chatId || chatId === 'null' || chatId === 'undefined') {
+    console.error('Vectors: removeVectorTask called with invalid chatId:', chatId);
+    return;
+  }
   const tasks = getChatTasks(chatId);
   const index = tasks.findIndex(t => t.taskId === taskId);
   if (index !== -1) {
@@ -1470,71 +1466,6 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
   }
 }
 
-/**
- * Process an external vectorization task
- * @param {ExternalVectorizationTask} task - External task to process
- * @returns {Promise<Object>} Result with success status
- */
-async function processExternalVectorizationTask(task) {
-  console.log(`Processing external task: ${task.id} from chat ${task.sourceChat}`);
-  
-  try {
-    // Validate task
-    if (!task || !task.isExternal) {
-      throw new Error('Invalid external task');
-    }
-    
-    // Get task content (already vectorized)
-    let textContent = task.textContent;
-    
-    // Apply content mapping if needed
-    if (task.needsContentMapping && task.needsContentMapping()) {
-      textContent = task.applyContentMapping(textContent);
-    }
-    
-    // Process the task with skipDeduplication flag
-    const result = await performVectorization(
-      task.settings,
-      task.chatId,
-      task.isIncremental,
-      textContent,
-      {
-        skipDeduplication: task.skipDeduplication,
-        taskType: 'external-vectorization'
-      }
-    );
-    
-    // Update task status based on result
-    if (result.success) {
-      task.updateStatus('completed');
-      task.result = result;
-    } else {
-      task.updateStatus('failed');
-      task.result = { error: result.error };
-    }
-    
-    // Save task status
-    if (taskManager) {
-      await taskManager.updateTask(task);
-    }
-    
-    return result;
-    
-  } catch (error) {
-    console.error('External task processing failed:', error);
-    
-    // Update task status
-    task.updateStatus('failed');
-    task.result = { error: error.message };
-    
-    // Save task status
-    if (taskManager) {
-      await taskManager.updateTask(task);
-    }
-    
-    throw error;
-  }
-}
 
 /**
  * Actively cleanup invalid selections before processing
@@ -1736,7 +1667,7 @@ async function vectorizeContent() {
         return;
     }
     const chatId = getCurrentChatId();
-    if (!chatId) {
+    if (!chatId || chatId === 'null' || chatId === 'undefined') {
         toastr.error('未选择聊天');
         return;
     }
@@ -1910,7 +1841,7 @@ async function exportVectors() {
   const context = getContext();
   const chatId = getCurrentChatId();
 
-  if (!chatId) {
+  if (!chatId || chatId === 'null' || chatId === 'undefined') {
     toastr.error('未选择聊天');
     return;
   }
@@ -2083,7 +2014,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     }
 
     const chatId = getCurrentChatId();
-    if (!chatId) {
+    if (!chatId || chatId === 'null' || chatId === 'undefined') {
       console.debug('Vectors: No chat ID available');
       logTimingAndReturn('无聊天ID');
       return;
@@ -2531,6 +2462,33 @@ const onChatEvent = debounce(async () => {
 }, debounce_timeout.relaxed);
 
 /**
+ * Cleans up invalid chat IDs from vector_tasks
+ */
+function cleanupInvalidChatIds() {
+  if (!settings.vector_tasks) {
+    return;
+  }
+  
+  let hasChanges = false;
+  const invalidKeys = [];
+  
+  for (const [chatId, tasks] of Object.entries(settings.vector_tasks)) {
+    if (!chatId || chatId === 'null' || chatId === 'undefined' || chatId.trim() === '') {
+      invalidKeys.push(chatId);
+      hasChanges = true;
+    }
+  }
+  
+  if (hasChanges) {
+    console.warn('Vectors: Cleaning up invalid chat IDs:', invalidKeys);
+    invalidKeys.forEach(key => {
+      delete settings.vector_tasks[key];
+    });
+    console.log('Vectors: Cleaned up invalid chat IDs from vector_tasks');
+  }
+}
+
+/**
  * Migrates old tag settings to the new structured format.
  * This is a one-time migration that runs if the old `tags` property is found.
  */
@@ -2592,6 +2550,9 @@ jQuery(async () => {
 
   // 在设置加载后运行迁移
   migrateTagSettings();
+  
+  // 清理无效的聊天ID
+  cleanupInvalidChatIds();
 
   // 调试：输出加载的设置
   console.debug('Vectors: 从扩展设置加载的数据:', extension_settings[SETTINGS_KEY]);
@@ -2787,17 +2748,7 @@ jQuery(async () => {
     scanAndSuggestTags
   });
 
-  // 创建 TaskManager 实例
-  console.log('Vectors Enhanced: Creating TaskManager...');
-  const taskManager = new TaskManager(configManager);
-
-  // 初始化 TaskManager
-  console.log('Vectors Enhanced: Initializing TaskManager...');
-  await taskManager.initialize();
-
-  // 设置全局TaskManager引用
-  globalTaskManager = taskManager;
-  window.globalTaskManager = taskManager; // 暴露给其他模块使用
+  // TaskManager removed - using legacy format only
   
   // 添加全局处理函数作为后备
   window.handleExternalTaskImport = async () => {
@@ -2827,632 +2778,6 @@ jQuery(async () => {
   
   
   
-  // 添加数据对比调试函数
-  window.compareVectorTasksData = function() {
-    console.log('\n=== 向量化任务数据对比 ===');
-    
-    const settingsData = settings.vector_tasks || {};
-    const extensionSettingsData = extension_settings.vectors_enhanced?.vector_tasks || {};
-    
-    console.log('settings.vector_tasks:', settingsData);
-    console.log('extension_settings.vectors_enhanced.vector_tasks:', extensionSettingsData);
-    
-    // 检查引用是否相同
-    const sameReference = settingsData === extensionSettingsData;
-    console.log('引用相同:', sameReference);
-    
-    // 对比聊天数量
-    const settingsChats = Object.keys(settingsData);
-    const extensionChats = Object.keys(extensionSettingsData);
-    
-    console.log('\n=== 聊天数量对比 ===');
-    console.log('settings 聊天数:', settingsChats.length);
-    console.log('extension_settings 聊天数:', extensionChats.length);
-    
-    // 对比每个聊天的任务数量
-    const allChats = new Set([...settingsChats, ...extensionChats]);
-    
-    console.log('\n=== 每个聊天的任务数量 ===');
-    allChats.forEach(chatId => {
-      const settingsTasks = settingsData[chatId]?.length || 0;
-      const extensionTasks = extensionSettingsData[chatId]?.length || 0;
-      
-      if (settingsTasks !== extensionTasks) {
-        console.log(`❌ ${chatId}: settings=${settingsTasks}, extension=${extensionTasks}`);
-      } else {
-        console.log(`✅ ${chatId}: ${settingsTasks} 任务`);
-      }
-    });
-    
-    // 找出不同步的聊天
-    const unsyncedChats = [];
-    allChats.forEach(chatId => {
-      const settingsTasks = settingsData[chatId] || [];
-      const extensionTasks = extensionSettingsData[chatId] || [];
-      
-      if (settingsTasks.length !== extensionTasks.length) {
-        unsyncedChats.push({
-          chatId,
-          settingsCount: settingsTasks.length,
-          extensionCount: extensionTasks.length
-        });
-      }
-    });
-    
-    if (unsyncedChats.length > 0) {
-      console.log('\n❌ 发现数据不同步:', unsyncedChats);
-    } else {
-      console.log('\n✅ 数据同步正常');
-    }
-    
-    return {
-      sameReference,
-      settingsChats: settingsChats.length,
-      extensionChats: extensionChats.length,
-      unsyncedChats
-    };
-  };
-  
-  // 添加调试函数：打印所有向量化任务
-  window.showAllVectorTasks = function() {
-    console.log('\n=== 所有向量化任务 ===');
-    console.log('当前时间:', new Date().toLocaleString());
-    
-    // 从 settings 获取任务
-    const allTasks = settings.vector_tasks || {};
-    const chatIds = Object.keys(allTasks);
-    
-    if (chatIds.length === 0) {
-      console.log('没有找到任何向量化任务');
-      return;
-    }
-    
-    console.log(`找到 ${chatIds.length} 个聊天包含任务\n`);
-    
-    let totalTaskCount = 0;
-    
-    // 遍历每个聊天
-    chatIds.forEach((chatId, index) => {
-      const tasks = allTasks[chatId];
-      if (!tasks || tasks.length === 0) {
-        return;
-      }
-      
-      console.log(`\n[聊天 #${index + 1}] Chat ID: ${chatId}`);
-      console.log(`任务数量: ${tasks.length}`);
-      console.log('---');
-      
-      // 打印每个任务的详细信息
-      tasks.forEach((task, taskIndex) => {
-        totalTaskCount++;
-        console.log(`  任务 ${taskIndex + 1}:`);
-        console.log(`    - ID: ${task.taskId}`);
-        console.log(`    - 名称: ${task.name}`);
-        console.log(`    - 创建时间: ${new Date(task.timestamp).toLocaleString()}`);
-        console.log(`    - 启用状态: ${task.enabled ? '✓ 启用' : '✗ 禁用'}`);
-        console.log(`    - 类型: ${task.type || 'vectorization (默认)'}`);
-        
-        // 显示内容统计
-        if (task.textContent) {
-          console.log(`    - 内容项数: ${task.textContent.length}`);
-          
-          // 统计内容类型
-          const contentTypes = {};
-          task.textContent.forEach(item => {
-            const type = item.metadata?.type || 'unknown';
-            contentTypes[type] = (contentTypes[type] || 0) + 1;
-          });
-          
-          console.log(`    - 内容类型分布:`);
-          Object.entries(contentTypes).forEach(([type, count]) => {
-            console.log(`        ${type}: ${count}`);
-          });
-        } else {
-          console.log(`    - 内容: 无`);
-        }
-        
-        // 显示设置摘要
-        if (task.settings) {
-          console.log(`    - 设置摘要:`);
-          console.log(`        聊天: ${task.settings.chat?.enabled ? '✓' : '✗'}`);
-          console.log(`        文件: ${task.settings.files?.enabled ? '✓' : '✗'}`);
-          console.log(`        世界信息: ${task.settings.world_info?.enabled ? '✓' : '✗'}`);
-        }
-        
-        console.log('');
-      });
-    });
-    
-    console.log(`\n总计: ${totalTaskCount} 个任务`);
-    console.log('=== 结束 ===\n');
-    
-    // 返回统计信息
-    return {
-      chatCount: chatIds.length,
-      totalTasks: totalTaskCount,
-      tasksByChat: Object.fromEntries(
-        chatIds.map(chatId => [chatId, allTasks[chatId].length])
-      )
-    };
-  };
-  
-  // 添加简洁版的任务查看函数
-  window.showVectorTasksSummary = function() {
-    console.log('\n=== 向量化任务摘要 ===');
-    
-    const allTasks = settings.vector_tasks || {};
-    const chatIds = Object.keys(allTasks);
-    
-    if (chatIds.length === 0) {
-      console.log('没有找到任何向量化任务');
-      return;
-    }
-    
-    console.table(
-      chatIds.map(chatId => {
-        const tasks = allTasks[chatId] || [];
-        return {
-          'Chat ID': chatId.substring(0, 20) + '...',
-          '任务数': tasks.length,
-          '启用的任务': tasks.filter(t => t.enabled).length,
-          '最近创建': tasks.length > 0 ? new Date(Math.max(...tasks.map(t => t.timestamp))).toLocaleDateString() : 'N/A'
-        };
-      })
-    );
-    
-    const totalTasks = chatIds.reduce((sum, chatId) => sum + (allTasks[chatId]?.length || 0), 0);
-    console.log(`\n总计: ${chatIds.length} 个聊天, ${totalTasks} 个任务\n`);
-  };
-  
-  // 添加获取当前聊天任务的函数
-  window.showCurrentChatTasks = function() {
-    const chatId = getCurrentChatId();
-    if (!chatId) {
-      console.log('没有打开的聊天');
-      return;
-    }
-    
-    console.log(`\n=== 当前聊天的任务 (${chatId}) ===`);
-    
-    const tasks = settings.vector_tasks[chatId] || [];
-    if (tasks.length === 0) {
-      console.log('当前聊天没有任务');
-      return;
-    }
-    
-    tasks.forEach((task, index) => {
-      console.log(`\n任务 ${index + 1}: ${task.name}`);
-      console.log(`  ID: ${task.taskId}`);
-      console.log(`  启用: ${task.enabled ? '是' : '否'}`);
-      console.log(`  内容项: ${task.textContent?.length || 0}`);
-    });
-  };
-  
-  // 添加数据同步函数
-  window.syncVectorTasksData = function() {
-    console.log('\n=== 同步向量化任务数据 ===');
-    
-    // 以 settings.vector_tasks 为源数据（因为 showAllVectorTasks 显示的是正确的）
-    const sourceData = settings.vector_tasks || {};
-    
-    // 同步到 extension_settings
-    if (!extension_settings.vectors_enhanced) {
-      extension_settings.vectors_enhanced = {};
-    }
-    
-    extension_settings.vectors_enhanced.vector_tasks = JSON.parse(JSON.stringify(sourceData));
-    
-    // 保存设置
-    saveSettingsDebounced();
-    
-    console.log('数据同步完成！');
-    console.log('同步后的数据:', extension_settings.vectors_enhanced.vector_tasks);
-    
-    // 验证同步结果
-    const verification = compareVectorTasksData();
-    return verification;
-  };
-  
-  // 添加一个综合调试函数
-  window.debugVectorTasksIssue = function() {
-    console.log('\n=== 向量化任务问题调试 ===');
-    
-    // 1. 显示原始数据
-    console.log('1. 原始数据对比:');
-    const comparison = compareVectorTasksData();
-    
-    // 2. 如果数据不同步，自动同步
-    if (comparison.unsyncedChats.length > 0) {
-      console.log('\n2. 检测到数据不同步，正在同步...');
-      syncVectorTasksData();
-    } else {
-      console.log('\n2. 数据已同步');
-    }
-    
-    // 3. 测试 ExternalTaskUI
-    console.log('\n3. 测试 ExternalTaskUI.getAllChatsWithTasks():');
-    if (globalSettingsManager?.externalTaskUI) {
-      globalSettingsManager.externalTaskUI.getAllChatsWithTasks().then(chats => {
-        console.log('ExternalTaskUI 返回的聊天列表:', chats);
-      });
-    } else {
-      console.log('ExternalTaskUI 未初始化');
-    }
-    
-    return comparison;
-  };
-  
-  // 添加详细调试 ExternalTaskUI 逻辑的函数
-  window.debugExternalTaskUILogic = function() {
-    console.log('\n=== ExternalTaskUI 逻辑调试 ===');
-    
-    // 获取当前聊天ID
-    const currentChatId = getCurrentChatId();
-    console.log('1. 当前聊天ID:', currentChatId);
-    
-    // 获取所有任务
-    const allTasks = settings.vector_tasks || {};
-    console.log('2. 所有任务数据:', allTasks);
-    
-    // 模拟 ExternalTaskUI.getAllChatsWithTasks 的逻辑
-    const chatsWithTasks = [];
-    
-    for (const [chatId, tasks] of Object.entries(allTasks)) {
-      console.log(`\n处理聊天: ${chatId}`);
-      console.log(`  是否为当前聊天: ${chatId === currentChatId}`);
-      
-      // 跳过当前聊天
-      if (chatId === currentChatId) {
-        console.log('  跳过当前聊天');
-        continue;
-      }
-      
-      // 检查任务类型
-      console.log(`  原始任务数: ${tasks.length}`);
-      
-      tasks.forEach((task, index) => {
-        console.log(`    任务 ${index + 1}:`);
-        console.log(`      - 名称: ${task.name}`);
-        console.log(`      - 类型: ${task.type || 'undefined (兼容旧格式)'}`);
-        console.log(`      - 是否为向量化任务: ${task.type === 'vectorization' || !task.type}`);
-        console.log(`      - 启用状态: ${task.enabled}`);
-      });
-      
-      // 过滤向量化任务
-      const vectorizationTasks = tasks.filter(task => 
-        task.type === 'vectorization' || !task.type
-      );
-      
-      console.log(`  过滤后的向量化任务数: ${vectorizationTasks.length}`);
-      
-      if (vectorizationTasks.length > 0) {
-        const chatName = `聊天 ${chatId.substring(0, 20)}...`;
-        chatsWithTasks.push({
-          id: chatId,
-          name: chatName,
-          taskCount: vectorizationTasks.length
-        });
-        console.log(`  ✅ 添加到列表: ${chatName} (${vectorizationTasks.length} 任务)`);
-      } else {
-        console.log(`  ❌ 没有向量化任务，跳过`);
-      }
-    }
-    
-    console.log('\n=== 最终结果 ===');
-    console.log('可用的聊天列表:', chatsWithTasks);
-    
-    // 对比实际 ExternalTaskUI 的结果
-    if (globalSettingsManager?.externalTaskUI) {
-      console.log('\n正在获取 ExternalTaskUI 的实际结果...');
-      globalSettingsManager.externalTaskUI.getAllChatsWithTasks().then(actualResult => {
-        console.log('ExternalTaskUI 实际结果:', actualResult);
-        console.log('结果一致:', JSON.stringify(chatsWithTasks) === JSON.stringify(actualResult));
-      });
-    }
-    
-    return chatsWithTasks;
-  };
-  
-  // 添加对比两种任务获取方式的调试函数
-  window.compareTaskRetrievalMethods = async function(chatId) {
-    console.log(`\n=== 对比任务获取方式: ${chatId} ===`);
-    
-    if (!chatId) {
-      console.log('请提供聊天ID');
-      return;
-    }
-    
-    // 方式1：直接从 settings.vector_tasks 获取
-    const directTasks = settings.vector_tasks[chatId] || [];
-    console.log('\n1. 直接从 settings.vector_tasks 获取:');
-    console.log(`   任务数: ${directTasks.length}`);
-    directTasks.forEach((task, index) => {
-      console.log(`   任务 ${index + 1}: ${task.name} (${task.taskId})`);
-    });
-    
-    // 方式2：通过 TaskManager.getTasks() 获取
-    if (globalTaskManager) {
-      const managerTasks = await globalTaskManager.getTasks(chatId);
-      console.log('\n2. 通过 TaskManager.getTasks() 获取:');
-      console.log(`   任务数: ${managerTasks.length}`);
-      managerTasks.forEach((task, index) => {
-        console.log(`   任务 ${index + 1}: ${task.name} (${task.id || task.taskId})`);
-        console.log(`     类型: ${task.type || 'undefined'}`);
-        console.log(`     数据来源: ${task.isLegacy ? 'Legacy' : 'New'}`);
-      });
-      
-      // 找出差异
-      const directTaskIds = directTasks.map(t => t.taskId);
-      const managerTaskIds = managerTasks.map(t => t.id || t.taskId);
-      
-      const onlyInDirect = directTaskIds.filter(id => !managerTaskIds.includes(id));
-      const onlyInManager = managerTaskIds.filter(id => !directTaskIds.includes(id));
-      
-      console.log('\n3. 差异分析:');
-      if (onlyInDirect.length > 0) {
-        console.log(`   只在 settings.vector_tasks 中的任务: ${onlyInDirect.join(', ')}`);
-      }
-      if (onlyInManager.length > 0) {
-        console.log(`   只在 TaskManager.getTasks() 中的任务: ${onlyInManager.join(', ')}`);
-      }
-      if (onlyInDirect.length === 0 && onlyInManager.length === 0) {
-        console.log('   没有差异');
-      }
-      
-      return {
-        directTasks: directTasks.length,
-        managerTasks: managerTasks.length,
-        onlyInDirect,
-        onlyInManager
-      };
-    } else {
-      console.log('\n2. TaskManager 不可用');
-      return { directTasks: directTasks.length, managerTasks: 0 };
-    }
-  };
-  
-  // 添加一个快捷函数来测试特定聊天
-  window.testSpecificChat = async function(chatId) {
-    console.log(`\n=== 测试特定聊天: ${chatId} ===`);
-    
-    // 使用 compareTaskRetrievalMethods 来对比
-    const result = await compareTaskRetrievalMethods(chatId);
-    
-    // 模拟 ExternalTaskUI.loadSourceChatTasks 的过程
-    console.log('\n4. 模拟 ExternalTaskUI.loadSourceChatTasks 的过程:');
-    if (globalTaskManager) {
-      const tasks = await globalTaskManager.getTasks(chatId);
-      const vectorizationTasks = tasks.filter(t => t.type === 'vectorization');
-      
-      console.log(`   过滤后的向量化任务: ${vectorizationTasks.length}`);
-      vectorizationTasks.forEach((task, index) => {
-        console.log(`   任务 ${index + 1}: ${task.name}`);
-        console.log(`     ID: ${task.id || task.taskId}`);
-        console.log(`     内容项: ${task.textContent?.length || 0}`);
-      });
-    }
-    
-    return result;
-  };
-  
-  // 添加一个快捷函数来获取所有可测试的聊天ID
-  window.getTestableChats = function() {
-    console.log('\n=== 可测试的聊天ID ===');
-    
-    const allChats = Object.keys(settings.vector_tasks || {});
-    console.log('所有聊天ID:');
-    allChats.forEach((chatId, index) => {
-      const taskCount = settings.vector_tasks[chatId]?.length || 0;
-      console.log(`${index + 1}. "${chatId}" (${taskCount} 任务)`);
-    });
-    
-    console.log('\n使用方法:');
-    console.log('testSpecificChat("聊天ID")');
-    console.log('例如:');
-    if (allChats.length > 0) {
-      console.log(`testSpecificChat("${allChats[0]}")`);
-    }
-    
-    return allChats;
-  };
-  
-  // 添加调试 TaskManager 存储的函数
-  window.debugTaskManagerStorage = function(chatId) {
-    console.log('=== TaskManager 存储调试 ===');
-    console.log('1. globalTaskManager 存在:', !!globalTaskManager);
-    console.log('2. window.globalTaskManager 存在:', !!window.globalTaskManager);
-    console.log('3. globalTaskManager.storage 存在:', !!globalTaskManager?.storage);
-    
-    if (globalTaskManager) {
-      console.log('4. globalTaskManager 类型:', typeof globalTaskManager);
-      console.log('5. globalTaskManager 属性:', Object.getOwnPropertyNames(globalTaskManager));
-    }
-    
-    if (globalTaskManager?.storage) {
-      console.log('4. storage 的方法:', Object.getOwnPropertyNames(globalTaskManager.storage));
-      console.log('5. storage 的类型:', globalTaskManager.storage.constructor.name);
-      
-      // 尝试获取 legacy tasks
-      if (chatId) {
-        try {
-          const legacyTasks = globalTaskManager.storage.getLegacyTasks(chatId);
-          console.log('6. Legacy tasks:', legacyTasks);
-          console.log('7. Legacy tasks 数量:', legacyTasks.length);
-          
-          legacyTasks.forEach((task, index) => {
-            console.log(`   Legacy 任务 ${index + 1}:`);
-            console.log(`     ID: ${task.taskId}`);
-            console.log(`     名称: ${task.name}`);
-            console.log(`     时间: ${new Date(task.timestamp).toLocaleString()}`);
-          });
-        } catch (error) {
-          console.error('8. 获取 legacy tasks 失败:', error);
-        }
-      }
-    } else {
-      console.log('4. TaskManager.storage 不存在');
-    }
-    
-    // 检查是否有其他存储方式
-    console.log('\n=== 其他可能的存储位置 ===');
-    console.log('extension_settings.vectors_enhanced:', !!extension_settings?.vectors_enhanced);
-    console.log('localStorage:', !!localStorage);
-    
-    // 检查 localStorage 中是否有相关数据
-    if (localStorage) {
-      const keys = Object.keys(localStorage).filter(key => key.includes('vector') || key.includes('task'));
-      console.log('localStorage 中的相关键:', keys);
-    }
-  };
-  
-  // 添加清理 legacy tasks 的函数
-  window.cleanupLegacyTasks = function(chatId) {
-    console.log(`=== 清理 Legacy Tasks: ${chatId} ===`);
-    
-    if (!globalTaskManager?.storage) {
-      console.log('错误: TaskManager.storage 不存在');
-      return;
-    }
-    
-    try {
-      // 尝试获取 legacy tasks
-      const legacyTasks = globalTaskManager.storage.getLegacyTasks(chatId);
-      console.log(`找到 ${legacyTasks.length} 个 legacy tasks`);
-      
-      // 获取当前有效的任务
-      const currentTasks = settings.vector_tasks[chatId] || [];
-      const currentTaskIds = currentTasks.map(t => t.taskId);
-      console.log(`当前有效任务 ID:`, currentTaskIds);
-      
-      // 找出需要清理的 legacy tasks
-      const tasksToRemove = legacyTasks.filter(task => !currentTaskIds.includes(task.taskId));
-      console.log(`需要清理的 legacy tasks:`, tasksToRemove.map(t => t.taskId));
-      
-      if (tasksToRemove.length > 0) {
-        console.log(`即将清理 ${tasksToRemove.length} 个旧任务...`);
-        // 这里需要实现清理逻辑
-        console.log('清理逻辑尚未实现，请等待...');
-      } else {
-        console.log('没有需要清理的 legacy tasks');
-      }
-      
-    } catch (error) {
-      console.error('清理 legacy tasks 失败:', error);
-    }
-  };
-  
-  // 添加简单的调试函数
-  window.simpleDebugTaskManager = function() {
-    console.log('=== 简单调试 ===');
-    console.log('globalTaskManager:', globalTaskManager);
-    console.log('globalTaskManager.storage:', globalTaskManager?.storage);
-    
-    if (globalTaskManager?.storage) {
-      console.log('storage 方法:', Object.getOwnPropertyNames(globalTaskManager.storage));
-      
-      // 尝试获取 legacy tasks
-      try {
-        const chatId = "性穹铁道 - 2025-06-21@23h59m06s";
-        const legacyTasks = globalTaskManager.storage.getLegacyTasks(chatId);
-        console.log('Legacy tasks 数量:', legacyTasks.length);
-        console.log('Legacy tasks:', legacyTasks);
-      } catch (error) {
-        console.error('Legacy tasks 错误:', error);
-      }
-    }
-  };
-  
-  // 添加清理新格式任务存储的函数
-  window.cleanupNewFormatTasks = async function(chatId) {
-    console.log(`=== 清理新格式任务: ${chatId} ===`);
-    
-    try {
-      // 获取当前有效的任务列表
-      const currentTasks = settings.vector_tasks[chatId] || [];
-      const currentTaskIds = currentTasks.map(t => t.taskId);
-      console.log(`当前有效任务 ID:`, currentTaskIds);
-      
-      // 获取新格式任务存储中的任务
-      const newFormatTasks = await globalTaskManager.storage.getTasks(chatId);
-      console.log(`新格式任务数量: ${newFormatTasks.length}`);
-      
-      // 找出需要清理的任务
-      const tasksToDelete = newFormatTasks.filter(task => !currentTaskIds.includes(task.id));
-      console.log(`需要清理的任务:`, tasksToDelete.map(t => `${t.name} (${t.id})`));
-      
-      if (tasksToDelete.length === 0) {
-        console.log('没有需要清理的任务');
-        return;
-      }
-      
-      // 执行清理
-      console.log(`开始清理 ${tasksToDelete.length} 个任务...`);
-      
-      for (const task of tasksToDelete) {
-        console.log(`正在删除任务: ${task.name} (${task.id})`);
-        await globalTaskManager.storage.deleteTask(chatId, task.id);
-      }
-      
-      console.log('清理完成！');
-      
-      // 验证清理结果
-      const afterCleanup = await globalTaskManager.storage.getTasks(chatId);
-      console.log(`清理后的新格式任务数量: ${afterCleanup.length}`);
-      
-      // 清理缓存
-      if (globalTaskManager.cache) {
-        globalTaskManager.cache.delete(`tasks_${chatId}`);
-        console.log('已清理缓存');
-      }
-      
-      return {
-        deleted: tasksToDelete.length,
-        remaining: afterCleanup.length
-      };
-      
-    } catch (error) {
-      console.error('清理新格式任务失败:', error);
-      return null;
-    }
-  };
-  
-  // 添加一个一键修复函数
-  window.fixExternalTasksIssue = async function(chatId) {
-    console.log(`=== 一键修复外挂任务问题: ${chatId} ===`);
-    
-    // 1. 清理新格式任务存储
-    const result = await cleanupNewFormatTasks(chatId);
-    
-    if (result) {
-      console.log(`成功清理了 ${result.deleted} 个旧任务，剩余 ${result.remaining} 个任务`);
-      
-      // 2. 测试修复结果
-      console.log('\n正在测试修复结果...');
-      const testResult = await compareTaskRetrievalMethods(chatId);
-      
-      if (testResult && testResult.onlyInManager.length === 0) {
-        console.log('✅ 修复成功！两种获取方式的任务数量已一致');
-      } else {
-        console.log('❌ 修复不完全，仍有不一致的任务');
-      }
-      
-      // 3. 测试 ExternalTaskUI
-      console.log('\n正在测试 ExternalTaskUI...');
-      if (globalSettingsManager?.externalTaskUI) {
-        const chats = await globalSettingsManager.externalTaskUI.getAllChatsWithTasks();
-        console.log('ExternalTaskUI 获取的聊天列表:', chats);
-      }
-      
-      return result;
-    } else {
-      console.log('修复失败');
-      return null;
-    }
-  };
-  
-  
-  
-
   // 创建 ActionButtons 实例
   console.log('Vectors Enhanced: Creating ActionButtons...');
   const actionButtons = new ActionButtons({
@@ -3476,13 +2801,13 @@ jQuery(async () => {
   // 设置全局ActionButtons引用
   globalActionButtons = actionButtons;
 
-  // 添加全局状态检查函数（调试用）
+  // Task system status (legacy mode only)
   window.vectorsTaskSystemStatus = () => {
     const status = {
-      taskManagerAvailable: !!globalTaskManager,
-      legacyMode: globalTaskManager?.legacyMode || false,
-      storageReady: globalTaskManager?.storage ? true : false,
-      systemMode: globalTaskManager && !globalTaskManager.legacyMode && globalTaskManager.storage ? 'TaskManager' : 'Legacy'
+      taskManagerAvailable: false,
+      legacyMode: true,
+      storageReady: false,
+      systemMode: 'Legacy'
     };
     console.log('Vectors Enhanced Task System Status:', status);
     return status;

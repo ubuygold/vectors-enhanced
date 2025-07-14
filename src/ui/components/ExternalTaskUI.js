@@ -2,9 +2,15 @@
  * External Task UI Component
  * Handles UI for importing and managing external vectorization tasks
  */
+
+// 导入必要的函数
+import { getCurrentChatId } from '../../../../../../script.js';
+
 export class ExternalTaskUI {
     constructor() {
         this.taskManager = null;
+        this.settings = null;  // 添加 settings 引用
+        this.dependencies = null;  // 添加 dependencies 引用
         this.currentChatId = null;
         this.initialized = false;
         this.container = null;
@@ -29,8 +35,10 @@ export class ExternalTaskUI {
     /**
      * Initialize the component
      * @param {TaskManager} taskManager - Task manager instance
+     * @param {Object} settings - Settings object containing vector_tasks
+     * @param {Object} dependencies - Dependencies object with saveSettingsDebounced
      */
-    async init(taskManager) {
+    async init(taskManager, settings, dependencies) {
         console.log('ExternalTaskUI: Initializing...');
         
         if (this.initialized) {
@@ -39,11 +47,12 @@ export class ExternalTaskUI {
         }
 
         if (!taskManager) {
-            console.error('ExternalTaskUI: TaskManager is required');
-            throw new Error('TaskManager is required');
+            console.warn('ExternalTaskUI: TaskManager not available, using legacy mode');
         }
 
         this.taskManager = taskManager;
+        this.settings = settings;  // 保存 settings 引用
+        this.dependencies = dependencies;  // 保存 dependencies 引用
         this.container = $('#vectors_external_tasks_container');
         
         if (!this.container.length) {
@@ -61,8 +70,14 @@ export class ExternalTaskUI {
      * @param {string} chatId - Current chat ID
      */
     async updateChatContext(chatId) {
-        this.currentChatId = chatId;
-        await this.refreshExternalTasksList();
+        // 只在有效的chatId时更新
+        if (chatId && chatId !== 'null' && chatId !== 'undefined') {
+            this.currentChatId = chatId;
+            await this.refreshExternalTasksList();
+        } else {
+            console.warn('ExternalTaskUI: updateChatContext called with invalid chatId:', chatId);
+            this.currentChatId = null;
+        }
     }
 
     /**
@@ -73,44 +88,21 @@ export class ExternalTaskUI {
         
         // Remove any existing handlers first
         $(document).off('click.externalTaskUI');
+        $('#vectors_enhanced_import_external_task').off('click');
         
-        // Use immediate check and binding
-        const bindImportButton = () => {
-            const button = $('#vectors_import_external_task');
-            if (button.length > 0) {
-                console.log('ExternalTaskUI: Binding to import button');
-                
-                // Remove any existing handlers
-                button.off('click.externalTaskUI');
-                
-                // Bind new handler directly to the button
-                button.on('click.externalTaskUI', async (e) => {
-                    console.log('ExternalTaskUI: Import button clicked');
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    try {
-                        await this.showImportDialog();
-                    } catch (error) {
-                        console.error('ExternalTaskUI: Error in showImportDialog:', error);
-                        this.showNotification('无法显示导入对话框: ' + error.message, 'error');
-                    }
-                });
-                
-                return true;
+        // Bind import button click event
+        $(document).on('click', '#vectors_enhanced_import_external_task', async (e) => {
+            console.log('ExternalTaskUI: Import button clicked (delegated)');
+            e.preventDefault();
+            e.stopPropagation();
+            
+            try {
+                await this.showImportDialog();
+            } catch (error) {
+                console.error('ExternalTaskUI: Error in showImportDialog:', error);
+                this.showNotification('无法显示导入对话框: ' + error.message, 'error');
             }
-            return false;
-        };
-        
-        // Try to bind immediately
-        if (!bindImportButton()) {
-            // If not found, try again after DOM ready
-            setTimeout(() => {
-                if (!bindImportButton()) {
-                    console.warn('ExternalTaskUI: Import button not found after timeout');
-                }
-            }, 1000);
-        }
+        });
 
         // Process external task
         $(document).on('click.externalTaskUI', '.process-external-task', async (e) => {
@@ -254,9 +246,9 @@ export class ExternalTaskUI {
         console.log('ExternalTaskUI: Getting all chats with tasks...');
         
         try {
-            // 获取所有任务数据
-            const allTasks = await this.taskManager.getAllTasks();
-            console.log('All tasks from TaskManager:', allTasks);
+            // 直接从 settings.vector_tasks 获取所有任务数据
+            const allTasks = this.settings.vector_tasks || {};
+            console.log('All tasks from settings:', allTasks);
             
             // 如果没有任何任务，返回空数组
             if (!allTasks || Object.keys(allTasks).length === 0) {
@@ -268,8 +260,8 @@ export class ExternalTaskUI {
             const chatsWithTasks = [];
             
             for (const [chatId, tasks] of Object.entries(allTasks)) {
-                // 跳过当前聊天
-                if (chatId === this.currentChatId) {
+                // 跳过当前聊天和无效的聊天ID
+                if (chatId === this.currentChatId || !chatId || chatId === 'null' || chatId === 'undefined') {
                     continue;
                 }
                 
@@ -317,8 +309,10 @@ export class ExternalTaskUI {
      */
     async loadSourceChatTasks(chatId) {
         try {
-            const tasks = await this.taskManager.getTasks(chatId);
-            const vectorizationTasks = tasks.filter(t => t.type === 'vectorization');
+            // 直接从 settings.vector_tasks 获取任务
+            const tasks = this.settings.vector_tasks[chatId] || [];
+            // 旧格式的任务没有 type 字段，或者 type 为 'vectorization'
+            const vectorizationTasks = tasks.filter(t => !t.type || t.type === 'vectorization');
 
             if (vectorizationTasks.length === 0) {
                 $('#source-tasks-list').html('<p>此聊天没有向量化任务</p>');
@@ -329,7 +323,7 @@ export class ExternalTaskUI {
             const tasksHtml = vectorizationTasks.map(task => `
                 <div class="task-select-item">
                     <label>
-                        <input type="checkbox" class="task-checkbox" value="${task.id}">
+                        <input type="checkbox" class="task-checkbox" value="${task.taskId || task.id}">
                         <span class="task-name">${task.name}</span>
                         <small class="task-info">(${task.textContent?.length || 0} 项)</small>
                     </label>
@@ -364,20 +358,82 @@ export class ExternalTaskUI {
 
             const skipDeduplication = $('#skip-deduplication').is(':checked');
 
-            // Import tasks
+            // Import tasks - 直接从源聊天复制任务到当前聊天
             let importedCount = 0;
+            const sourceTasks = this.settings.vector_tasks[sourceChatId] || [];
+            
+            // 重新获取当前聊天ID以确保准确性
+            let currentChatId = this.currentChatId;
+            
+            // 尝试从不同的源获取当前聊天ID
+            if (!currentChatId || currentChatId === 'null' || currentChatId === 'undefined') {
+                // 尝试从导入的函数获取
+                try {
+                    currentChatId = getCurrentChatId();
+                } catch (error) {
+                    console.error('Failed to get chat ID from getCurrentChatId:', error);
+                }
+                
+                // 尝试从window.getContext获取
+                if ((!currentChatId || currentChatId === 'null' || currentChatId === 'undefined') && window.getContext) {
+                    try {
+                        const context = window.getContext();
+                        currentChatId = context.chatId;
+                    } catch (error) {
+                        console.error('Failed to get chat context:', error);
+                    }
+                }
+            }
+            
+            // 最终检查当前聊天ID是否有效
+            if (!currentChatId || currentChatId === 'null' || currentChatId === 'undefined') {
+                this.showNotification('无法获取当前聊天ID，请确保已选择聊天', 'error');
+                console.error('ExternalTaskUI: Unable to get current chat ID for import');
+                return;
+            }
+            
+            console.log('ExternalTaskUI: Using current chat ID for import:', currentChatId);
+            const currentTasks = this.settings.vector_tasks[currentChatId] || [];
+            
             for (const taskId of selectedTasks) {
                 try {
-                    await this.taskManager.importExternalTask(
-                        sourceChatId,
-                        taskId,
-                        this.currentChatId,
-                        { skipDeduplication }
-                    );
+                    // 找到要复制的任务
+                    const sourceTask = sourceTasks.find(t => (t.taskId || t.id) === taskId);
+                    if (!sourceTask) {
+                        console.error(`Source task ${taskId} not found`);
+                        continue;
+                    }
+                    
+                    // 检查是否已存在（除非跳过去重）
+                    if (!skipDeduplication) {
+                        const exists = currentTasks.some(t => t.name === sourceTask.name);
+                        if (exists) {
+                            console.log(`Task "${sourceTask.name}" already exists, skipping`);
+                            continue;
+                        }
+                    }
+                    
+                    // 复制任务
+                    const newTask = JSON.parse(JSON.stringify(sourceTask));
+                    // 生成新的任务ID
+                    newTask.taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                    newTask.timestamp = Date.now();
+                    
+                    // 添加到当前聊天的任务列表
+                    if (!this.settings.vector_tasks[currentChatId]) {
+                        this.settings.vector_tasks[currentChatId] = [];
+                    }
+                    this.settings.vector_tasks[currentChatId].push(newTask);
+                    
                     importedCount++;
                 } catch (error) {
                     console.error(`Failed to import task ${taskId}:`, error);
                 }
+            }
+            
+            // 保存设置
+            if (importedCount > 0 && this.dependencies?.saveSettingsDebounced) {
+                this.dependencies.saveSettingsDebounced();
             }
 
             if (importedCount > 0) {
@@ -397,47 +453,18 @@ export class ExternalTaskUI {
      * Refresh external tasks list
      */
     async refreshExternalTasksList() {
-        if (!this.currentChatId) return;
-
-        try {
-            const externalTasks = await this.taskManager.getExternalTasks(this.currentChatId);
-            
-            if (externalTasks.length === 0) {
-                this.container.html('<p class="no-external-tasks">暂无外挂任务</p>');
-                return;
+        // 由于使用旧格式，没有单独的"外挂任务"概念
+        // 可以显示当前聊天的任务列表或者直接隐藏这个部分
+        if (!this.currentChatId || this.currentChatId === 'null' || this.currentChatId === 'undefined') {
+            if (this.container) {
+                this.container.html('<p class="no-external-tasks">请先选择聊天</p>');
             }
-
-            const tasksHtml = externalTasks.map(task => `
-                <div class="external-task-item" data-task-id="${task.id}">
-                    <div class="task-header">
-                        <span class="task-name">${task.name}</span>
-                        <span class="task-status status-${task.status}">${this.getStatusText(task.status)}</span>
-                    </div>
-                    <div class="task-info">
-                        <small>来源: ${task.sourceChat}</small>
-                        <small>${task.skipDeduplication ? '(跳过去重)' : ''}</small>
-                    </div>
-                    <div class="task-actions">
-                        <button class="menu_button view-external-task" data-task-id="${task.id}">
-                            查看
-                        </button>
-                        ${task.status === 'pending' ? `
-                            <button class="menu_button process-external-task" data-task-id="${task.id}">
-                                处理
-                            </button>
-                        ` : ''}
-                        <button class="menu_button delete-external-task" data-task-id="${task.id}">
-                            删除
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-
-            this.container.html(tasksHtml);
-
-        } catch (error) {
-            console.error('Failed to refresh external tasks:', error);
-            this.container.html('<p class="error">加载外挂任务失败</p>');
+            return;
+        }
+        
+        // 直接显示空列表，因为没有单独的外挂任务概念
+        if (this.container) {
+            this.container.html('<p class="no-external-tasks">暂无外挂任务</p>');
         }
     }
 
@@ -446,23 +473,9 @@ export class ExternalTaskUI {
      * @param {string} taskId - Task ID to process
      */
     async processExternalTask(taskId) {
-        try {
-            if (!confirm('确定要处理此外挂任务吗？')) {
-                return;
-            }
-
-            this.showNotification('开始处理外挂任务...', 'info');
-            
-            // Process the task
-            await this.taskManager.processExternalTask(taskId, this.currentChatId);
-            
-            this.showNotification('外挂任务已加入处理队列', 'success');
-            await this.refreshExternalTasksList();
-
-        } catch (error) {
-            console.error('Failed to process external task:', error);
-            this.showNotification('处理外挂任务失败', 'error');
-        }
+        // 由于使用旧格式，不再支持单独的外挂任务处理
+        console.warn('processExternalTask is not supported in legacy mode');
+        this.showNotification('旧格式不支持外挂任务处理', 'warning');
     }
 
     /**
@@ -470,19 +483,9 @@ export class ExternalTaskUI {
      * @param {string} taskId - Task ID to delete
      */
     async deleteExternalTask(taskId) {
-        try {
-            if (!confirm('确定要删除此外挂任务吗？')) {
-                return;
-            }
-
-            await this.taskManager.deleteTask(this.currentChatId, taskId);
-            this.showNotification('外挂任务已删除', 'success');
-            await this.refreshExternalTasksList();
-
-        } catch (error) {
-            console.error('Failed to delete external task:', error);
-            this.showNotification('删除外挂任务失败', 'error');
-        }
+        // 由于使用旧格式，不再支持单独的外挂任务删除
+        console.warn('deleteExternalTask is not supported in legacy mode');
+        this.showNotification('旧格式不支持外挂任务删除', 'warning');
     }
 
     /**
@@ -491,7 +494,15 @@ export class ExternalTaskUI {
      */
     async viewTaskDetails(taskId) {
         try {
-            const task = await this.taskManager.getTask(this.currentChatId, taskId);
+            // 检查当前聊天ID是否有效
+            if (!this.currentChatId || this.currentChatId === 'null' || this.currentChatId === 'undefined') {
+                this.showNotification('当前聊天ID无效', 'error');
+                return;
+            }
+            
+            // 从 settings.vector_tasks 获取任务
+            const tasks = this.settings.vector_tasks[this.currentChatId] || [];
+            const task = tasks.find(t => (t.taskId || t.id) === taskId);
             if (!task) {
                 this.showNotification('任务不存在', 'error');
                 return;
@@ -561,9 +572,9 @@ export class ExternalTaskUI {
      * Destroy the component
      */
     destroy() {
-        // Unbind events with namespace
+        // Unbind events
         $(document).off('click.externalTaskUI');
-        $('#vectors_import_external_task').off('click.direct');
+        $(document).off('click', '#vectors_enhanced_import_external_task');
         
         this.initialized = false;
         console.log('ExternalTaskUI destroyed');
