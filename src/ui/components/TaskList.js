@@ -271,19 +271,6 @@ async function previewTaskContent(task) {
   // Build preview HTML matching global preview style
   let html = '<div class="vector-preview">';
   html += `<div class="preview-header">任务内容（${items.length} 项）</div>`;
-  
-  // Get saved preference from localStorage
-  const showRawPreference = localStorage.getItem('vectors_preview_show_raw') === 'true';
-  
-  // Add toggle button for chat content view
-  html += '<div class="preview-controls" style="text-align: center; margin-bottom: 1rem;">';
-  html += '<label class="checkbox_label" style="display: inline-flex; align-items: center; gap: 0.5rem;">';
-  html += `<input type="checkbox" id="preview-show-raw" ${showRawPreference ? 'checked' : ''} />`;
-  html += '<span>显示原始内容</span>';
-  html += '<kbd style="margin-left: 0.5rem; padding: 2px 6px; background: var(--SmartThemeBorderColor); border-radius: 3px; font-size: 0.9em;">R</kbd>';
-  html += '</label>';
-  html += '</div>';
-  
   html += '<div class="preview-sections">';
 
   // Group by type
@@ -341,22 +328,40 @@ async function previewTaskContent(task) {
   html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
   html += '<div class="preview-section-content">';
   if (grouped.chat && grouped.chat.length > 0) {
-    grouped.chat.forEach(item => {
+    grouped.chat.forEach((item, idx) => {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
+      const messageId = `task-msg-${item.metadata.index}`;
+      
       html += `<div class="preview-chat-message" data-index="${item.metadata.index}">`;
       html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-      // Escape HTML for raw text display
-      const escapedRawText = item.rawText ? 
-        item.rawText.replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;') : '';
       
-      html += `<div class="preview-chat-content preview-processed" style="${showRawPreference ? 'display: none;' : ''}">${item.text}</div>`;
+      // Content container with both versions
+      html += `<div class="preview-chat-content-wrapper" style="position: relative;">`;
+      
+      // Processed content (default visible)
+      html += `<div class="preview-chat-content" id="${messageId}-processed">${item.text}</div>`;
+      
+      // Raw content (hidden by default)
       if (item.rawText) {
-        html += `<pre class="preview-chat-content preview-raw" style="white-space: pre-wrap; font-family: inherit; ${showRawPreference ? '' : 'display: none;'}">${escapedRawText}</pre>`;
+        const escapedRawText = item.rawText
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+        
+        html += `<pre class="preview-chat-content" id="${messageId}-raw" style="display: none; white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
+        
+        // Toggle buttons
+        html += '<div class="preview-toggle-buttons" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">';
+        html += `<button class="menu_button menu_button_icon toggle-view-btn" data-message-id="${messageId}" data-view="processed" title="切换显示模式">`;
+        html += '<span class="view-processed">原始 <i class="fa-solid fa-arrow-right"></i></span>';
+        html += '<span class="view-raw" style="display: none;"><i class="fa-solid fa-arrow-left"></i> 处理后</span>';
+        html += '</button>';
+        html += '</div>';
       }
+      
+      html += '</div>';
       html += `</div>`;
     });
   } else {
@@ -371,32 +376,27 @@ async function previewTaskContent(task) {
     wide: true,
     large: true,
     onShow: () => {
-      // Add toggle functionality
-      $('#preview-show-raw').on('change', function() {
-        const showRaw = $(this).prop('checked');
-        // Save preference to localStorage
-        localStorage.setItem('vectors_preview_show_raw', showRaw);
+      // Add toggle functionality for individual messages
+      $('.toggle-view-btn').on('click', function() {
+        const messageId = $(this).data('message-id');
+        const currentView = $(this).data('view');
         
-        if (showRaw) {
-          $('.preview-processed').hide();
-          $('.preview-raw').show();
+        if (currentView === 'processed') {
+          // Switch to raw view
+          $(`#${messageId}-processed`).hide();
+          $(`#${messageId}-raw`).show();
+          $(this).data('view', 'raw');
+          $(this).find('.view-processed').hide();
+          $(this).find('.view-raw').show();
         } else {
-          $('.preview-processed').show();
-          $('.preview-raw').hide();
+          // Switch to processed view
+          $(`#${messageId}-raw`).hide();
+          $(`#${messageId}-processed`).show();
+          $(this).data('view', 'processed');
+          $(this).find('.view-raw').hide();
+          $(this).find('.view-processed').show();
         }
       });
-      
-      // Add keyboard shortcut (R key)
-      $(document).on('keydown.preview', function(e) {
-        if (e.key === 'r' || e.key === 'R') {
-          e.preventDefault();
-          $('#preview-show-raw').prop('checked', !$('#preview-show-raw').prop('checked')).trigger('change');
-        }
-      });
-    },
-    onClose: () => {
-      // Remove keyboard event listener when popup closes
-      $(document).off('keydown.preview');
     }
   });
 }
