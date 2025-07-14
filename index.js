@@ -110,7 +110,7 @@ const settings = {
   // General vectorization settings
   auto_vectorize: true,
   chunk_size: 1000,
-  overlap_percent: 10,
+  overlap_percent: 0,
   score_threshold: 0.25,
   force_chunk_delimiter: '',
   lightweight_storage: false, // 大内容轻量化存储模式

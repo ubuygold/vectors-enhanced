@@ -36,23 +36,23 @@ export class TaskNameGenerator {
         if (sourceCount === 1) {
             if (chatItems.length > 0) {
                 const range = this._getMergedRange(chatItems);
-                components.push(`楼层 ${range}`);
+                components.push(`楼层 #${range}`);
                 components.push(`${chatItems.length}条`);
             } else if (worldInfoItems.length > 0) {
-                components.push(`世界书 ${worldInfoItems.length}条`);
+                components.push(`世界书 ${worldInfoItems.length}条目`);
             } else if (fileItems.length > 0) {
                 components.push(`文件 ${fileItems.length}个`);
             }
         } else if (sourceCount > 1) {
-            // Multiple sources - show all counts
+            // Multiple sources - show all counts in order: chat, world_info, files
             if (chatItems.length > 0) {
-                components.push(`楼层${chatItems.length}`);
+                components.push(`${chatItems.length}层楼`);
             }
             if (worldInfoItems.length > 0) {
-                components.push(`世界书${worldInfoItems.length}`);
+                components.push(`${worldInfoItems.length}条世界书`);
             }
             if (fileItems.length > 0) {
-                components.push(`文件${fileItems.length}`);
+                components.push(`${fileItems.length}个文件`);
             }
         }
         

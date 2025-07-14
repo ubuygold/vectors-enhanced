@@ -328,6 +328,11 @@ async function previewTaskContent(task) {
   html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
   html += '<div class="preview-section-content">';
   if (grouped.chat && grouped.chat.length > 0) {
+    // Add floor info at the beginning of content
+    const chatIndices = grouped.chat.map(item => item.metadata.index).sort((a, b) => a - b);
+    const segments = identifyContinuousSegments(chatIndices);
+    html += `<div style="margin-bottom: 1rem;"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
+    
     // Check if raw content preview is enabled
     const showRawContent = $('#vectors_enhanced_preview_raw').prop('checked');
     
@@ -364,4 +369,42 @@ async function previewTaskContent(task) {
     wide: true,
     large: true,
   });
+}
+
+/**
+ * Identify continuous segments in indices (same logic as taskNaming.js)
+ */
+function identifyContinuousSegments(indices) {
+  if (indices.length === 0) return [];
+  
+  const segments = [];
+  let segmentStart = indices[0];
+  let segmentEnd = indices[0];
+  
+  for (let i = 1; i < indices.length; i++) {
+    if (indices[i] === segmentEnd + 1) {
+      // Continue current segment
+      segmentEnd = indices[i];
+    } else {
+      // End current segment and start new one
+      segments.push(formatSegment(segmentStart, segmentEnd));
+      segmentStart = indices[i];
+      segmentEnd = indices[i];
+    }
+  }
+  
+  // Add the last segment
+  segments.push(formatSegment(segmentStart, segmentEnd));
+  
+  return segments;
+}
+
+/**
+ * Format segment (single number or range)
+ */
+function formatSegment(start, end) {
+  if (start === end) {
+    return `${start}`;
+  }
+  return `${start}-${end}`;
 }

@@ -6,7 +6,7 @@ vectors-enhanced/
 ├── index.js              # 主入口文件 (3300+行，部分功能已模块化)
 ├── webllm.js            # WebLLM 引擎适配器
 ├── settings.html        # 原始设置界面 (561行)
-├── settings-modular.html # 模块化设置界面 (已实现)
+├── settings-modular.html # 模块化设置界面 (已实现，支持折叠)
 ├── style.css            # 样式文件
 ├── manifest.json        # 扩展配置文件
 ├── package.json         # Node.js 项目配置 (新增)
@@ -117,6 +117,7 @@ vectors-enhanced/
     ├── architecture-patterns.md  # 架构设计模式总览
     ├── code-quality-analysis.md  # 代码质量分析报告
     ├── future-roadmap.md         # 未来发展路线图
+    ├── comprehensive-test-cases.md # 全面测试用例 (新增)
     └── Context/
         ├── project-architecture.md  # 项目架构文档
         └── iterations-log.md        # 迭代日志
@@ -316,6 +317,7 @@ index.js
     - 集成智能任务命名显示
     - 新增任务预览按钮
     - previewTaskContent函数：显示任务实际处理的内容
+    - 预览界面显示完整楼层信息（包含楼层：x-x, x）
   - **FileList.js**: 文件列表UI组件
   - **WorldInfoList.js**: 世界信息列表UI组件
   - **TagUI.js**: 标签相关UI逻辑管理
@@ -328,8 +330,10 @@ index.js
 - **src/utils/chatUtils.js**: 统一的消息过滤工具，提供 `getMessages` 等函数，消除了之前在 UI 和数据处理层的重复逻辑。
 - **src/utils/taskNaming.js**: 任务智能命名模块（v2）
   - TaskNameGenerator类：基于内容类型和数量生成任务名称
-  - 支持合并相邻楼层数字（0-3, 5, 7-9）
-  - 分别统计楼层、世界书、文件数量
+  - 支持合并相邻楼层数字（#0-3, #5, #7-9）
+  - 分别统计楼层、世界书条目、文件个数
+  - 改进格式：楼层数字前加#，世界书后加"条目"，文件后加"个"
+  - 多来源时按顺序显示：x层楼 x条世界书 x个文件
 
 ### 基础设施层 (Phase 1 & 4 完成)
 
