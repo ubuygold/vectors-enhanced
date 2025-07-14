@@ -2,8 +2,50 @@ import { extension_settings, getContext } from '../../../../../../extensions.js'
 import { getCurrentChatId, saveSettingsDebounced } from '../../../../../../../script.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../../../../popup.js';
 import { TaskNameGenerator } from '../../utils/taskNaming.js';
+import { getSortedEntries } from '../../../../../../world-info.js';
+import { getDataBankAttachments, getDataBankAttachmentsForSource } from '../../../../../../chats.js';
 
 const settings = extension_settings.vectors_enhanced;
+
+/**
+ * Gets all available files from different sources (copied from index.js)
+ * @returns {Map<string, object>} Map of file URL to file object
+ */
+function getAllAvailableFiles() {
+  const fileMap = new Map();
+  const context = getContext();
+
+  try {
+    // Add files from different sources
+    getDataBankAttachments().forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    getDataBankAttachmentsForSource('global').forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    getDataBankAttachmentsForSource('character').forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    getDataBankAttachmentsForSource('chat').forEach(file => {
+      if (file && file.url) fileMap.set(file.url, file);
+    });
+
+    // Add files from chat messages
+    if (context.chat) {
+      context.chat.filter(x => x.extra?.file).forEach(msg => {
+        const file = msg.extra.file;
+        if (file && file.url) fileMap.set(file.url, file);
+      });
+    }
+  } catch (error) {
+    console.error('Vectors: Error getting files:', error);
+  }
+
+  return fileMap;
+}
 
 /**
  * Updates the task list UI
@@ -153,32 +195,70 @@ async function previewTaskContent(task) {
   
   // Collect file items
   if (task.actualProcessedItems.files && task.actualProcessedItems.files.length > 0) {
-    // For now, just show file URLs as we don't have access to file content
+    // Get all available files to match URLs with file objects
+    const fileMap = getAllAvailableFiles();
+    
     task.actualProcessedItems.files.forEach(url => {
-      const fileName = url.split('/').pop();
-      items.push({
-        type: 'file',
-        metadata: {
-          name: fileName,
-          url: url,
-          size: 0 // We don't have size info for now
-        }
-      });
+      const file = fileMap.get(url);
+      if (file) {
+        items.push({
+          type: 'file',
+          metadata: {
+            name: file.name,
+            url: url,
+            size: file.size || 0
+          }
+        });
+      } else {
+        // Fallback if file not found
+        const fileName = url.split('/').pop();
+        items.push({
+          type: 'file',
+          metadata: {
+            name: fileName,
+            url: url,
+            size: 0
+          }
+        });
+      }
     });
   }
   
   // Collect world info items
   if (task.actualProcessedItems.world_info && task.actualProcessedItems.world_info.length > 0) {
-    // For now, just show UIDs as we don't have access to world info content
+    // Get all world info entries
+    const entries = await getSortedEntries();
+    const entryMap = new Map();
+    entries.forEach(entry => {
+      if (entry.uid) {
+        entryMap.set(entry.uid, entry);
+      }
+    });
+    
     task.actualProcessedItems.world_info.forEach(uid => {
-      items.push({
-        type: 'world_info',
-        metadata: {
-          uid: uid,
-          world: '未知',
-          comment: `条目 UID: ${uid}`
-        }
-      });
+      const entry = entryMap.get(uid);
+      if (entry) {
+        items.push({
+          type: 'world_info',
+          text: entry.content,
+          metadata: {
+            uid: uid,
+            world: entry.world || '未知',
+            comment: entry.comment || '(无注释)',
+            key: entry.key ? entry.key.join(', ') : ''
+          }
+        });
+      } else {
+        // Fallback if entry not found
+        items.push({
+          type: 'world_info',
+          metadata: {
+            uid: uid,
+            world: '未知',
+            comment: `条目 UID: ${uid}`
+          }
+        });
+      }
     });
   }
 
@@ -207,7 +287,8 @@ async function previewTaskContent(task) {
   if (grouped.file && grouped.file.length > 0) {
     grouped.file.forEach(item => {
       html += `<div class="preview-item">`;
-      html += `<strong>${item.metadata.name}</strong>`;
+      const sizeKB = item.metadata.size ? (item.metadata.size / 1024).toFixed(1) : '0';
+      html += `<strong>${item.metadata.name}</strong> - ${sizeKB} KB`;
       html += `</div>`;
     });
   } else {
@@ -221,8 +302,12 @@ async function previewTaskContent(task) {
   html += '<div class="preview-section-content">';
   if (grouped.world_info && grouped.world_info.length > 0) {
     // Group by world if we have world info
+    // Group by world
     const byWorld = {};
-    byWorld['未知'] = grouped.world_info; // Since we don't have world info, group under "unknown"
+    grouped.world_info.forEach(item => {
+      if (!byWorld[item.metadata.world]) byWorld[item.metadata.world] = [];
+      byWorld[item.metadata.world].push(item);
+    });
     
     for (const [world, entries] of Object.entries(byWorld)) {
       html += `<div class="preview-world-group">`;

@@ -157,6 +157,18 @@ export class TaskNameGenerator {
 - 始终显示三个部分（文件、世界信息、聊天记录）
 - 使用CSS Grid的3列布局
 - 空内容时显示"无XX"提示
-- 确保布局稳定且居中显示
+- 确保布局稱定且居中显示
+
+### 操作 2.7
+**时间**: 09:00
+**描述**: 修复任务预览数据获取问题
+**问题**: 世界书名称显示未知，条目显示UID而非comment，文件名获取不正确
+**修改文件 `src/ui/components/TaskList.js`**:
+- 导入 getSortedEntries 从 world-info.js
+- 导入 getDataBankAttachments 等函数从 chats.js
+- 复制 getAllAvailableFiles 函数从 index.js
+- 使用正确的API获取世界书条目信息（world、comment等）
+- 使用文件Map获取正确的文件名和大小
+- 按世界书名称分组显示条目
 
 该方案解决了不连续楼层的显示问题，提供了更有意义的任务名称，同时保持了代码的模块化和可维护性。
