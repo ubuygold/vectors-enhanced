@@ -183,6 +183,7 @@ async function previewTaskContent(task) {
         items.push({
           type: 'chat',
           text: msg.mes,
+          rawText: msg.mes, // Store raw text for toggle
           metadata: {
             index: index,
             is_user: msg.is_user,
@@ -270,6 +271,15 @@ async function previewTaskContent(task) {
   // Build preview HTML matching global preview style
   let html = '<div class="vector-preview">';
   html += `<div class="preview-header">任务内容（${items.length} 项）</div>`;
+  
+  // Add toggle button for chat content view
+  html += '<div class="preview-controls" style="text-align: center; margin-bottom: 1rem;">';
+  html += '<label class="checkbox_label" style="display: inline-flex; align-items: center; gap: 0.5rem;">';
+  html += '<input type="checkbox" id="preview-show-raw" />';
+  html += '<span>显示原始内容</span>';
+  html += '</label>';
+  html += '</div>';
+  
   html += '<div class="preview-sections">';
 
   // Group by type
@@ -329,9 +339,12 @@ async function previewTaskContent(task) {
   if (grouped.chat && grouped.chat.length > 0) {
     grouped.chat.forEach(item => {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
-      html += `<div class="preview-chat-message">`;
+      html += `<div class="preview-chat-message" data-index="${item.metadata.index}">`;
       html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-      html += `<div class="preview-chat-content">${item.text}</div>`;
+      html += `<div class="preview-chat-content preview-processed">${item.text}</div>`;
+      if (item.rawText) {
+        html += `<div class="preview-chat-content preview-raw" style="display: none;">${item.rawText}</div>`;
+      }
       html += `</div>`;
     });
   } else {
@@ -345,5 +358,18 @@ async function previewTaskContent(task) {
     okButton: '关闭',
     wide: true,
     large: true,
+    onShow: () => {
+      // Add toggle functionality
+      $('#preview-show-raw').on('change', function() {
+        const showRaw = $(this).prop('checked');
+        if (showRaw) {
+          $('.preview-processed').hide();
+          $('.preview-raw').show();
+        } else {
+          $('.preview-processed').show();
+          $('.preview-raw').hide();
+        }
+      });
+    }
   });
 }

@@ -4,6 +4,7 @@ import { getContext } from '../../../../../../extensions.js';
 import { callGenericPopup, POPUP_TYPE } from '../../../../../../popup.js';
 import { parseTagWithExclusions, removeExcludedTags } from '../../utils/tagParser.js';
 import { getHiddenMessages } from '../../utils/chatUtils.js';
+import { extractTagContent } from '../../utils/tagExtractor.js';
 
 export const MessageUI = {
   /**
@@ -117,6 +118,46 @@ export const MessageUI = {
       toastr.warning('未选择要预览的内容或过滤后内容为空');
       return;
     }
+    
+    // We need to get the raw text (after tag extraction but before parameter substitution)
+    // Unfortunately, at this point the text has already been processed through substituteParams
+    // So we'll need to re-extract it from the original messages
+    const context = getContext();
+    const chatSettings = settings.selected_content.chat;
+    const rules = chatSettings.tag_rules || [];
+    
+    // Create a map of index to raw extracted text
+    const rawTextMap = new Map();
+    
+    if (chatSettings.enabled && context.chat) {
+      const start = chatSettings.range?.start || 0;
+      const end = chatSettings.range?.end || -1;
+      const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
+      
+      messages.forEach((msg, idx) => {
+        const absoluteIndex = start + idx;
+        if (msg.is_system) return;
+        
+        // Extract text without parameter substitution
+        let extractedText;
+        if (absoluteIndex === 0 || msg.is_user === true) {
+          // First floor or user messages: use original text without tag extraction
+          extractedText = msg.mes;
+        } else {
+          // Other floors: apply tag extraction rules  
+          extractedText = extractTagContent(msg.mes, rules);
+        }
+        
+        rawTextMap.set(absoluteIndex, extractedText);
+      });
+    }
+    
+    // Store raw text for each chat item
+    items.forEach(item => {
+      if (item.type === 'chat' && rawTextMap.has(item.metadata.index)) {
+        item.rawText = rawTextMap.get(item.metadata.index);
+      }
+    });
 
     // 统计过滤信息
     let totalOriginalBlocks = 0;
@@ -188,6 +229,14 @@ export const MessageUI = {
 
     let html = '<div class="vector-preview">';
     html += `<div class="preview-header">已选择内容（${items.length} 项）</div>`;
+    
+    // Add toggle button for chat content view
+    html += '<div class="preview-controls" style="text-align: center; margin-bottom: 1rem;">';
+    html += '<label class="checkbox_label" style="display: inline-flex; align-items: center; gap: 0.5rem;">';
+    html += '<input type="checkbox" id="preview-show-raw" />';
+    html += '<span>显示原始内容（标签筛选后）</span>';
+    html += '</label>';
+    html += '</div>';
 
     // 添加过滤统计信息
     if (totalOriginalBlocks > 0) {
@@ -262,9 +311,12 @@ export const MessageUI = {
     if (grouped.chat && grouped.chat.length > 0) {
       grouped.chat.forEach(item => {
         const msgType = item.metadata.is_user ? '用户' : 'AI';
-        html += `<div class="preview-chat-message">`;
+        html += `<div class="preview-chat-message" data-index="${item.metadata.index}">`;
         html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-        html += `<div class="preview-chat-content">${item.text}</div>`;
+        html += `<div class="preview-chat-content preview-processed">${item.text}</div>`;
+        if (item.rawText) {
+          html += `<div class="preview-chat-content preview-raw" style="display: none;">${item.rawText}</div>`;
+        }
         html += `</div>`;
       });
     } else {
@@ -274,10 +326,23 @@ export const MessageUI = {
 
     html += '</div></div>';
 
-    await callGenericPopup(html, POPUP_TYPE.TEXT, '', {
+    const popupResult = await callGenericPopup(html, POPUP_TYPE.TEXT, '', {
       okButton: '关闭',
       wide: true,
       large: true,
+      onShow: () => {
+        // Add toggle functionality
+        $('#preview-show-raw').on('change', function() {
+          const showRaw = $(this).prop('checked');
+          if (showRaw) {
+            $('.preview-processed').hide();
+            $('.preview-raw').show();
+          } else {
+            $('.preview-processed').show();
+            $('.preview-raw').hide();
+          }
+        });
+      }
     });
   }
 };
