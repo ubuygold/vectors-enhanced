@@ -164,7 +164,7 @@ const settings = {
   // Vector tasks management
   vector_tasks: {}, // { chatId: [{ taskId, name, timestamp, settings, enabled }] }
   tag_rules_version: 2,
-  
+
 };
 
 const moduleWorker = new ModuleWorkerWrapper(synchronizeChat);
@@ -210,7 +210,7 @@ function getChatTasks(chatId) {
       // Fall through to legacy implementation
     }
   }
-  
+
   // Legacy implementation (always used as fallback)
   if (!settings.vector_tasks[chatId]) {
     settings.vector_tasks[chatId] = [];
@@ -269,14 +269,14 @@ async function renameVectorTask(chatId, taskId, currentName) {
   let defaultName = currentName;
   const tasks = getChatTasks(chatId);
   const task = tasks.find(t => t.taskId === taskId);
-  
+
   if (task && task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
     // Import TaskNameGenerator
     const { TaskNameGenerator } = await import('./src/utils/taskNaming.js');
-    
+
     // Construct items for name generation
     const items = [];
-    
+
     // Add chat items
     if (task.actualProcessedItems.chat) {
       task.actualProcessedItems.chat.forEach(index => {
@@ -286,11 +286,11 @@ async function renameVectorTask(chatId, taskId, currentName) {
         });
       });
     }
-    
+
     // Generate smart name as default
     defaultName = TaskNameGenerator.generateSmartName(items, task.settings);
   }
-  
+
   const newName = await callGenericPopup(
     '请输入新的任务名称：',
     POPUP_TYPE.INPUT,
@@ -620,12 +620,12 @@ async function generateTaskName(contentSettings, actualItems) {
     const chatItems = actualItems.filter(item => item.type === 'chat');
     if (chatItems.length > 0) {
         const indices = chatItems.map(item => item.metadata.index).sort((a, b) => a - b);
-        
+
         // Format non-continuous ranges properly
         const ranges = [];
         let start = indices[0];
         let end = indices[0];
-        
+
         for (let i = 1; i < indices.length; i++) {
             if (indices[i] === end + 1) {
                 // Continuous, extend the range
@@ -641,14 +641,14 @@ async function generateTaskName(contentSettings, actualItems) {
                 end = indices[i];
             }
         }
-        
+
         // Add the last range
         if (start === end) {
             ranges.push(`#${start}`);
         } else {
             ranges.push(`#${start}-${end}`);
         }
-        
+
         // Join ranges with proper formatting
         if (ranges.length === 1) {
             parts.push(`消息 ${ranges[0]}`);
@@ -658,7 +658,7 @@ async function generateTaskName(contentSettings, actualItems) {
             // For many ranges, show first few and count
             parts.push(`消息 ${ranges.slice(0, 2).join('、')}等 (${chatItems.length}条)`);
         }
-        
+
         console.debug('Vectors: Added chat part (from actual items):', parts[parts.length - 1]);
     }
 
@@ -1053,13 +1053,13 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  */
 async function performVectorization(contentSettings, chatId, isIncremental, items) {
   console.log('Pipeline: Starting FULL pipeline processing with settings:', JSON.stringify(contentSettings, null, 2));
-  
+
   // Import all pipeline components
   const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
   const { ChatExtractor } = await import('./src/core/extractors/ChatExtractor.js');
   const { FileExtractor } = await import('./src/core/extractors/FileExtractor.js');
   const { WorldInfoExtractor } = await import('./src/core/extractors/WorldInfoExtractor.js');
-  
+
   try {
     // Initialize pipeline with full functionality
     if (!pipelineIntegration.isEnabled()) {
@@ -1070,43 +1070,43 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       });
       pipelineIntegration.setEnabled(true);
     }
-    
+
     // Generate task metadata
     let taskName = await generateTaskName(contentSettings, items);
     if (isIncremental) {
       taskName = '[增量] ' + taskName;
     }
-    
+
     // Set vectorization state
     isVectorizing = true;
     vectorizationAbortController = new AbortController();
-    
+
     // Update UI state
     $('#vectors_enhanced_vectorize').hide();
     $('#vectors_enhanced_abort').show();
-    
+
     // Create task and collection IDs
     const taskId = generateTaskId();
     const collectionId = `${chatId}_${taskId}`;
     let vectorsInserted = false;
-    
+
     try {
       const progressMessage = isIncremental ? '增量向量化开始...' : '向量化开始...';
       toastr.info(progressMessage, '处理中');
-      
+
       // === PHASE 1: USE PRE-EXTRACTED ITEMS (Skip Re-extraction) ===
       console.log('Pipeline: Phase 1 - Using pre-extracted items (Skip Re-extraction)');
       console.log(`Pipeline: getVectorizableContent() already provided ${items.length} items`);
-      
+
       if (globalProgressManager) {
         globalProgressManager.show(0, items.length, '准备项目');
       } else {
         updateProgressNew(0, items.length, '准备项目');
       }
-      
+
       // Group items by type without re-extraction
       const extractedContent = [];
-      
+
       // Group chat items
       const chatItems = items.filter(item => item.type === 'chat');
       if (chatItems.length > 0 && contentSettings.chat?.enabled) {
@@ -1114,14 +1114,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         extractedContent.push({
           type: 'chat',
           content: chatItems, // 保持数组格式！不合并！
-          metadata: { 
+          metadata: {
             extractorType: 'PreExtracted',
             itemCount: chatItems.length,
             source: 'getVectorizableContent'
           }
         });
       }
-      
+
       // Group file items
       const fileItems = items.filter(item => item.type === 'file');
       if (fileItems.length > 0 && contentSettings.files?.enabled) {
@@ -1129,14 +1129,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         extractedContent.push({
           type: 'files',
           content: fileItems, // 保持数组格式！不合并！
-          metadata: { 
+          metadata: {
             extractorType: 'PreExtracted',
             itemCount: fileItems.length,
             source: 'getVectorizableContent'
           }
         });
       }
-      
+
       // Group world info items
       const worldInfoItems = items.filter(item => item.type === 'world_info');
       if (worldInfoItems.length > 0 && contentSettings.world_info?.enabled) {
@@ -1144,38 +1144,38 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         extractedContent.push({
           type: 'world_info',
           content: worldInfoItems, // 保持数组格式！不合并！
-          metadata: { 
+          metadata: {
             extractorType: 'PreExtracted',
             itemCount: worldInfoItems.length,
             source: 'getVectorizableContent'
           }
         });
       }
-      
+
       if (globalProgressManager) {
         globalProgressManager.update(items.length, items.length, '项目准备完成');
       }
-      
+
       console.log(`Pipeline: Prepared ${extractedContent.length} content blocks containing ${items.length} total items`);
-      console.log('Pipeline: Content block summary:', extractedContent.map(block => ({ 
-        type: block.type, 
+      console.log('Pipeline: Content block summary:', extractedContent.map(block => ({
+        type: block.type,
         itemCount: Array.isArray(block.content) ? block.content.length : 1,
         isArray: Array.isArray(block.content),
-        firstItemPreview: Array.isArray(block.content) && block.content.length > 0 
-          ? block.content[0].text?.substring(0, 50) + '...' 
+        firstItemPreview: Array.isArray(block.content) && block.content.length > 0
+          ? block.content[0].text?.substring(0, 50) + '...'
           : 'N/A'
       })));
-      
+
       // === PHASE 2: TEXT PROCESSING ===
       console.log('Pipeline: Phase 2 - Text Processing through Pipeline');
       if (globalProgressManager) {
         globalProgressManager.show(0, extractedContent.length, '文本处理');
       }
-      
+
       // Get pipeline components
       const pipeline = pipelineIntegration.pipeline;
       const dispatcher = pipelineIntegration.dispatcher;
-      
+
       // Create processing context
       const processingContext = {
         chatId,
@@ -1191,21 +1191,21 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
           overlap_percent: settings.overlap_percent
         }
       };
-      
+
       const allProcessedChunks = [];
-      
+
       // Process each content block through the pipeline
       for (let i = 0; i < extractedContent.length; i++) {
         if (vectorizationAbortController.signal.aborted) {
           throw new Error('向量化被用户中断');
         }
-        
+
         const contentBlock = extractedContent[i];
         console.log(`Pipeline: Processing content block ${i + 1}/${extractedContent.length} (${contentBlock.type})`);
-        
+
         // === PHASE 3: TASK DISPATCH ===
         console.log('Pipeline: Phase 3 - Task Dispatch');
-        
+
         // Prepare input for dispatcher
         const dispatchInput = {
           content: contentBlock.content,
@@ -1216,23 +1216,23 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
             source: 'pipeline_extraction'
           }
         };
-        
+
         console.log(`Pipeline: Dispatch input for ${contentBlock.type}:`, {
           isArray: Array.isArray(dispatchInput.content),
-          contentLength: Array.isArray(dispatchInput.content) 
-            ? dispatchInput.content.length 
+          contentLength: Array.isArray(dispatchInput.content)
+            ? dispatchInput.content.length
             : dispatchInput.content?.length,
           contentPreview: Array.isArray(dispatchInput.content)
-            ? dispatchInput.content.slice(0, 2).map(item => ({ 
-                type: item?.type, 
-                hasText: !!item?.text, 
+            ? dispatchInput.content.slice(0, 2).map(item => ({
+                type: item?.type,
+                hasText: !!item?.text,
                 textLength: item?.text?.length,
                 textPreview: item?.text?.substring(0, 50) + '...'
               }))
             : dispatchInput.content?.substring(0, 100) + '...',
           metadata: dispatchInput.metadata
         });
-        
+
         // Dispatch through the text dispatcher
         const dispatchResult = await dispatcher.dispatch(
           dispatchInput,
@@ -1240,13 +1240,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
           contentSettings,
           processingContext
         );
-        
+
         console.log(`Pipeline: Dispatch result for ${contentBlock.type}:`, {
           success: dispatchResult.success,
           vectorized: dispatchResult.vectorized,
           processingTime: dispatchResult._pipeline?.processingTime
         });
-        
+
         // Convert pipeline result to chunks format
         if (dispatchResult.success && dispatchResult.vectors) {
           const chunks = dispatchResult.vectors.map((vector, idx) => ({
@@ -1262,15 +1262,15 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
               pipeline_processed: true
             }
           }));
-          
+
           allProcessedChunks.push(...chunks);
         }
-        
+
         if (globalProgressManager) {
           globalProgressManager.update(i + 1, extractedContent.length, `处理 ${contentBlock.type} 完成`);
         }
       }
-      
+
       console.log(`Pipeline: Processing complete. Generated ${allProcessedChunks.length} chunks through full pipeline`);
       console.log('Pipeline: allProcessedChunks details:', allProcessedChunks.map(chunk => ({
         hasText: !!chunk.text,
@@ -1279,32 +1279,32 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         hasMetadata: !!chunk.metadata,
         metadata: chunk.metadata
       })));
-      
+
       // === PHASE 4: VECTOR STORAGE ===
       console.log('Pipeline: Phase 4 - Vector Storage');
       if (globalProgressManager) {
         globalProgressManager.show(0, allProcessedChunks.length, '向量存储');
       }
-      
+
       // Store vectors using existing storage adapter
       const batchSize = 50;
       for (let i = 0; i < allProcessedChunks.length; i += batchSize) {
         if (vectorizationAbortController.signal.aborted) {
           throw new Error('向量化被用户中断');
         }
-        
+
         const batch = allProcessedChunks.slice(i, Math.min(i + batchSize, allProcessedChunks.length));
         await storageAdapter.insertVectorItems(collectionId, batch, vectorizationAbortController.signal);
         vectorsInserted = true;
-        
+
         if (globalProgressManager) {
           globalProgressManager.update(Math.min(i + batchSize, allProcessedChunks.length), allProcessedChunks.length, '向量存储中...');
         }
       }
-      
+
       // Create corrected settings (reuse existing logic)
       const correctedSettings = JSON.parse(JSON.stringify(contentSettings));
-      
+
       // ... (copy the settings correction logic from original function)
       if (correctedSettings.chat.enabled) {
         const chatItems = items.filter(item => item.type === 'chat');
@@ -1316,14 +1316,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
           correctedSettings.chat.enabled = false;
         }
       }
-      
+
       if (correctedSettings.files.enabled) {
         const actuallyProcessedFiles = items
           .filter(item => item.type === 'file')
           .map(item => item.metadata.url);
         correctedSettings.files.selected = actuallyProcessedFiles;
       }
-      
+
       if (correctedSettings.world_info.enabled) {
         const actuallyProcessedEntries = items
           .filter(item => item.type === 'world_info')
@@ -1342,14 +1342,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         }
         correctedSettings.world_info.selected = newWorldInfoSelected;
       }
-      
+
       // Extract actually processed items by type
       const actualProcessedItems = {
         chat: items.filter(item => item.type === 'chat').map(item => item.metadata.index),
         files: items.filter(item => item.type === 'file').map(item => item.metadata.url),
         world_info: items.filter(item => item.type === 'world_info').map(item => item.metadata.uid)
       };
-      
+
       // Create task object
       const task = {
         taskId: taskId,
@@ -1363,7 +1363,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         actualProcessedItems: actualProcessedItems,
         version: '2.0' // Mark as pipeline version
       };
-      
+
       // Add text content to task (similar to original implementation)
       if (settings.lightweight_storage && allProcessedChunks.length > 100) {
         // Large content mode
@@ -1377,32 +1377,32 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
           metadata: chunk.metadata
         }));
       }
-      
+
       // Add task to list
       addVectorTask(chatId, task);
-      
+
       // Update cache
       cachedVectors.set(collectionId, {
         timestamp: Date.now(),
         items: allProcessedChunks, // Use allProcessedChunks from pipeline processing
         settings: JSON.parse(JSON.stringify(settings)),
       });
-      
+
       // Complete progress
       if (globalProgressManager) {
         globalProgressManager.complete('向量化完成');
       } else {
         hideProgressNew();
       }
-      
+
       const successMessage = isIncremental ?
         `成功创建增量向量化任务 "${taskName}"：${items.length} 个新项目，${allProcessedChunks.length} 个块` :
         `成功创建向量化任务 "${taskName}"：${items.length} 个项目，${allProcessedChunks.length} 个块`;
       toastr.success(successMessage, '向量化完成');
-      
+
       // Refresh task list UI
       await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
-      
+
       return {
         success: true,
         taskId,
@@ -1411,17 +1411,17 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         originalItemCount: items.length,
         pipelineProcessed: true
       };
-      
+
     } catch (error) {
       console.error('Pipeline vectorization failed:', error);
-      
+
       // Use ProgressManager
       if (globalProgressManager) {
         globalProgressManager.error('向量化失败');
       } else {
         hideProgressNew();
       }
-      
+
       // Handle abort
       if (error.message === '向量化被用户中断' || vectorizationAbortController.signal.aborted) {
         if (vectorsInserted) {
@@ -1434,9 +1434,9 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         }
         toastr.error('向量化内容失败', '错误');
       }
-      
+
       throw error;
-      
+
     } finally {
       // Reset state
       isVectorizing = false;
@@ -1444,23 +1444,23 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
     }
-    
+
   } catch (error) {
     console.error('Pipeline vectorization main flow error:', error);
     toastr.error('向量化处理中发生严重错误，请检查控制台。');
-    
+
     // Ensure UI state reset
     isVectorizing = false;
     vectorizationAbortController = null;
     $('#vectors_enhanced_vectorize').show();
     $('#vectors_enhanced_abort').hide();
-    
+
     if (globalProgressManager) {
       globalProgressManager.error('严重错误');
     } else {
       hideProgressNew();
     }
-    
+
     return {
       success: false,
       error: error.message
@@ -1706,60 +1706,53 @@ async function vectorizeContent() {
     let isIncremental = hasProcessedItems; // Any task with pre-existing items is considered incremental
 
     if (newItems.length === 0) {
-        // Analyze what was already processed
+        // Case: All selected items have already been processed.
         const processedChatItems = validItems.filter(i => i.type === 'chat' && processedIdentifiers.chat.has(i.metadata.index));
         const processedFileItems = validItems.filter(i => i.type === 'file' && processedIdentifiers.file.has(i.metadata.url));
         const processedWorldInfoItems = validItems.filter(i => i.type === 'world_info' && processedIdentifiers.world_info.has(i.metadata.uid));
-        
+
         const processedParts = [];
-        if (processedChatItems.length > 0) {
-            processedParts.push(`聊天记录: ${formatRanges(processedChatItems)}`);
-        }
-        if (processedFileItems.length > 0) {
-            processedParts.push(`文件: ${processedFileItems.length}个`);
-        }
-        if (processedWorldInfoItems.length > 0) {
-            processedParts.push(`世界信息: ${processedWorldInfoItems.length}条`);
-        }
-        
+        if (processedChatItems.length > 0) processedParts.push(`聊天记录: ${formatRanges(processedChatItems)}`);
+        if (processedFileItems.length > 0) processedParts.push(`文件: ${processedFileItems.length}个`);
+        if (processedWorldInfoItems.length > 0) processedParts.push(`世界信息: ${processedWorldInfoItems.length}条`);
+
         const confirm = await callGenericPopup(
             `<div>
                 <p>所有选定内容均已被向量化：</p>
                 <ul style="text-align: left; margin: 10px 0;">
                     ${processedParts.map(part => `<li>${part}</li>`).join('')}
                 </ul>
-                <p>是否强制重新向量化这些内容？</p>
+                <p>是否要强制重新向量化这些内容？</p>
             </div>`,
             POPUP_TYPE.CONFIRM,
-            { okButton: '强制重新向量化', cancelButton: '取消' }
+            { okButton: '是', cancelButton: '否' }
         );
-        
+
         if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
-            return;
+            return; // User chose 'No' or cancelled
         }
-        
-        // Force re-vectorization
+
+        // User chose 'Yes', force re-vectorization of all valid items
         itemsToProcess = validItems;
         isIncremental = false;
     }
-
-    if (hasProcessedItems && !isIncremental) {
+    else if (hasProcessedItems && newItems.length > 0) {
+        // Case: Partial overlap. Some items are new, some are already processed.
         const newChatItems = newItems.filter(i => i.type === 'chat');
         const newFileItems = newItems.filter(i => i.type === 'file');
         const newWorldInfoItems = newItems.filter(i => i.type === 'world_info');
-        
-        // Also analyze already processed items
+
         const processedChatItems = validItems.filter(i => i.type === 'chat' && processedIdentifiers.chat.has(i.metadata.index));
         const processedFileItems = validItems.filter(i => i.type === 'file' && processedIdentifiers.file.has(i.metadata.url));
         const processedWorldInfoItems = validItems.filter(i => i.type === 'world_info' && processedIdentifiers.world_info.has(i.metadata.uid));
 
         const newParts = [];
         const processedParts = [];
-        
+
         if (newChatItems.length > 0) newParts.push(`新增聊天: ${formatRanges(newChatItems)}`);
         if (newFileItems.length > 0) newParts.push(`新增文件: ${newFileItems.length}个`);
         if (newWorldInfoItems.length > 0) newParts.push(`新增世界信息: ${newWorldInfoItems.length}条`);
-        
+
         if (processedChatItems.length > 0) processedParts.push(`已处理聊天: ${formatRanges(processedChatItems)}`);
         if (processedFileItems.length > 0) processedParts.push(`已处理文件: ${processedFileItems.length}个`);
         if (processedWorldInfoItems.length > 0) processedParts.push(`已处理世界信息: ${processedWorldInfoItems.length}条`);
@@ -1777,17 +1770,20 @@ async function vectorizeContent() {
                         ${newParts.map(part => `<li>${part}</li>`).join('')}
                     </ul>
                 </div>
-                <p>是否只处理新增内容？</p>
+                <p>是否只进行增量向量化（只处理新增内容）？</p>
             </div>`,
             POPUP_TYPE.CONFIRM,
-            { okButton: '只处理新增', cancelButton: '处理全部' }
+            { okButton: '是', cancelButton: '否' }
         );
-        
-        if (confirm === POPUP_RESULT.NEGATIVE) {
-            // User chose to process all
-            itemsToProcess = validItems;
-            isIncremental = false;
+
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
+            // User chose 'No' or cancelled
+            return;
         }
+
+        // User chose 'Yes', so we proceed with incremental vectorization (the default).
+        itemsToProcess = newItems;
+        isIncremental = true;
     }
     else if (hasEmptyItems) {
         // 分析有效项目的详细信息
@@ -1977,7 +1973,7 @@ async function synchronizeChat(batchSize = 5) {
 async function rearrangeChat(chat, contextSize, abort, type) {
   // 开始计时 - 记录查询开始时间
   const queryStartTime = performance.now();
-  
+
   // 辅助函数：记录耗时并返回
   const logTimingAndReturn = (reason = '', isError = false) => {
     const queryEndTime = performance.now();
@@ -1987,7 +1983,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       console.log(`🔍 Vectors Enhanced: 查询${status} (${reason}) - 耗时: ${totalDuration.toFixed(2)}ms`);
     }
   };
-  
+
   try {
     if (type === 'quiet') {
       console.debug('Vectors: Skipping quiet prompt');
@@ -2376,7 +2372,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     const resultCount = allResults.length;
     const injectedCount = topResults.length;
     console.log(`🔍 Vectors Enhanced: 查询到注入完成 - 总耗时: ${totalDuration.toFixed(2)}ms (查询${resultCount}条, 注入${injectedCount}条)`);
-    
+
   } catch (error) {
     console.error('Vectors: Failed to rearrange chat', error);
     logTimingAndReturn('执行出错', true);
@@ -2583,7 +2579,7 @@ jQuery(async () => {
 
   // 创建并初始化设置子组件
   console.log('Vectors Enhanced: Creating settings sub-components...');
-  
+
   const vectorizationSettings = new VectorizationSettings({
     settings,
     configManager,
@@ -2655,19 +2651,19 @@ jQuery(async () => {
 
   // 创建 UI Infrastructure 实例
   console.log('Vectors Enhanced: Creating UI Infrastructure...');
-  
+
   // 创建 StateManager
   const stateManager = new StateManager({
     eventBus,
     settings,
     configManager
   });
-  
+
   // 创建 ProgressManager
   const progressManager = new ProgressManager({
     eventBus
   });
-  
+
   // 创建 EventManager
   const eventManager = new EventManager({
     eventBus,

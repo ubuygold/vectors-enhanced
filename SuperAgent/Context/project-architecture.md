@@ -313,6 +313,9 @@ index.js
   - **ChatSettings.js**: 聊天设置UI组件
   - **TagRulesEditor.js**: 标签规则编辑器UI组件
   - **TaskList.js**: 任务列表UI组件
+    - 集成智能任务命名显示
+    - 新增任务预览按钮
+    - previewTaskContent函数：显示任务实际处理的内容
   - **FileList.js**: 文件列表UI组件
   - **WorldInfoList.js**: 世界信息列表UI组件
   - **TagUI.js**: 标签相关UI逻辑管理
@@ -323,6 +326,10 @@ index.js
 - **src/utils/tagScanner.js**: 包含 `scanTextForTags` 函数，负责在UI中扫描和识别文本中的标签，以便进行高亮或其他界面操作。
 - **src/utils/tagParser.js**: 提供解析标签配置的工具函数，特别是处理带有排除规则的复杂标签字符串（例如 "include,tags - exclude,tags"）。
 - **src/utils/chatUtils.js**: 统一的消息过滤工具，提供 `getMessages` 等函数，消除了之前在 UI 和数据处理层的重复逻辑。
+- **src/utils/taskNaming.js**: 任务智能命名模块（v2）
+  - TaskNameGenerator类：基于内容类型和数量生成任务名称
+  - 支持合并相邻楼层数字（0-3, 5, 7-9）
+  - 分别统计楼层、世界书、文件数量
 
 ### 基础设施层 (Phase 1 & 4 完成)
 
