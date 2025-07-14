@@ -3,6 +3,7 @@
  */
 export const TaskTypes = {
     VECTORIZATION: 'vectorization',
+    EXTERNAL_VECTORIZATION: 'external-vectorization',
     SUMMARY: 'summary',
     AUTO_UPDATE: 'auto-update',
     EXPORT: 'export',
@@ -86,6 +87,7 @@ export function getStatusDisplayName(status) {
 export function getTypeDisplayName(type) {
     const typeNames = {
         [TaskTypes.VECTORIZATION]: 'Vectorization',
+        [TaskTypes.EXTERNAL_VECTORIZATION]: 'External Vectorization',
         [TaskTypes.SUMMARY]: 'Summary',
         [TaskTypes.AUTO_UPDATE]: 'Auto Update',
         [TaskTypes.EXPORT]: 'Export',

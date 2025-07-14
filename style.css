@@ -1,5 +1,172 @@
 /* Vector Storage Enhanced Extension Styles */
 
+/* External Tasks Styles */
+.external-tasks-container {
+    margin-top: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.external-task-item {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: var(--SmartThemeBlurTintColor);
+}
+
+.external-task-item .task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.external-task-item .task-name {
+    font-weight: bold;
+    flex: 1;
+}
+
+.external-task-item .task-status {
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
+
+.external-task-item .status-pending { background: #f0ad4e; color: white; }
+.external-task-item .status-queued { background: #5bc0de; color: white; }
+.external-task-item .status-running { background: #337ab7; color: white; }
+.external-task-item .status-completed { background: #5cb85c; color: white; }
+.external-task-item .status-failed { background: #d9534f; color: white; }
+.external-task-item .status-cancelled { background: #868686; color: white; }
+
+.external-task-item .task-info {
+    font-size: 0.9em;
+    color: var(--SmartThemeEmColor);
+    margin-bottom: 5px;
+}
+
+.external-task-item .task-info small {
+    margin-right: 10px;
+}
+
+/* Import button styles */
+#vectors_import_external_task {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+#vectors_import_external_task:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#vectors_import_external_task:active {
+    transform: translateY(0);
+}
+
+#vectors_import_external_task i {
+    font-size: 1em;
+}
+
+.external-task-item .task-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.external-task-item .task-actions button {
+    font-size: 0.9em;
+    padding: 5px 10px;
+}
+
+.no-external-tasks {
+    text-align: center;
+    color: var(--SmartThemeEmColor);
+    padding: 20px;
+}
+
+/* Import Dialog Styles */
+.external-task-import-dialog {
+    padding: 20px;
+}
+
+.external-task-import-dialog h3 {
+    margin-bottom: 15px;
+}
+
+.external-task-import-dialog .form-group {
+    margin-bottom: 15px;
+}
+
+.external-task-import-dialog .form-control {
+    width: 100%;
+}
+
+.external-task-import-dialog #source-tasks-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 5px;
+}
+
+.external-task-import-dialog .task-select-item {
+    margin-bottom: 8px;
+}
+
+.external-task-import-dialog .task-select-item label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.external-task-import-dialog .task-checkbox {
+    margin-right: 8px;
+}
+
+.external-task-import-dialog .task-info {
+    color: var(--SmartThemeEmColor);
+    font-size: 0.9em;
+    margin-left: 5px;
+}
+
+.external-task-import-dialog .dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* Task Details Dialog */
+.external-task-details {
+    padding: 20px;
+}
+
+.external-task-details h3 {
+    margin-bottom: 15px;
+}
+
+.external-task-details .detail-row {
+    margin-bottom: 10px;
+}
+
+.external-task-details .detail-row strong {
+    display: inline-block;
+    width: 120px;
+}
+
+.external-task-details pre {
+    background: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 10px;
+    margin-top: 5px;
+    overflow-x: auto;
+}
+
 .vectors_enhanced_settings {
     padding: 0.5rem;
 }

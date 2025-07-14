@@ -60,9 +60,11 @@ export class StorageAdapter {
      * @param {string} collectionId 集合ID
      * @param {object[]} items 要插入的项
      * @param {AbortSignal} signal 可选的中断信号
+     * @param {Object} options 额外选项
+     * @param {boolean} options.skipDeduplication 是否跳过去重检查
      * @returns {Promise<void>}
      */
-    async insertVectorItems(collectionId, items, signal = null) {
+    async insertVectorItems(collectionId, items, signal = null, options = {}) {
         try {
             logger.log(`Inserting ${items.length} items into collection: ${collectionId}`);
             
@@ -75,6 +77,7 @@ export class StorageAdapter {
                     ...this.getVectorsRequestBody(),
                     collectionId: collectionId,
                     items: items,
+                    skipDeduplication: options.skipDeduplication || false,
                 }),
                 signal: signal,
             });

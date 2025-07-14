@@ -1,4 +1,5 @@
 import { VectorizationTask } from './VectorizationTask.js';
+import { ExternalVectorizationTask } from './ExternalVectorizationTask.js';
 
 /**
  * Factory class for creating task instances.
@@ -97,6 +98,7 @@ export class TaskFactory {
 
 // Register default task types
 TaskFactory.registerTaskType('vectorization', VectorizationTask);
+TaskFactory.registerTaskType('external-vectorization', ExternalVectorizationTask);
 
 // Future task types will be registered here:
 // TaskFactory.registerTaskType('summary', SummaryTask);

@@ -1,6 +1,110 @@
 # 项目迭代日志
 
 ---
+## 迭代 #41
+**开始时间**: 2025-07-14 14:30
+**请求**: 为插件开发一个外挂任务的功能，可以外挂来自其他聊天的向量化任务并加入查询队列（不纳入去重）
+**响应**: 我将开发外挂任务功能，允许从其他聊天导入向量化任务
+
+### 操作 41.1
+**时间**: 14:35
+**描述**: 创建 ExternalVectorizationTask 类
+**创建文件 `src/core/tasks/ExternalVectorizationTask.js`**:
+- 继承自 VectorizationTask
+- 支持跨聊天任务导入
+- skipDeduplication 标志跳过去重
+- 保留源聊天信息和任务ID
+- 支持内容映射功能
+
+### 操作 41.2
+**时间**: 14:40
+**描述**: 更新 TaskFactory 支持外挂任务类型
+**修改文件 `src/core/tasks/TaskFactory.js`**:
+- 导入 ExternalVectorizationTask
+- 注册 'external-vectorization' 任务类型
+
+### 操作 41.3
+**时间**: 14:45
+**描述**: 扩展 TaskManager 添加外挂任务管理功能
+**修改文件 `src/application/TaskManager.js`**:
+- 添加 importExternalTask 方法
+- 添加 getExternalTasks 方法
+- 添加 processExternalTask 方法
+- 支持高优先级处理外挂任务
+
+### 操作 41.4
+**时间**: 14:50
+**描述**: 修改向量化处理支持跳过去重
+**修改文件 `index.js`**:
+- performVectorization 添加 options 参数
+- 支持 skipDeduplication 选项
+- 传递选项到存储适配器
+
+### 操作 41.5
+**时间**: 14:55
+**描述**: 更新 StorageAdapter 支持跳过去重选项
+**修改文件 `src/infrastructure/storage/StorageAdapter.js`**:
+- insertVectorItems 添加 options 参数
+- 在请求体中包含 skipDeduplication 标志
+
+### 操作 41.6
+**时间**: 15:00
+**描述**: 添加处理外挂任务的函数
+**修改文件 `index.js`**:
+- 添加 processExternalVectorizationTask 函数
+- 处理外挂任务的特殊逻辑
+- 更新任务状态和结果
+
+### 操作 41.7
+**时间**: 15:05
+**描述**: 创建外挂任务UI组件
+**创建文件 `src/ui/components/ExternalTaskUI.js`**:
+- 管理外挂任务的导入和显示
+- 支持从其他聊天选择任务
+- 提供任务处理和删除功能
+- 显示任务详情对话框
+
+### 操作 41.8
+**时间**: 15:10
+**描述**: 在设置界面添加外挂任务管理区域
+**修改文件 `settings-modular.html`**:
+- 添加外挂任务管理折叠区域
+- 包含导入按钮和任务列表容器
+
+### 操作 41.9
+**时间**: 15:15
+**描述**: 添加外挂任务相关样式
+**修改文件 `style.css`**:
+- 外挂任务列表样式
+- 任务状态颜色编码
+- 导入对话框样式
+- 任务详情对话框样式
+
+### 操作 41.10
+**时间**: 15:20
+**描述**: 在 SettingsManager 中初始化外挂任务UI
+**修改文件 `src/ui/settingsManager.js`**:
+- 添加 initializeExternalTaskUI 方法
+- 监听聊天切换事件
+- 管理 ExternalTaskUI 生命周期
+
+### 操作 41.11
+**时间**: 15:25
+**描述**: 暴露全局 TaskManager 实例
+**修改文件 `index.js`**:
+- 将 globalTaskManager 暴露到 window 对象
+- 允许其他模块访问 TaskManager
+
+### 操作 41.12
+**时间**: 15:30
+**描述**: 更新任务类型定义
+**修改文件 `src/core/tasks/taskTypes.js`**:
+- 添加 EXTERNAL_VECTORIZATION 类型
+- 更新 getTypeDisplayName 函数
+
+**结果**: 成功实现外挂任务功能，支持跨聊天任务导入和去重跳过
+
+---
 ## 迭代 #2025-07-13-01
 **开始时间**: 2025-07-13 15:30
 **请求**: 实现智能任务命名功能，处理不连续楼层的任务名称显示问题
@@ -400,3 +504,89 @@ export class TaskNameGenerator {
 - 保持文件的"个"量词
 - 多来源时按照 x层楼 x条世界书 x个文件 的顺序显示
 - 预览界面显示完整的包含楼层信息
+
+---
+## 迭代 #4
+**开始时间**: 2025-07-14 10:00
+**请求**: 在当前项目中搜索与向量化任务、查询队列、去重相关的核心文件，特别是包含task、queue、vector、embedding等关键词的文件
+**响应**: 提供详细的核心文件列表和功能分析
+
+### 操作 4.1
+**时间**: 10:05
+**描述**: 搜索项目中的相关文件
+**使用工具**: Glob和Grep
+**搜索模式**: 
+- `**/*{task,queue,vector,embedding}*.{js,ts,jsx,tsx}`
+- `dedup|duplicate|hash|checksum|fingerprint`
+
+**找到的核心文件**:
+- 任务系统：TaskQueue.js, VectorizationTask.js, TaskManager.js等
+- 向量化处理：VectorizationProcessor.js, VectorizationAdapter.js
+- 去重相关：hash.js, 以及多个文件中的去重逻辑
+
+### 操作 4.2
+**时间**: 10:10
+**描述**: 分析核心文件功能
+**读取并分析的文件**:
+1. `src/application/TaskQueue.js`:
+   - 轻量级任务队列实现
+   - 单任务并发控制
+   - 优先级排序支持
+   - AbortController集成
+
+2. `src/core/tasks/VectorizationTask.js`:
+   - 向量化任务实现类
+   - 维护向后兼容性
+   - actualProcessedItems精确追踪
+   - 智能任务命名集成
+
+3. `src/utils/hash.js`:
+   - getStringHash函数实现
+   - 双重哈希算法
+   - 支持种子参数
+
+4. `src/application/TaskManager.js`:
+   - 新旧任务系统协调
+   - Map结构实现任务去重
+   - 缓存机制优化性能
+   - 双写模式兼容性
+
+5. `src/core/pipeline/processors/VectorizationProcessor.js`:
+   - 文本处理管道包装器
+   - 智能文本分块
+   - generateHash方法
+   - 批量处理支持
+
+### 操作 4.3
+**时间**: 10:15
+**描述**: 分析去重机制
+**关键发现**:
+1. **文本内容去重**:
+   - index.js中的hashCache Map缓存
+   - getHashValue函数带缓存机制
+   - 向量存储前检查已存在哈希
+
+2. **任务去重**:
+   - TaskManager第132-144行使用Map避免重复
+   - 新任务覆盖同ID旧任务
+
+3. **文件去重**:
+   - FileList组件按URL去重
+   - Map结构确保唯一性
+
+### 操作 4.4
+**时间**: 10:20
+**描述**: 更新项目架构文档
+**修改文件**: `SuperAgent/Context/project-architecture.md`
+**添加内容**:
+- 核心功能模块详解章节
+- 向量化任务系统详细说明
+- 去重机制完整分析
+- 向量化处理管道说明
+
+### 总结
+成功梳理了向量化任务、查询队列和去重相关的核心文件：
+1. **任务系统**: TaskQueue、TaskManager、VectorizationTask提供完整的任务管理
+2. **去重机制**: 多层去重确保数据唯一性（文本哈希、任务ID、文件URL）
+3. **向量化处理**: VectorizationProcessor和VectorizationAdapter提供统一接口
+4. **队列控制**: 单任务并发避免资源竞争，优先级排序优化执行顺序

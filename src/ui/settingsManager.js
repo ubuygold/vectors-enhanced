@@ -67,6 +67,9 @@ export class SettingsManager {
     // 初始化其他设置
     this.initializeMiscellaneousSettings();
     
+    // 初始化外挂任务UI
+    await this.initializeExternalTaskUI();
+    
     // 初始化实验性设置
     this.initializeExperimentalSettings();
 
@@ -698,5 +701,49 @@ export class SettingsManager {
           console.log(message);
         }
       });
+  }
+
+  /**
+   * 初始化外挂任务UI
+   */
+  async initializeExternalTaskUI() {
+    try {
+      // 动态导入ExternalTaskUI
+      const { ExternalTaskUI } = await import('./components/ExternalTaskUI.js');
+      
+      // 创建并初始化外挂任务UI
+      const externalTaskUI = new ExternalTaskUI();
+      
+      // 获取taskManager实例
+      if (window.globalTaskManager) {
+        await externalTaskUI.init(window.globalTaskManager);
+        
+        // 监听聊天切换事件以更新外挂任务列表
+        if (window.eventSource) {
+          window.eventSource.on('chatLoaded', async (chatId) => {
+            await externalTaskUI.updateChatContext(chatId);
+          });
+        }
+        
+        // 初始更新
+        try {
+          const currentChatId = window.getContext?.()?.chatId;
+          if (currentChatId) {
+            await externalTaskUI.updateChatContext(currentChatId);
+          }
+        } catch (error) {
+          console.warn('Failed to get current chat context:', error);
+        }
+        
+        // 保存引用以便后续使用
+        this.externalTaskUI = externalTaskUI;
+        
+        console.log('External Task UI initialized successfully');
+      } else {
+        console.warn('TaskManager not available, External Task UI disabled');
+      }
+    } catch (error) {
+      console.error('Failed to initialize External Task UI:', error);
+    }
   }
 }

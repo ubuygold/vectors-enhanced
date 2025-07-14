@@ -31,6 +31,7 @@ vectors-enhanced/
 │   │   │   ├── ITask.js                # 任务接口 (新增)
 │   │   │   ├── BaseTask.js             # 基础任务类 (新增)
 │   │   │   ├── VectorizationTask.js    # 向量化任务 (新增)
+│   │   │   ├── ExternalVectorizationTask.js # 外挂向量化任务 (新增)
 │   │   │   ├── TaskFactory.js          # 任务工厂 (新增)
 │   │   │   ├── taskTypes.js            # 任务类型常量 (新增)
 │   │   │   └── README.md
@@ -81,6 +82,7 @@ vectors-enhanced/
 │   │       ├── ContentSelectionSettings.js # 内容选择设置 (Phase 7.2 - 已完成)
 │   │       ├── ProgressManager.js   # 进度管理器 (Phase 7.3 - 已完成)
 │   │       ├── NotificationManager.js # 通知管理器 (Phase 7.6 - 已完成)
+│   │       ├── ExternalTaskUI.js    # 外挂任务UI组件 (新增)
 │   │       └── README.md
 │   │   ├── EventManager.js      # UI事件协调器 (Phase 7.4 - 已完成)
 │   │   ├── StateManager.js      # UI状态管理器 (Phase 7.5 - 已完成)
@@ -522,6 +524,56 @@ index.js
    - 创建了deduplication-analysis.md文档
    - 识别了6个主要重复区域
    - 计划通过模块化减少约30-40%的代码量
+
+### 核心功能模块详解
+
+#### 向量化任务系统
+1. **任务队列（TaskQueue）**:
+   - 轻量级队列实现，单任务并发
+   - 优先级排序支持
+   - AbortController集成支持任务取消
+   - 完整的生命周期事件通知
+
+2. **任务管理（TaskManager）**:
+   - 新旧任务系统协调器
+   - 双写模式确保向后兼容
+   - Map结构实现任务去重
+   - 缓存机制提升查询性能
+
+3. **向量化任务（VectorizationTask）**:
+   - 支持增量和完整向量化
+   - actualProcessedItems精确追踪处理项
+   - 智能任务命名集成
+   - 轻量级存储模式支持
+
+#### 去重机制
+1. **文本内容去重**:
+   - getStringHash生成唯一哈希（双重哈希算法）
+   - hashCache缓存避免重复计算
+   - 向量存储前检查已存在哈希
+
+2. **任务去重**:
+   - TaskManager使用Map结构合并任务
+   - 任务ID作为唯一标识符
+   - 新任务覆盖同ID旧任务
+
+3. **文件去重**:
+   - FileList组件按URL去重
+   - 合并多源文件（Data Bank、聊天、扩展）
+   - Map结构确保唯一性
+
+#### 向量化处理管道
+1. **VectorizationProcessor**:
+   - 文本分块处理（智能边界检测）
+   - 批量处理支持
+   - 数组项独立处理保持边界
+   - 集成哈希生成功能
+
+2. **VectorizationAdapter**:
+   - 6种向量化源统一接口
+   - 配置验证和源可用性检查
+   - 数据格式准备（不直接向量化）
+   - 实际向量化委托给SillyTavern API
 
 ### 待完成的架构改进
 1. **index.js进一步拆分**: 将剩余的3300+行代码继续模块化
