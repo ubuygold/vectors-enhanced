@@ -272,11 +272,15 @@ async function previewTaskContent(task) {
   let html = '<div class="vector-preview">';
   html += `<div class="preview-header">任务内容（${items.length} 项）</div>`;
   
+  // Get saved preference from localStorage
+  const showRawPreference = localStorage.getItem('vectors_preview_show_raw') === 'true';
+  
   // Add toggle button for chat content view
   html += '<div class="preview-controls" style="text-align: center; margin-bottom: 1rem;">';
   html += '<label class="checkbox_label" style="display: inline-flex; align-items: center; gap: 0.5rem;">';
-  html += '<input type="checkbox" id="preview-show-raw" />';
+  html += `<input type="checkbox" id="preview-show-raw" ${showRawPreference ? 'checked' : ''} />`;
   html += '<span>显示原始内容</span>';
+  html += '<kbd style="margin-left: 0.5rem; padding: 2px 6px; background: var(--SmartThemeBorderColor); border-radius: 3px; font-size: 0.9em;">R</kbd>';
   html += '</label>';
   html += '</div>';
   
@@ -349,9 +353,9 @@ async function previewTaskContent(task) {
                     .replace(/"/g, '&quot;')
                     .replace(/'/g, '&#039;') : '';
       
-      html += `<div class="preview-chat-content preview-processed">${item.text}</div>`;
+      html += `<div class="preview-chat-content preview-processed" style="${showRawPreference ? 'display: none;' : ''}">${item.text}</div>`;
       if (item.rawText) {
-        html += `<pre class="preview-chat-content preview-raw" style="display: none; white-space: pre-wrap; font-family: inherit;">${escapedRawText}</pre>`;
+        html += `<pre class="preview-chat-content preview-raw" style="white-space: pre-wrap; font-family: inherit; ${showRawPreference ? '' : 'display: none;'}">${escapedRawText}</pre>`;
       }
       html += `</div>`;
     });
@@ -370,6 +374,9 @@ async function previewTaskContent(task) {
       // Add toggle functionality
       $('#preview-show-raw').on('change', function() {
         const showRaw = $(this).prop('checked');
+        // Save preference to localStorage
+        localStorage.setItem('vectors_preview_show_raw', showRaw);
+        
         if (showRaw) {
           $('.preview-processed').hide();
           $('.preview-raw').show();
@@ -378,6 +385,18 @@ async function previewTaskContent(task) {
           $('.preview-raw').hide();
         }
       });
+      
+      // Add keyboard shortcut (R key)
+      $(document).on('keydown.preview', function(e) {
+        if (e.key === 'r' || e.key === 'R') {
+          e.preventDefault();
+          $('#preview-show-raw').prop('checked', !$('#preview-show-raw').prop('checked')).trigger('change');
+        }
+      });
+    },
+    onClose: () => {
+      // Remove keyboard event listener when popup closes
+      $(document).off('keydown.preview');
     }
   });
 }
