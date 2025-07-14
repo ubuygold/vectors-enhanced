@@ -187,7 +187,7 @@ async function previewTaskContent(task) {
     return;
   }
 
-  // Build preview HTML
+  // Build preview HTML matching global preview style
   let html = '<div class="vector-preview">';
   html += `<div class="preview-header">任务内容（${items.length} 项）</div>`;
   html += '<div class="preview-sections">';
@@ -199,35 +199,49 @@ async function previewTaskContent(task) {
     return acc;
   }, {});
 
+  // Always show all three sections for consistent layout
   // Files section
+  html += '<div class="preview-section">';
+  html += `<div class="preview-section-title">文件（${grouped.file?.length || 0}）</div>`;
+  html += '<div class="preview-section-content">';
   if (grouped.file && grouped.file.length > 0) {
-    html += '<div class="preview-section">';
-    html += `<div class="preview-section-title">文件（${grouped.file.length}）</div>`;
-    html += '<div class="preview-section-content">';
     grouped.file.forEach(item => {
       html += `<div class="preview-item">`;
       html += `<strong>${item.metadata.name}</strong>`;
       html += `</div>`;
     });
-    html += '</div></div>';
+  } else {
+    html += '<div class="preview-empty">无文件</div>';
   }
+  html += '</div></div>';
 
   // World Info section
+  html += '<div class="preview-section">';
+  html += `<div class="preview-section-title">世界信息（${grouped.world_info?.length || 0}）</div>`;
+  html += '<div class="preview-section-content">';
   if (grouped.world_info && grouped.world_info.length > 0) {
-    html += '<div class="preview-section">';
-    html += `<div class="preview-section-title">世界信息（${grouped.world_info.length}）</div>`;
-    html += '<div class="preview-section-content">';
-    grouped.world_info.forEach(entry => {
-      html += `<div class="preview-world-entry">${entry.metadata.comment}</div>`;
-    });
-    html += '</div></div>';
+    // Group by world if we have world info
+    const byWorld = {};
+    byWorld['未知'] = grouped.world_info; // Since we don't have world info, group under "unknown"
+    
+    for (const [world, entries] of Object.entries(byWorld)) {
+      html += `<div class="preview-world-group">`;
+      html += `<div class="preview-world-name">${world}</div>`;
+      entries.forEach(entry => {
+        html += `<div class="preview-world-entry">${entry.metadata.comment || '(无注释)'}</div>`;
+      });
+      html += `</div>`;
+    }
+  } else {
+    html += '<div class="preview-empty">无世界信息</div>';
   }
+  html += '</div></div>';
 
   // Chat messages section
+  html += '<div class="preview-section">';
+  html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
+  html += '<div class="preview-section-content">';
   if (grouped.chat && grouped.chat.length > 0) {
-    html += '<div class="preview-section">';
-    html += `<div class="preview-section-title">聊天记录（${grouped.chat.length} 条消息）</div>`;
-    html += '<div class="preview-section-content">';
     grouped.chat.forEach(item => {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
       html += `<div class="preview-chat-message">`;
@@ -235,8 +249,10 @@ async function previewTaskContent(task) {
       html += `<div class="preview-chat-content">${item.text}</div>`;
       html += `</div>`;
     });
-    html += '</div></div>';
+  } else {
+    html += '<div class="preview-empty">无聊天记录</div>';
   }
+  html += '</div></div>';
 
   html += '</div></div>';
 
