@@ -76,6 +76,9 @@ export class ActionButtons {
         if (!this.setButtonLoading('preview', true)) return;
 
         try {
+            // Check if raw content preview is enabled
+            const showRawContent = $('#vectors_enhanced_preview_raw').prop('checked');
+            
             await MessageUI.previewContent(
                 this.getVectorizableContent,
                 this.shouldSkipContent,
@@ -83,7 +86,8 @@ export class ActionButtons {
                 this.extractHtmlFormatTag,
                 this.extractSimpleTag,
                 this.settings,
-                this.substituteParams
+                this.substituteParams,
+                showRawContent
             );
             // 不显示额外的成功消息，previewContent 内部已处理
         } catch (error) {

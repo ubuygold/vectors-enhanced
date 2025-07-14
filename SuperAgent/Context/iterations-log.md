@@ -247,4 +247,28 @@ export class TaskNameGenerator {
 - 避免复杂的状态管理
 - 用户可以选择性地查看特定消息的原始内容
 
+### 操作 2.12
+**时间**: 09:35
+**描述**: 简化切换实现，使用外部勾选框控制
+**原因**: SillyTavern弹窗不支持复杂DOM操作
+**新实现**:
+1. **删除弹窗内切换按钮**:
+   - 移除所有复杂的切换按钮和事件
+   - 移除多版本内容存储
+
+2. **在设置界面添加勾选框**:
+   - 在Action Buttons上方添加勾选框
+   - 标签：“预览时显示原始内容（标签筛选后）”
+
+3. **修改预览函数**:
+   - MessageUI.previewContent新增 showRawContent 参数
+   - 根据参数决定显示处理后或原始内容
+   - ActionButtons检查勾选框状态并传递参数
+
+**修改文件**:
+- `settings-modular.html`: 添加勾选框
+- `src/ui/components/ActionButtons.js`: 检查勾选框状态
+- `src/ui/components/MessageUI.js`: 支持showRawContent参数
+- `src/ui/components/TaskList.js`: 同样支持原始内容显示
+
 该方案解决了不连续楼层的显示问题，提供了更有意义的任务名称，同时保持了代码的模块化和可维护性。

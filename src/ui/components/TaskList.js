@@ -183,7 +183,7 @@ async function previewTaskContent(task) {
         items.push({
           type: 'chat',
           text: msg.mes,
-          rawText: msg.mes, // Store raw text for toggle
+          rawText: msg.mes, // Raw text is same as mes for task preview
           metadata: {
             index: index,
             is_user: msg.is_user,
@@ -328,40 +328,28 @@ async function previewTaskContent(task) {
   html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
   html += '<div class="preview-section-content">';
   if (grouped.chat && grouped.chat.length > 0) {
-    grouped.chat.forEach((item, idx) => {
+    // Check if raw content preview is enabled
+    const showRawContent = $('#vectors_enhanced_preview_raw').prop('checked');
+    
+    grouped.chat.forEach(item => {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
-      const messageId = `task-msg-${item.metadata.index}`;
-      
-      html += `<div class="preview-chat-message" data-index="${item.metadata.index}">`;
+      html += `<div class="preview-chat-message">`;
       html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
       
-      // Content container with both versions
-      html += `<div class="preview-chat-content-wrapper" style="position: relative;">`;
-      
-      // Processed content (default visible)
-      html += `<div class="preview-chat-content" id="${messageId}-processed">${item.text}</div>`;
-      
-      // Raw content (hidden by default)
-      if (item.rawText) {
+      if (showRawContent && item.rawText) {
+        // Show raw text
         const escapedRawText = item.rawText
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#039;');
-        
-        html += `<pre class="preview-chat-content" id="${messageId}-raw" style="display: none; white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
-        
-        // Toggle buttons
-        html += '<div class="preview-toggle-buttons" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">';
-        html += `<button class="menu_button menu_button_icon toggle-view-btn" data-message-id="${messageId}" data-view="processed" title="切换显示模式">`;
-        html += '<span class="view-processed">原始 <i class="fa-solid fa-arrow-right"></i></span>';
-        html += '<span class="view-raw" style="display: none;"><i class="fa-solid fa-arrow-left"></i> 处理后</span>';
-        html += '</button>';
-        html += '</div>';
+        html += `<pre class="preview-chat-content" style="white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
+      } else {
+        // Show processed text
+        html += `<div class="preview-chat-content">${item.text}</div>`;
       }
       
-      html += '</div>';
       html += `</div>`;
     });
   } else {
@@ -375,28 +363,5 @@ async function previewTaskContent(task) {
     okButton: '关闭',
     wide: true,
     large: true,
-    onShow: () => {
-      // Add toggle functionality for individual messages
-      $('.toggle-view-btn').on('click', function() {
-        const messageId = $(this).data('message-id');
-        const currentView = $(this).data('view');
-        
-        if (currentView === 'processed') {
-          // Switch to raw view
-          $(`#${messageId}-processed`).hide();
-          $(`#${messageId}-raw`).show();
-          $(this).data('view', 'raw');
-          $(this).find('.view-processed').hide();
-          $(this).find('.view-raw').show();
-        } else {
-          // Switch to processed view
-          $(`#${messageId}-raw`).hide();
-          $(`#${messageId}-processed`).show();
-          $(this).data('view', 'processed');
-          $(this).find('.view-raw').hide();
-          $(this).find('.view-processed').show();
-        }
-      });
-    }
   });
 }

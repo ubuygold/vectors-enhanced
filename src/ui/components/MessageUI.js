@@ -109,7 +109,7 @@ export const MessageUI = {
    * @param {Function} substituteParams - Function to substitute parameters in text.
    * @returns {Promise<void>}
    */
-  async previewContent(getVectorizableContent, shouldSkipContent, extractComplexTag, extractHtmlFormatTag, extractSimpleTag, settings, substituteParams) {
+  async previewContent(getVectorizableContent, shouldSkipContent, extractComplexTag, extractHtmlFormatTag, extractSimpleTag, settings, substituteParams, showRawContent = false) {
     let items = await getVectorizableContent();
     // Filter out empty items for consistency with vectorization process
     items = items.filter(item => item.text && item.text.trim() !== '');
@@ -119,36 +119,38 @@ export const MessageUI = {
       return;
     }
     
-    // Get raw text for chat items
-    const context = getContext();
-    const chatSettings = settings.selected_content.chat;
-    const rules = chatSettings.tag_rules || [];
-    
-    if (chatSettings.enabled && context.chat) {
-      const rawTextMap = new Map();
-      const start = chatSettings.range?.start || 0;
-      const end = chatSettings.range?.end || -1;
-      const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
+    // Get raw text for chat items if needed
+    if (showRawContent) {
+      const context = getContext();
+      const chatSettings = settings.selected_content.chat;
+      const rules = chatSettings.tag_rules || [];
       
-      messages.forEach((msg, idx) => {
-        const absoluteIndex = start + idx;
-        if (msg.is_system) return;
+      if (chatSettings.enabled && context.chat) {
+        const rawTextMap = new Map();
+        const start = chatSettings.range?.start || 0;
+        const end = chatSettings.range?.end || -1;
+        const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
         
-        let extractedText;
-        if (absoluteIndex === 0 || msg.is_user === true) {
-          extractedText = msg.mes;
-        } else {
-          extractedText = extractTagContent(msg.mes, rules);
-        }
+        messages.forEach((msg, idx) => {
+          const absoluteIndex = start + idx;
+          if (msg.is_system) return;
+          
+          let extractedText;
+          if (absoluteIndex === 0 || msg.is_user === true) {
+            extractedText = msg.mes;
+          } else {
+            extractedText = extractTagContent(msg.mes, rules);
+          }
+          
+          rawTextMap.set(absoluteIndex, extractedText);
+        });
         
-        rawTextMap.set(absoluteIndex, extractedText);
-      });
-      
-      items.forEach(item => {
-        if (item.type === 'chat' && rawTextMap.has(item.metadata.index)) {
-          item.rawText = rawTextMap.get(item.metadata.index);
-        }
-      });
+        items.forEach(item => {
+          if (item.type === 'chat' && rawTextMap.has(item.metadata.index)) {
+            item.rawText = rawTextMap.get(item.metadata.index);
+          }
+        });
+      }
     }
 
     // 统计过滤信息
@@ -293,40 +295,25 @@ export const MessageUI = {
     html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
     html += '<div class="preview-section-content">';
     if (grouped.chat && grouped.chat.length > 0) {
-      grouped.chat.forEach((item, idx) => {
+      grouped.chat.forEach(item => {
         const msgType = item.metadata.is_user ? '用户' : 'AI';
-        const messageId = `msg-${item.metadata.index}`;
-        
-        html += `<div class="preview-chat-message" data-index="${item.metadata.index}">`;
+        html += `<div class="preview-chat-message">`;
         html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
         
-        // Content container with both versions
-        html += `<div class="preview-chat-content-wrapper" style="position: relative;">`;
-        
-        // Processed content (default visible)
-        html += `<div class="preview-chat-content" id="${messageId}-processed">${item.text}</div>`;
-        
-        // Raw content (hidden by default)
-        if (item.rawText) {
+        if (showRawContent && item.rawText) {
+          // Show raw text
           const escapedRawText = item.rawText
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
-          
-          html += `<pre class="preview-chat-content" id="${messageId}-raw" style="display: none; white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
-          
-          // Toggle buttons
-          html += '<div class="preview-toggle-buttons" style="margin-top: 0.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">';
-          html += `<button class="menu_button menu_button_icon toggle-view-btn" data-message-id="${messageId}" data-view="processed" title="切换显示模式">`;
-          html += '<span class="view-processed">原始 <i class="fa-solid fa-arrow-right"></i></span>';
-          html += '<span class="view-raw" style="display: none;"><i class="fa-solid fa-arrow-left"></i> 处理后</span>';
-          html += '</button>';
-          html += '</div>';
+          html += `<pre class="preview-chat-content" style="white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
+        } else {
+          // Show processed text
+          html += `<div class="preview-chat-content">${item.text}</div>`;
         }
         
-        html += '</div>';
         html += `</div>`;
       });
     } else {
@@ -340,29 +327,6 @@ export const MessageUI = {
       okButton: '关闭',
       wide: true,
       large: true,
-      onShow: () => {
-        // Add toggle functionality for individual messages
-        $('.toggle-view-btn').on('click', function() {
-          const messageId = $(this).data('message-id');
-          const currentView = $(this).data('view');
-          
-          if (currentView === 'processed') {
-            // Switch to raw view
-            $(`#${messageId}-processed`).hide();
-            $(`#${messageId}-raw`).show();
-            $(this).data('view', 'raw');
-            $(this).find('.view-processed').hide();
-            $(this).find('.view-raw').show();
-          } else {
-            // Switch to processed view
-            $(`#${messageId}-raw`).hide();
-            $(`#${messageId}-processed`).show();
-            $(this).data('view', 'processed');
-            $(this).find('.view-raw').hide();
-            $(this).find('.view-processed').show();
-          }
-        });
-      }
     });
   }
 };
