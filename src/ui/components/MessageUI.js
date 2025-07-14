@@ -167,7 +167,7 @@ export const MessageUI = {
 
     // 模拟处理过程以获取统计信息
     const blacklist = settings.content_blacklist || [];
-    const chatSettings = settings.selected_content.chat;
+    // chatSettings already declared above, reuse it
     // 不要在这里分割标签，直接使用原始标签字符串
     const tags = chatSettings.tags ? [chatSettings.tags.trim()] : [];
 
