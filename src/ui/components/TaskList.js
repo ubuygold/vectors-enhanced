@@ -341,9 +341,17 @@ async function previewTaskContent(task) {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
       html += `<div class="preview-chat-message" data-index="${item.metadata.index}">`;
       html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
+      // Escape HTML for raw text display
+      const escapedRawText = item.rawText ? 
+        item.rawText.replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;') : '';
+      
       html += `<div class="preview-chat-content preview-processed">${item.text}</div>`;
       if (item.rawText) {
-        html += `<div class="preview-chat-content preview-raw" style="display: none;">${item.rawText}</div>`;
+        html += `<pre class="preview-chat-content preview-raw" style="display: none; white-space: pre-wrap; font-family: inherit;">${escapedRawText}</pre>`;
       }
       html += `</div>`;
     });
