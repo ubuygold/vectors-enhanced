@@ -119,10 +119,12 @@ export const MessageUI = {
       return;
     }
     
+    // Get chat settings for both raw text and statistics
+    const context = getContext();
+    const chatSettings = settings.selected_content.chat;
+    
     // Get raw text for chat items if needed
     if (showRawContent) {
-      const context = getContext();
-      const chatSettings = settings.selected_content.chat;
       const rules = chatSettings.tag_rules || [];
       
       if (chatSettings.enabled && context.chat) {
@@ -161,12 +163,10 @@ export const MessageUI = {
 
     // 模拟处理过程以获取统计信息
     const blacklist = settings.content_blacklist || [];
-    // chatSettings already declared above, reuse it
     // 不要在这里分割标签，直接使用原始标签字符串
     const tags = chatSettings.tags ? [chatSettings.tags.trim()] : [];
 
     if (chatSettings.enabled && tags.length > 0) {
-      const context = getContext();
       const start = chatSettings.range?.start || 0;
       const end = chatSettings.range?.end || -1;
       // Make end index inclusive by adding 1 to the slice operation
