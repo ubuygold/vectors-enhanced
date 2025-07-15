@@ -50,7 +50,6 @@ import { ActionButtons } from './src/ui/components/ActionButtons.js';
 import { SettingsPanel } from './src/ui/components/SettingsPanel.js';
 import { VectorizationSettings } from './src/ui/components/VectorizationSettings.js';
 import { QuerySettings } from './src/ui/components/QuerySettings.js';
-import { InjectionSettings } from './src/ui/components/InjectionSettings.js';
 import { ContentSelectionSettings } from './src/ui/components/ContentSelectionSettings.js';
 import { ProgressManager } from './src/ui/components/ProgressManager.js';
 import { EventManager } from './src/ui/EventManager.js';
@@ -2673,15 +2672,6 @@ jQuery(async () => {
     }
   });
 
-  const injectionSettings = new InjectionSettings({
-    settings,
-    configManager,
-    onSettingsChange: (field, value) => {
-      console.debug(`InjectionSettings: ${field} changed to:`, value);
-      Object.assign(extension_settings.vectors_enhanced, settings);
-      saveSettingsDebounced();
-    }
-  });
 
   const contentSelectionSettings = new ContentSelectionSettings({
     settings,
@@ -2713,13 +2703,11 @@ jQuery(async () => {
   console.log('Vectors Enhanced: Initializing settings sub-components...');
   await vectorizationSettings.init();
   await querySettings.init();
-  await injectionSettings.init();
   await contentSelectionSettings.init();
 
   // 将子组件添加到 SettingsPanel
   settingsPanel.addSubComponent('vectorizationSettings', vectorizationSettings);
   settingsPanel.addSubComponent('querySettings', querySettings);
-  settingsPanel.addSubComponent('injectionSettings', injectionSettings);
   settingsPanel.addSubComponent('contentSelectionSettings', contentSelectionSettings);
 
   // 创建 UI Infrastructure 实例
@@ -2818,7 +2806,6 @@ jQuery(async () => {
       }
     }
   };
-
 
 
 

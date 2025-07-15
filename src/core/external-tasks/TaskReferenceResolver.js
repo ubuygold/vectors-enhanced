@@ -6,8 +6,9 @@
 import { Logger } from '../../utils/Logger.js';
 
 export class TaskReferenceResolver {
-  constructor() {
+  constructor(allVectorTasks) {
     this.logger = new Logger('TaskReferenceResolver');
+    this.allVectorTasks = allVectorTasks || {};
   }
 
   /**
@@ -26,36 +27,36 @@ export class TaskReferenceResolver {
     const sourceChat = this.getSourceChat(task.sourceChat);
     if (!sourceChat) {
       this.logger.warn(`源聊天不存在: ${task.sourceChat}`);
-      return { 
-        valid: false, 
-        reason: "源聊天不存在", 
+      return {
+        valid: false,
+        reason: "源聊天不存在",
         task: this.createOrphanTask(task),
         isExternal: true
       };
     }
 
-    // 检查源任务是否存在
-    const sourceTask = sourceChat.find(t => t.taskId === task.sourceTaskId);
+    // 检查源任务是否存在，兼容旧格式
+    const sourceTask = sourceChat.find(t => (t.taskId || t.id) === task.sourceTaskId);
     if (!sourceTask) {
       this.logger.warn(`源任务不存在: ${task.sourceTaskId}`);
-      return { 
-        valid: false, 
-        reason: "源任务不存在", 
+      return {
+        valid: false,
+        reason: "源任务不存在",
         task: this.createOrphanTask(task),
         isExternal: true
       };
     }
 
     // 注意：不检查源任务的启用状态，因为外挂任务应该可以访问被禁用的源任务数据
-    
+
     // 返回解析后的任务
     const mergedTask = this.mergeTaskData(task, sourceTask);
     this.logger.debug(`成功解析外挂任务: ${mergedTask.name}`);
-    
-    return { 
-      valid: true, 
-      task: mergedTask, 
-      isExternal: true 
+
+    return {
+      valid: true,
+      task: mergedTask,
+      isExternal: true
     };
   }
 
@@ -103,9 +104,8 @@ export class TaskReferenceResolver {
    */
   getSourceChat(sourceChatId) {
     try {
-      // 访问全局的extension_settings
-      const vectorTasks = window.extension_settings?.vectors_enhanced?.vector_tasks || {};
-      return vectorTasks[sourceChatId] || null;
+      // 使用构造函数中传入的任务数据
+      return this.allVectorTasks[sourceChatId] || null;
     } catch (error) {
       this.logger.error(`获取源聊天失败: ${sourceChatId}`, error);
       return null;

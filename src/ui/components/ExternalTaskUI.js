@@ -40,7 +40,7 @@ export class ExternalTaskUI {
      */
     async init(taskManager, settings, dependencies) {
         console.log('ExternalTaskUI: Initializing...');
-        
+
         if (this.initialized) {
             console.warn('ExternalTaskUI already initialized');
             return;
@@ -53,7 +53,7 @@ export class ExternalTaskUI {
         this.taskManager = taskManager;
         this.settings = settings;  // 保存 settings 引用
         this.dependencies = dependencies;  // 保存 dependencies 引用
-        
+
         // 外挂任务管理区域已移除，不再需要container
         this.container = null;
 
@@ -82,17 +82,17 @@ export class ExternalTaskUI {
      */
     bindEvents() {
         console.log('ExternalTaskUI: Binding events');
-        
+
         // Remove any existing handlers first
         $(document).off('click.externalTaskUI');
         $('#vectors_enhanced_import_external_task').off('click');
-        
+
         // Bind import button click event
         $(document).on('click', '#vectors_enhanced_import_external_task', async (e) => {
             console.log('ExternalTaskUI: Import button clicked (delegated)');
             e.preventDefault();
             e.stopPropagation();
-            
+
             try {
                 await this.showImportDialog();
             } catch (error) {
@@ -125,11 +125,11 @@ export class ExternalTaskUI {
      */
     async showImportDialog() {
         console.log('ExternalTaskUI: showImportDialog called');
-        
+
         try {
             // Get list of all chats with tasks
             const allChats = await this.getAllChatsWithTasks();
-            
+
             if (allChats.length === 0) {
                 this.showNotification('没有找到包含向量化任务的聊天', 'info');
                 return;
@@ -143,7 +143,7 @@ export class ExternalTaskUI {
                         <label for="source-chat-select">选择源聊天:</label>
                         <select id="source-chat-select" class="form-control">
                             <option value="">-- 选择聊天 --</option>
-                            ${allChats.map(chat => 
+                            ${allChats.map(chat =>
                                 `<option value="${chat.id}">${chat.name} (${chat.taskCount} 个任务)</option>`
                             ).join('')}
                         </select>
@@ -162,7 +162,7 @@ export class ExternalTaskUI {
             // 显示对话框并绑定事件
             const bindDialogEvents = () => {
                 console.log('Binding dialog events...');
-                
+
                 // 聊天选择事件
                 $('#source-chat-select').off('change').on('change', async (e) => {
                     console.log('Chat selection changed:', e.target.value);
@@ -195,7 +195,7 @@ export class ExternalTaskUI {
                     }
                 });
             };
-            
+
             // 检查 callPopup 是否可用
             if (typeof callPopup !== 'function') {
                 console.error('callPopup function not available, using fallback');
@@ -203,17 +203,17 @@ export class ExternalTaskUI {
                 const modal = $('<div class="modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;"><div class="modal-content" style="background: var(--SmartThemeBlurTintColor); padding: 20px; border-radius: 8px; max-width: 600px; width: 90%; color: var(--SmartThemeBodyColor);"></div></div>');
                 modal.find('.modal-content').html(dialogHtml);
                 $('body').append(modal);
-                
+
                 // 点击背景关闭
                 modal.on('click', function(e) {
                     if (e.target === this) {
                         modal.remove();
                     }
                 });
-                
+
                 // 更新关闭函数
                 window.closeCurrentPopup = () => modal.remove();
-                
+
                 // 模态框添加到 DOM 后绑定事件
                 setTimeout(bindDialogEvents, 100);
             } else {
@@ -234,60 +234,115 @@ export class ExternalTaskUI {
      * @returns {Promise<Array>} List of chats with task count
      */
     async getAllChatsWithTasks() {
-        console.log('ExternalTaskUI: Getting all chats with tasks...');
-        
+        console.log('ExternalTaskUI: Getting all chats with tasks for dropdown (v5)...');
         try {
-            // 直接从 settings.vector_tasks 获取所有任务数据
             const allTasks = this.settings.vector_tasks || {};
-            console.log('All tasks from settings:', allTasks);
-            
-            // 如果没有任何任务，返回空数组
             if (!allTasks || Object.keys(allTasks).length === 0) {
-                console.log('No tasks found in any chat');
                 return [];
             }
-            
-            // 转换为聊天列表格式
+
+            const chatMetadata = window.chat_metadata || {};
             const chatsWithTasks = [];
-            
+
             for (const [chatId, tasks] of Object.entries(allTasks)) {
-                // 跳过当前聊天和无效的聊天ID
                 if (chatId === this.currentChatId || !chatId || chatId === 'null' || chatId === 'undefined') {
                     continue;
                 }
-                
-                // 只包含有向量化任务的聊天
-                const vectorizationTasks = tasks.filter(task => 
-                    task.type === 'vectorization' || !task.type // 兼容旧格式
-                );
-                
+
+                const vectorizationTasks = tasks.filter(task => !task.type || task.type === 'vectorization');
+
                 if (vectorizationTasks.length > 0) {
-                    // 尝试获取聊天名称
-                    let chatName = chatId;
+                    let displayName = chatId; // Default fallback
+                    let characterName = null;
                     
-                    // 尝试从 context 获取角色名称
-                    if (typeof getContext === 'function') {
-                        try {
-                            const context = getContext();
-                            // 这里需要根据实际的 SillyTavern API 来获取聊天名称
-                            // 暂时使用 chatId 作为名称
-                            chatName = `聊天 ${chatId.substring(0, 8)}...`;
-                        } catch (e) {
-                            console.warn('Failed to get chat name:', e);
-                        }
+                    // Step 1: Try to extract character name from the chatId itself
+                    // For complete chatIds like "林曦瑶 - 2025-07-16@02h30m11s"
+                    const parts = chatId.split(' - ');
+                    if (parts.length > 1) {
+                        // This is a complete chatId with character name
+                        characterName = parts[0];
                     }
                     
+                    // Step 2: If no character name found in chatId, try metadata
+                    if (!characterName) {
+                        characterName = chatMetadata[chatId]?.character_name;
+                    }
+
+                    // Step 3: If still no name, try to find it inside the task data
+                    if (!characterName && tasks.length > 0) {
+                        // Try each task until we find a character name
+                        for (const task of tasks) {
+                            if (task.textContent && Array.isArray(task.textContent)) {
+                                const aiChunk = task.textContent.find(chunk => 
+                                    chunk.metadata && 
+                                    chunk.metadata.is_user === false && 
+                                    chunk.metadata.name
+                                );
+                                if (aiChunk && aiChunk.metadata.name) {
+                                    characterName = aiChunk.metadata.name;
+                                    console.log(`Found character name "${characterName}" inside task data for chatId ${chatId}`);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Format the date from chatId
+                    const timestampString = parts.length > 1 ? parts[1] : parts[0];
+                    let formattedDate = timestampString; // Default to original if parsing fails
+
+                    try {
+                        // Handle different possible date formats from SillyTavern
+                        // Examples: "2025-07-16@02h30m11s", "2025-7-9 @20h 26m 15s 653ms"
+                        let parsableDateString = timestampString.trim();
+                        
+                        // Extract date and time parts
+                        const dateTimeMatch = parsableDateString.match(/(\d{4})-(\d{1,2})-(\d{1,2})\s*@?\s*(\d{1,2})h\s*(\d{1,2})m\s*(\d{1,2})s/);
+                        
+                        if (dateTimeMatch) {
+                            const [_, year, month, day, hours, minutes, seconds] = dateTimeMatch;
+                            // Create a proper date string
+                            parsableDateString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}:${seconds.padStart(2, '0')}`;
+                        } else {
+                            // Fallback to original parsing method
+                            parsableDateString = timestampString
+                                .replace('@', 'T')
+                                .replace(/(\d+)h/, '$1:')
+                                .replace(/(\d+)m/, '$1:')
+                                .replace(/(\d+)s/, '$1')
+                                .replace(/\s*\d+ms$/, '') // Remove milliseconds
+                                .trim();
+                        }
+
+                        const date = new Date(parsableDateString);
+
+                        if (!isNaN(date.getTime())) {
+                            const year = date.getFullYear().toString().slice(-2);
+                            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                            const day = date.getDate().toString().padStart(2, '0');
+                            const hours = date.getHours().toString().padStart(2, '0');
+                            const minutes = date.getMinutes().toString().padStart(2, '0');
+                            formattedDate = `${year}/${month}/${day} ${hours}:${minutes}`;
+                        }
+                    } catch (e) {
+                        console.warn(`Could not parse date from chatId: ${chatId}`, e);
+                    }
+
+                    // Always format as "CharacterName (YY/MM/DD HH:MM)"
+                    // If no character name found, use "Unknown" placeholder
+                    displayName = `${characterName || 'Unknown'} (${formattedDate})`;
+
                     chatsWithTasks.push({
                         id: chatId,
-                        name: chatName,
+                        name: displayName,
                         taskCount: vectorizationTasks.length
                     });
                 }
             }
-            
-            console.log('Chats with tasks:', chatsWithTasks);
+
+            console.log('Chats with tasks (final formatted names with fallback):', chatsWithTasks);
             return chatsWithTasks;
-            
+
         } catch (error) {
             console.error('Error getting chats with tasks:', error);
             return [];
@@ -351,10 +406,10 @@ export class ExternalTaskUI {
             // Import tasks - 直接从源聊天复制任务到当前聊天
             let importedCount = 0;
             const sourceTasks = this.settings.vector_tasks[sourceChatId] || [];
-            
+
             // 重新获取当前聊天ID以确保准确性
             let currentChatId = this.currentChatId;
-            
+
             // 尝试从不同的源获取当前聊天ID
             if (!currentChatId || currentChatId === 'null' || currentChatId === 'undefined') {
                 // 尝试从导入的函数获取
@@ -363,7 +418,7 @@ export class ExternalTaskUI {
                 } catch (error) {
                     console.error('Failed to get chat ID from getCurrentChatId:', error);
                 }
-                
+
                 // 尝试从window.getContext获取
                 if ((!currentChatId || currentChatId === 'null' || currentChatId === 'undefined') && window.getContext) {
                     try {
@@ -374,25 +429,25 @@ export class ExternalTaskUI {
                     }
                 }
             }
-            
+
             // 最终检查当前聊天ID是否有效
             if (!currentChatId || currentChatId === 'null' || currentChatId === 'undefined') {
                 this.showNotification('无法获取当前聊天ID，请确保已选择聊天', 'error');
                 console.error('ExternalTaskUI: Unable to get current chat ID for import');
                 return;
             }
-            
+
             console.log('ExternalTaskUI: Using current chat ID for import:', currentChatId);
-            
+
             // 检查是否尝试从自己导入
             if (sourceChatId === currentChatId) {
                 this.showNotification('不能从当前聊天导入任务！', 'error');
                 return;
             }
-            
+
             const currentTasks = this.settings.vector_tasks[currentChatId] || [];
             let skippedCount = 0;
-            
+
             for (const taskId of selectedTasks) {
                 try {
                     // 找到要复制的任务
@@ -401,44 +456,45 @@ export class ExternalTaskUI {
                         console.error(`Source task ${taskId} not found`);
                         continue;
                     }
-                    
+
                     // 检查是否已存在相同的外挂任务
-                    const alreadyExists = currentTasks.some(t => 
-                        t.type === 'external' && 
+                    const alreadyExists = currentTasks.some(t =>
+                        t.type === 'external' &&
                         t.source === `${sourceChatId}_${taskId}`
                     );
-                    
+
                     if (alreadyExists) {
                         console.log(`External task from ${sourceChatId}_${taskId} already exists, skipping`);
                         skippedCount++;
                         continue;
                     }
-                    
+
                     // 创建外挂任务（引用而非复制）
                     const externalTask = {
                         taskId: `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
                         name: `外挂：${sourceTask.name}`,
                         type: 'external',
                         source: `${sourceChatId}_${taskId}`,  // 源集合ID
+                        sourceTaskId: taskId, // 明确记录源任务ID
                         enabled: true,
                         timestamp: Date.now(),
                         // 保存一些基本信息用于显示
                         sourceName: sourceTask.name,
                         sourceChat: sourceChatId
                     };
-                    
+
                     // 添加到当前聊天的任务列表
                     if (!this.settings.vector_tasks[currentChatId]) {
                         this.settings.vector_tasks[currentChatId] = [];
                     }
                     this.settings.vector_tasks[currentChatId].push(externalTask);
-                    
+
                     importedCount++;
                 } catch (error) {
                     console.error(`Failed to import task ${taskId}:`, error);
                 }
             }
-            
+
             // 保存设置
             if (importedCount > 0 && this.dependencies?.saveSettingsDebounced) {
                 this.dependencies.saveSettingsDebounced();
@@ -450,7 +506,7 @@ export class ExternalTaskUI {
                     message += `，跳过 ${skippedCount} 个已存在的任务`;
                 }
                 this.showNotification(message, 'success');
-                
+
                 // 更新主任务列表UI
                 if (this.dependencies?.updateTaskList) {
                     await this.dependencies.updateTaskList(
@@ -459,7 +515,7 @@ export class ExternalTaskUI {
                         this.dependencies.removeVectorTask
                     );
                 }
-                
+
                 await this.refreshExternalTasksList();
             } else if (skippedCount > 0) {
                 this.showNotification(`所有选中的任务已存在，跳过了 ${skippedCount} 个任务`, 'warning');
@@ -513,7 +569,7 @@ export class ExternalTaskUI {
                 this.showNotification('当前聊天ID无效', 'error');
                 return;
             }
-            
+
             // 从 settings.vector_tasks 获取任务
             const tasks = this.settings.vector_tasks[this.currentChatId] || [];
             const task = tasks.find(t => (t.taskId || t.id) === taskId);
@@ -586,7 +642,7 @@ export class ExternalTaskUI {
         // Unbind events
         $(document).off('click.externalTaskUI');
         $(document).off('click', '#vectors_enhanced_import_external_task');
-        
+
         this.initialized = false;
         console.log('ExternalTaskUI destroyed');
     }

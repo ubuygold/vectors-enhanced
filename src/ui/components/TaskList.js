@@ -4,6 +4,7 @@ import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../../../../po
 import { TaskNameGenerator } from '../../utils/taskNaming.js';
 import { getSortedEntries } from '../../../../../../world-info.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource } from '../../../../../../chats.js';
+import { TaskReferenceResolver } from '../../core/external-tasks/TaskReferenceResolver.js';
 
 const settings = extension_settings.vectors_enhanced;
 
@@ -185,18 +186,19 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
  * @param {Object} task - The task to preview
  */
 async function previewTaskContent(task) {
-  // 如果是外挂任务，提示用户
+  // 如果是外挂任务，尝试解析它以获取源内容
   if (task.type === 'external') {
-    let message = `这是一个外挂任务，引用了 "${task.sourceName || '未知任务'}" 的向量数据。\n`;
-    message += `源聊天: ${task.sourceChat || '未知'}\n`;
-    message += `源集合: ${task.source}`;
+    const resolver = new TaskReferenceResolver(settings.vector_tasks);
+    const resolved = resolver.resolve(task);
 
-    await callGenericPopup(message, POPUP_TYPE.TEXT, '', {
-      okButton: '确定',
-      wide: false,
-      large: false
-    });
-    return;
+    if (!resolved.valid) {
+      let message = `无法预览外挂任务 "${task.name}"。\n原因: ${resolved.reason || '未知错误'}`;
+      await callGenericPopup(message, POPUP_TYPE.TEXT, '', { okButton: '确定' });
+      return;
+    }
+
+    // 使用解析后的任务进行预览
+    task = resolved.task;
   }
 
   if (!task.actualProcessedItems) {

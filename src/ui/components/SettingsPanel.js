@@ -1,6 +1,6 @@
 /**
  * SettingsPanel Component - Manages the main settings panel architecture
- * 
+ *
  * Extracted from index.js template loading logic to centralize settings management
  * Coordinates between sub-components for different settings sections
  */
@@ -9,15 +9,14 @@ export class SettingsPanel {
     constructor(dependencies = {}) {
         this.renderExtensionTemplateAsync = dependencies.renderExtensionTemplateAsync;
         this.targetSelector = dependencies.targetSelector || '#extensions_settings2';
-        
+
         // Sub-components (will be initialized as we create them)
         this.subComponents = {
             vectorizationSettings: null,
             querySettings: null,
-            injectionSettings: null,
             contentSelectionSettings: null
         };
-        
+
         this.initialized = false;
         this.templateLoaded = false;
     }
@@ -53,12 +52,11 @@ export class SettingsPanel {
 
         try {
             console.log('SettingsPanel: Loading template...');
-            
+
             // Use the same template loading logic as the original
             // Note: Using 'settings-modular' instead of 'settings' for the new modular template
             const template = await this.renderExtensionTemplateAsync('third-party/vectors-enhanced', 'settings-modular');
             $(this.targetSelector).append(template);
-            
             this.templateLoaded = true;
             console.log('SettingsPanel: Template loaded and appended successfully');
         } catch (error) {
@@ -73,31 +71,31 @@ export class SettingsPanel {
      */
     async initializeSubComponents() {
         console.log('SettingsPanel: Initializing sub-components...');
-        
+
         // TODO: Initialize VectorizationSettings component
         // if (VectorizationSettings) {
         //     this.subComponents.vectorizationSettings = new VectorizationSettings();
         //     await this.subComponents.vectorizationSettings.init();
         // }
-        
+
         // TODO: Initialize QuerySettings component
         // if (QuerySettings) {
         //     this.subComponents.querySettings = new QuerySettings();
         //     await this.subComponents.querySettings.init();
         // }
-        
+
         // TODO: Initialize InjectionSettings component
         // if (InjectionSettings) {
         //     this.subComponents.injectionSettings = new InjectionSettings();
         //     await this.subComponents.injectionSettings.init();
         // }
-        
+
         // TODO: Initialize ContentSelectionSettings component
         // if (ContentSelectionSettings) {
         //     this.subComponents.contentSelectionSettings = new ContentSelectionSettings();
         //     await this.subComponents.contentSelectionSettings.init();
         // }
-        
+
         console.log('SettingsPanel: Sub-components initialization completed (placeholder)');
     }
 
@@ -111,7 +109,7 @@ export class SettingsPanel {
         }
 
         console.log('SettingsPanel: Refreshing...');
-        
+
         // Refresh all sub-components
         for (const [name, component] of Object.entries(this.subComponents)) {
             if (component && typeof component.refresh === 'function') {
@@ -122,7 +120,7 @@ export class SettingsPanel {
                 }
             }
         }
-        
+
         console.log('SettingsPanel: Refresh completed');
     }
 
@@ -185,7 +183,7 @@ export class SettingsPanel {
         } else {
             console.log(`SettingsPanel: Added sub-component: ${name}`);
         }
-        
+
         this.subComponents[name] = component;
     }
 
@@ -198,7 +196,7 @@ export class SettingsPanel {
             if (typeof this.subComponents[name].destroy === 'function') {
                 this.subComponents[name].destroy();
             }
-            
+
             delete this.subComponents[name];
             console.log(`SettingsPanel: Removed sub-component: ${name}`);
         }
@@ -209,7 +207,7 @@ export class SettingsPanel {
      */
     destroy() {
         console.log('SettingsPanel: Destroying...');
-        
+
         // Destroy all sub-components
         for (const [name, component] of Object.entries(this.subComponents)) {
             if (component && typeof component.destroy === 'function') {
@@ -220,12 +218,12 @@ export class SettingsPanel {
                 }
             }
         }
-        
+
         // Reset state
         this.subComponents = {};
         this.initialized = false;
         this.templateLoaded = false;
-        
+
         console.log('SettingsPanel: Destroyed');
     }
 
@@ -249,7 +247,7 @@ export class SettingsPanel {
         // Check for required sections
         const requiredSections = [
             'main_settings',
-            'content_settings', 
+            'content_settings',
             'tasks_settings',
             'actions_settings'
         ];

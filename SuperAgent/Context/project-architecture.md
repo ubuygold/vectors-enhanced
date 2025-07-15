@@ -27,6 +27,12 @@ vectors-enhanced/
 │   │   │   ├── FileExtractor.js        # 文件提取器 (新增)
 │   │   │   ├── WorldInfoExtractor.js   # 世界信息提取器 (新增)
 │   │   │   └── README.md
+│   │   ├── external-tasks/ # 外挂任务系统 (新增)
+│   │   │   ├── ExternalTaskManager.js   # 外挂任务管理器 (新增)
+│   │   │   ├── TaskReferenceResolver.js # 任务引用解析器 (新增)
+│   │   │   └── VectorCollectionManager.js # 向量集合管理器 (新增)
+│   │   ├── query/      # 查询系统 (新增)
+│   │   │   └── EnhancedQuerySystem.js  # 增强查询系统 (新增)
 │   │   # 任务系统 (已删除) - 使用旧格式
 │   │   ├── plugins/    # 插件系统 (已实现)
 │   │       ├── IVectorizationPlugin.js # 插件接口定义
@@ -574,6 +580,25 @@ index.js
 
 ## 外挂任务系统深度分析
 
+### 架构概述
+外挂任务系统允许在不同聊天之间共享和引用向量化任务，避免重复向量化相同内容。系统通过引用机制而非复制数据来实现跨聊天的任务共享。
+
+### 核心模块
+1. **ExternalTaskManager** (`src/core/external-tasks/ExternalTaskManager.js`)
+   - 管理外挂任务的创建、查询和解析
+   - 处理任务引用的完整生命周期
+   - 协调任务数据的访问和更新
+
+2. **TaskReferenceResolver** (`src/core/external-tasks/TaskReferenceResolver.js`)
+   - 解析外挂任务引用到实际任务数据
+   - 处理跨聊天的任务引用查找
+   - 验证引用的有效性
+
+3. **VectorCollectionManager** (`src/core/external-tasks/VectorCollectionManager.js`)
+   - 管理向量集合的跨聊天共享
+   - 处理集合引用和实际数据的映射
+   - 优化向量查询的性能
+
 ### 1. 外挂任务的数据结构定义
 
 #### Task实体类 (`src/core/entities/Task.js`)
@@ -608,7 +633,18 @@ export class Task {
       "settings": { /* 内容选择设置 */ },
       "enabled": true,
       "textContent": [ /* 实际处理的文本内容 */ ],
-      "type": "vectorization" // 任务类型标识
+      "type": "vectorization" // 标准向量化任务
+    },
+    {
+      "taskId": "task_1642567890124_xyz789ghi",
+      "name": "外挂：林曦瑶的角色设定",
+      "type": "external", // 外挂任务标识
+      "source": "林曦瑶 - 2025-07-16@02h30m11s_task_1642567890123_abc123def",
+      "sourceTaskId": "task_1642567890123_abc123def",
+      "enabled": true,
+      "timestamp": 1642567890124,
+      "sourceName": "林曦瑶的角色设定",
+      "sourceChat": "林曦瑶 - 2025-07-16@02h30m11s"
     }
   ]
 }
@@ -653,6 +689,57 @@ async function removeVectorTask(chatId, taskId) {
 - `getSavedHashes()`: 获取已存储的哈希值
 
 ### 3. 外挂任务的处理逻辑
+
+#### 外挂任务解析流程 (`src/core/external-tasks/TaskReferenceResolver.js`)
+```javascript
+export class TaskReferenceResolver {
+  async resolveExternalTask(externalTask) {
+    // 1. 解析source字符串获取源聊天ID和任务ID
+    const [sourceChatId, sourceTaskId] = this.parseSource(externalTask.source);
+    
+    // 2. 获取源任务数据
+    const sourceTask = await this.getSourceTask(sourceChatId, sourceTaskId);
+    
+    // 3. 验证源任务有效性
+    if (!sourceTask || !sourceTask.textContent) {
+      throw new Error(`Invalid source task: ${externalTask.source}`);
+    }
+    
+    // 4. 返回引用的实际内容
+    return {
+      ...sourceTask,
+      isExternal: true,
+      externalTaskId: externalTask.taskId
+    };
+  }
+}
+```
+
+#### 查询时的外挂任务处理 (`src/core/query/EnhancedQuerySystem.js`)
+```javascript
+async queryWithExternalTasks(chatId, queryText, options) {
+  // 1. 获取当前聊天的所有任务
+  const tasks = getChatTasks(chatId);
+  
+  // 2. 分离本地任务和外挂任务
+  const localTasks = tasks.filter(t => t.type !== 'external');
+  const externalTasks = tasks.filter(t => t.type === 'external');
+  
+  // 3. 解析外挂任务引用
+  const resolvedExternalTasks = await Promise.all(
+    externalTasks.map(t => this.taskReferenceResolver.resolveExternalTask(t))
+  );
+  
+  // 4. 合并查询结果
+  const allResults = await this.queryMultipleSources(
+    [...localTasks, ...resolvedExternalTasks],
+    queryText,
+    options
+  );
+  
+  return this.rankResults(allResults);
+}
+```
 
 #### 主要处理流程 (`index.js -> performVectorization()`)
 ```javascript
@@ -788,25 +875,91 @@ async startProcessor(name) {
 
 #### 外挂任务UI管理 (`src/ui/components/ExternalTaskUI.js`)
 ```javascript
-// 外挂任务导入功能
+// 外挂任务导入功能（改进版 - 使用引用而非复制）
 async handleImport() {
   const sourceChatId = $('#source-chat-select').val();
   const selectedTasks = $('.task-checkbox:checked').map((_, el) => el.value).get();
   
-  // 复制任务到当前聊天
+  // 创建外挂任务引用
   for (const taskId of selectedTasks) {
     const sourceTask = sourceTasks.find(t => (t.taskId || t.id) === taskId);
-    const newTask = JSON.parse(JSON.stringify(sourceTask));
-    newTask.taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    // 创建外挂任务（引用而非复制）
+    const externalTask = {
+      taskId: `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      name: `外挂：${sourceTask.name}`,
+      type: 'external',
+      source: `${sourceChatId}_${taskId}`,
+      sourceTaskId: taskId,
+      enabled: true,
+      timestamp: Date.now(),
+      sourceName: sourceTask.name,
+      sourceChat: sourceChatId
+    };
     
     if (!this.settings.vector_tasks[currentChatId]) {
       this.settings.vector_tasks[currentChatId] = [];
     }
-    this.settings.vector_tasks[currentChatId].push(newTask);
+    this.settings.vector_tasks[currentChatId].push(externalTask);
   }
   
   // 保存设置
   this.dependencies.saveSettingsDebounced();
+}
+
+// 改进的聊天列表显示（支持角色名提取）
+async getAllChatsWithTasks() {
+  const allTasks = this.settings.vector_tasks || {};
+  const chatsWithTasks = [];
+  
+  for (const [chatId, tasks] of Object.entries(allTasks)) {
+    const vectorizationTasks = tasks.filter(task => !task.type || task.type === 'vectorization');
+    
+    if (vectorizationTasks.length > 0) {
+      let characterName = null;
+      
+      // 多重策略提取角色名
+      // 1. 从chatId提取
+      const parts = chatId.split(' - ');
+      if (parts.length > 1) {
+        characterName = parts[0];
+      }
+      
+      // 2. 从元数据提取
+      if (!characterName) {
+        characterName = chatMetadata[chatId]?.character_name;
+      }
+      
+      // 3. 从任务内容提取
+      if (!characterName && tasks.length > 0) {
+        for (const task of tasks) {
+          if (task.textContent && Array.isArray(task.textContent)) {
+            const aiChunk = task.textContent.find(chunk => 
+              chunk.metadata && 
+              chunk.metadata.is_user === false && 
+              chunk.metadata.name
+            );
+            if (aiChunk && aiChunk.metadata.name) {
+              characterName = aiChunk.metadata.name;
+              break;
+            }
+          }
+        }
+      }
+      
+      // 格式化显示名称
+      const formattedDate = this.formatChatDate(chatId);
+      const displayName = `${characterName || 'Unknown'} (${formattedDate})`;
+      
+      chatsWithTasks.push({
+        id: chatId,
+        name: displayName,
+        taskCount: vectorizationTasks.length
+      });
+    }
+  }
+  
+  return chatsWithTasks;
 }
 ```
 
@@ -828,4 +981,26 @@ async handleImport() {
 - **AbortController**: 支持任务取消
 - **重试机制**: 处理器级别的重启能力
 - **降级处理**: 管道失败时回退到旧实现
+
+### 7. 外挂任务系统的关键特性
+
+#### 引用机制优势
+1. **节省存储空间**: 不复制实际数据，仅保存引用
+2. **数据一致性**: 源任务更新后，所有引用自动获得最新数据
+3. **灵活性**: 可以跨多个聊天共享同一任务
+
+#### 性能优化
+1. **延迟加载**: 仅在查询时解析外挂任务引用
+2. **缓存机制**: 缓存已解析的外挂任务数据
+3. **批量处理**: 支持批量导入和查询操作
+
+#### UI改进
+1. **智能名称显示**: 自动提取和显示角色名，格式统一为 "角色名 (YY/MM/DD HH:MM)"
+2. **防重复导入**: 检测已存在的外挂任务，避免重复
+3. **友好的错误提示**: 明确的错误信息和操作指引
+
+#### 兼容性
+1. **向后兼容**: 支持旧格式任务，不影响现有功能
+2. **格式自动转换**: 自动处理不同格式的chatId和时间戳
+3. **降级处理**: 找不到角色名时显示"Unknown"占位符
 

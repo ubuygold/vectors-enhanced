@@ -1010,4 +1010,64 @@ $(document).on('click', '#vectors_import_external_task', async (e) => {
 
 **问题原因**: HTML的onclick属性和JavaScript的事件绑定产生冲突，导致事件处理器无法正确触发
 
+---
+
+## 迭代 #8
+**开始时间**: 2025-07-15 18:30
+**请求**: 修复外挂任务导入对话框中角色名显示问题
+**响应**: 我将改进getAllChatsWithTasks方法，确保所有聊天都能正确显示角色名
+
+### 操作 8.1
+**时间**: 18:31
+**描述**: 改进ExternalTaskUI的getAllChatsWithTasks方法
+**修改文件 `src/ui/components/ExternalTaskUI.js`**:
+
+**主要改进**:
+1. **多重角色名提取策略**:
+   - 首先尝试从chatId本身提取（处理完整的chatId格式）
+   - 其次从chat_metadata查找
+   - 最后从任务内容中的AI消息元数据提取
+   
+2. **改进的日期解析**:
+   - 使用正则表达式精确匹配各种时间戳格式
+   - 支持 "2025-7-9 @20h 26m 15s 653ms" 格式
+   - 处理月份和日期可能是单位数的情况
+
+3. **统一的显示格式**:
+   - 所有任务显示为 "角色名 (YY/MM/DD HH:MM)"
+   - 找不到角色名时显示 "Unknown" 作为占位符
+
+### 操作 8.2
+**时间**: 18:35
+**描述**: 更新SuperAgent架构文档
+**修改文件 `SuperAgent/Context/project-architecture.md`**:
+
+**更新内容**:
+1. **添加外挂任务系统模块描述**:
+   - ExternalTaskManager: 管理外挂任务的创建、查询和解析
+   - TaskReferenceResolver: 解析外挂任务引用到实际任务数据
+   - VectorCollectionManager: 管理向量集合的跨聊天共享
+   - EnhancedQuerySystem: 增强查询系统
+
+2. **更新文件结构**:
+   - 添加 src/core/external-tasks/ 目录
+   - 添加 src/core/query/ 目录
+
+3. **更新外挂任务存储结构**:
+   - 展示新的external类型任务格式
+   - 说明引用机制的实现方式
+
+4. **添加外挂任务处理逻辑**:
+   - TaskReferenceResolver的解析流程
+   - EnhancedQuerySystem的查询处理
+   - 改进的UI导入功能（使用引用而非复制）
+
+5. **添加关键特性总结**:
+   - 引用机制优势
+   - 性能优化策略
+   - UI改进要点
+   - 兼容性保证
+
+**结果**: 成功更新了外挂任务相关的代码和文档，修复了角色名显示问题，完善了系统架构描述
+
 **解决方案**: 移除HTML中的内联事件处理器，完全依赖JavaScript的事件委托机制
