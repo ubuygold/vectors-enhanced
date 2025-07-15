@@ -87,28 +87,17 @@
     padding: 20px;
 }
 
-/* Import Dialog Styles */
-.external-task-import-dialog {
-    padding: 20px;
-}
-
-.external-task-import-dialog h3 {
-    margin-bottom: 15px;
-}
-
-.external-task-import-dialog .form-group {
-    margin-bottom: 15px;
-}
-
-.external-task-import-dialog .form-control {
-    width: 100%;
+/* Import Dialog Styles - 使用默认样式 */
+.external-task-import-dialog .dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
 }
 
 .external-task-import-dialog #source-tasks-list {
     max-height: 200px;
     overflow-y: auto;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 5px;
     padding: 10px;
     margin-top: 5px;
 }
@@ -125,19 +114,6 @@
 
 .external-task-import-dialog .task-checkbox {
     margin-right: 8px;
-}
-
-.external-task-import-dialog .task-info {
-    color: var(--SmartThemeEmColor);
-    font-size: 0.9em;
-    margin-left: 5px;
-}
-
-.external-task-import-dialog .dialog-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
 }
 
 /* Task Details Dialog */
@@ -580,7 +556,6 @@
 .vector-enhanced-task-item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 8px;
     margin-bottom: 5px;
     background: var(--SmartThemeBlurTintColor);
@@ -600,12 +575,13 @@
     display: flex;
     align-items: center;
     min-height: 40px;
+    min-width: 0; /* 允许收缩 */
 }
 
-.vector-enhanced-task-item label .checkbox_label {
+.vector-enhanced-task-item .button-group {
     display: flex;
-    align-items: center;
-    width: 100%;
+    gap: 5px;
+    flex-shrink: 0; /* 按钮组不收缩 */
 }
 
 .vector-enhanced-task-item button {
@@ -642,34 +618,7 @@
     color: var(--SmartThemeEmColor);
 }
 
-/* External Task Styles - 外挂任务样式 */
-.external-task {
-    position: relative;
-}
-
-.external-task-badge {
-    display: inline-block;
-    margin-left: 0.5em;
-    font-size: 0.9em;
-    vertical-align: middle;
-    opacity: 0.8;
-    width: 1em;
-    text-align: center;
-}
-
-/* 孤儿任务样式 */
-.orphaned {
-    opacity: 0.6;
-}
-
-.orphaned-task {
-    color: var(--SmartThemeQuoteColor);
-    text-decoration: line-through;
-}
-
-.orphaned .external-task-badge {
-    filter: grayscale(100%);
-}
+/* External Task Styles - 外挂任务样式（旧版已移除，使用新的布局样式） */
 
 /* 任务列表项统一高度 */
 .checkbox_label {
@@ -680,41 +629,94 @@
     margin: 2px 0;
     border-radius: 4px;
     transition: background-color 0.2s ease;
+    width: 100%;
 }
 
-/* 任务列表中的外挂任务 - 统一布局 */
+/* 任务内容区域 */
+.checkbox_label .task-content {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    min-width: 0; /* 允许收缩 */
+}
+
+/* 任务名称样式 - 支持省略号 */
+.checkbox_label .task-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0; /* 允许收缩 */
+    margin-right: 4px;
+}
+
+/* 外挂任务标记 - 固定宽度，不被压缩 */
+.checkbox_label .external-task-badge {
+    flex-shrink: 0;
+    width: 1.2em;
+    text-align: center;
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+
+/* 任务信息（小字部分） */
+.checkbox_label .task-info {
+    display: block;
+    font-size: 0.85em;
+    color: var(--SmartThemeEmColor);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 外挂任务样式 - 与普通任务保持一致 */
 .checkbox_label.external-task {
-    position: relative;
-    /* 移除会影响布局的padding和margin */
+    /* 与普通任务完全一致，无特殊样式 */
 }
 
-/* 使用伪元素添加左边框，不影响布局 */
-.checkbox_label.external-task::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: #6464ff;
-    border-radius: 0 2px 2px 0;
-}
-
-/* 孤儿任务的左边框 */
-.checkbox_label.external-task.orphaned::before {
-    background: #ff6464;
-}
-
-/* 外挂任务的微妙背景 */
-.checkbox_label.external-task {
-    background: rgba(100, 100, 255, 0.02);
-}
-
+/* 孤儿任务稍微降低透明度 */
 .checkbox_label.external-task.orphaned {
-    background: rgba(255, 100, 100, 0.02);
+    opacity: 0.7;
+}
+
+/* 孤儿任务文本样式 */
+.orphaned-task {
+    color: var(--SmartThemeQuoteColor);
+    text-decoration: line-through;
+}
+
+/* 孤儿任务的外挂标记 */
+.checkbox_label.external-task.orphaned .external-task-badge {
+    filter: grayscale(100%);
 }
 
 /* 禁用的外挂任务 */
-.checkbox_label.external-task input[type="checkbox"]:not(:checked) ~ span {
+.checkbox_label.external-task input[type="checkbox"]:not(:checked) ~ .task-content {
     opacity: 0.7;
+}
+
+/* 导入外挂任务按钮样式 */
+#vectors_enhanced_import_external_task {
+    padding: 8px 16px;
+    font-size: 0.9em;
+    border-radius: 4px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+#vectors_enhanced_import_external_task:hover {
+    background: var(--SmartThemeEmColor);
+    border-color: var(--SmartThemeQuoteColor);
+}
+
+#vectors_enhanced_import_external_task i {
+    font-size: 0.9em;
 }

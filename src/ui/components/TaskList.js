@@ -109,10 +109,8 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
     }
 
     // 外挂任务标识
-    let externalBadge = '';
     let taskClass = '';
     if (task.type === 'external') {
-      externalBadge = ' <span class="external-task-badge" title="外挂任务">🔗</span>';
       taskClass = 'external-task';
       
       // 检查源是否存在
@@ -126,12 +124,15 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
     }
 
     const checkbox = $(`
-            <label class="checkbox_label flex-container alignItemsCenter ${taskClass}">
+            <label class="checkbox_label ${taskClass}">
                 <input type="checkbox" ${task.enabled ? 'checked' : ''} />
-                <span class="flex1">
-                    <strong title="${task.name}">${displayName}</strong>${incrementalBadge}${externalBadge}
-                    <small class="text-muted"> - ${new Date(task.timestamp).toLocaleString('zh-CN')}</small>
-                </span>
+                <div class="task-content">
+                    <div class="task-name" title="${task.name}">
+                        <strong>${displayName}</strong>${incrementalBadge}
+                        <small class="task-info"> - ${new Date(task.timestamp).toLocaleString('zh-CN')}</small>
+                    </div>
+                    ${task.type === 'external' ? '<span class="external-task-badge" title="外挂任务">🔗</span>' : ''}
+                </div>
             </label>
         `);
 
@@ -170,10 +171,13 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
       }
     });
 
+    const buttonGroup = $('<div class="button-group"></div>');
+    buttonGroup.append(previewBtn);
+    buttonGroup.append(renameBtn);
+    buttonGroup.append(deleteBtn);
+    
     taskDiv.append(checkbox);
-    taskDiv.append(previewBtn);
-    taskDiv.append(renameBtn);
-    taskDiv.append(deleteBtn);
+    taskDiv.append(buttonGroup);
     taskList.append(taskDiv);
   });
 }

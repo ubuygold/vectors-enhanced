@@ -53,12 +53,9 @@ export class ExternalTaskUI {
         this.taskManager = taskManager;
         this.settings = settings;  // 保存 settings 引用
         this.dependencies = dependencies;  // 保存 dependencies 引用
-        this.container = $('#vectors_external_tasks_container');
         
-        if (!this.container.length) {
-            console.warn('External tasks container not found');
-            return;
-        }
+        // 外挂任务管理区域已移除，不再需要container
+        this.container = null;
 
         this.bindEvents();
         this.initialized = true;
@@ -155,15 +152,9 @@ export class ExternalTaskUI {
                         <label>选择任务:</label>
                         <div id="source-tasks-list"></div>
                     </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="skip-deduplication" checked>
-                            跳过去重检查
-                        </label>
-                    </div>
                     <div class="dialog-buttons">
-                        <button class="menu_button" id="confirm-import">导入</button>
-                        <button class="menu_button" id="cancel-import">取消</button>
+                        <button class="menu_button" id="confirm-import" style="width: auto; min-width: fit-content;">导入</button>
+                        <button class="menu_button" id="cancel-import" style="width: auto; min-width: fit-content;">取消</button>
                     </div>
                 </div>
             `;
@@ -209,7 +200,7 @@ export class ExternalTaskUI {
             if (typeof callPopup !== 'function') {
                 console.error('callPopup function not available, using fallback');
                 // 后备方案：显示为模态框
-                const modal = $('<div class="modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;"><div class="modal-content" style="background: var(--SmartThemeBodyColor); padding: 20px; border-radius: 8px; max-width: 600px; width: 90%; color: var(--SmartThemeEmColor);"></div></div>');
+                const modal = $('<div class="modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;"><div class="modal-content" style="background: var(--SmartThemeBlurTintColor); padding: 20px; border-radius: 8px; max-width: 600px; width: 90%; color: var(--SmartThemeBodyColor);"></div></div>');
                 modal.find('.modal-content').html(dialogHtml);
                 $('body').append(modal);
                 
@@ -356,7 +347,6 @@ export class ExternalTaskUI {
                 return;
             }
 
-            const skipDeduplication = $('#skip-deduplication').is(':checked');
 
             // Import tasks - 直接从源聊天复制任务到当前聊天
             let importedCount = 0;
@@ -487,19 +477,9 @@ export class ExternalTaskUI {
      * Refresh external tasks list
      */
     async refreshExternalTasksList() {
-        // 由于使用旧格式，没有单独的"外挂任务"概念
-        // 可以显示当前聊天的任务列表或者直接隐藏这个部分
-        if (!this.currentChatId || this.currentChatId === 'null' || this.currentChatId === 'undefined') {
-            if (this.container) {
-                this.container.html('<p class="no-external-tasks">请先选择聊天</p>');
-            }
-            return;
-        }
-        
-        // 直接显示空列表，因为没有单独的外挂任务概念
-        if (this.container) {
-            this.container.html('<p class="no-external-tasks">暂无外挂任务</p>');
-        }
+        // 外挂任务管理区域已移除，不需要刷新
+        // 外挂任务现在直接显示在主任务列表中
+        console.log('External tasks are now displayed in the main task list');
     }
 
     /**
@@ -553,9 +533,6 @@ export class ExternalTaskUI {
                     </div>
                     <div class="detail-row">
                         <strong>源任务ID:</strong> ${task.sourceTaskId}
-                    </div>
-                    <div class="detail-row">
-                        <strong>跳过去重:</strong> ${task.skipDeduplication ? '是' : '否'}
                     </div>
                     <div class="detail-row">
                         <strong>内容项数:</strong> ${task.textContent?.length || 0}
