@@ -1576,9 +1576,14 @@ function getProcessedItemIdentifiers(chatId) {
                 task.actualProcessedItems.world_info.forEach(uid => identifiers.world_info.add(uid));
             }
         } else {
+            // 外挂任务没有settings，跳过
+            if (task.type === 'external') {
+                continue;
+            }
+            
             // Legacy tasks without actualProcessedItems - fallback to settings ranges
             const taskSettings = task.settings;
-            if (taskSettings.chat && taskSettings.chat.enabled) {
+            if (taskSettings && taskSettings.chat && taskSettings.chat.enabled) {
                 const start = taskSettings.chat.range.start;
                 const end = taskSettings.chat.range.end === -1
                     ? getContext().chat.length - 1
@@ -1587,10 +1592,10 @@ function getProcessedItemIdentifiers(chatId) {
                     identifiers.chat.add(i);
                 }
             }
-            if (taskSettings.files && taskSettings.files.enabled) {
+            if (taskSettings && taskSettings.files && taskSettings.files.enabled) {
                 taskSettings.files.selected.forEach(url => identifiers.file.add(url));
             }
-            if (taskSettings.world_info && taskSettings.world_info.enabled) {
+            if (taskSettings && taskSettings.world_info && taskSettings.world_info.enabled) {
                 Object.values(taskSettings.world_info.selected).flat().forEach(uid => identifiers.world_info.add(uid));
             }
         }
@@ -2784,6 +2789,7 @@ jQuery(async () => {
     getChatTasks,
     renameVectorTask,
     removeVectorTask,
+    updateTaskList,  // 添加这个函数引用
     toggleMessageRangeVisibility,
     showTagExamples,
     scanAndSuggestTags

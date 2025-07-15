@@ -650,8 +650,11 @@
 .external-task-badge {
     display: inline-block;
     margin-left: 0.5em;
-    font-size: 1.1em;
+    font-size: 0.9em;
     vertical-align: middle;
+    opacity: 0.8;
+    width: 1em;
+    text-align: center;
 }
 
 /* 孤儿任务样式 */
@@ -668,17 +671,47 @@
     filter: grayscale(100%);
 }
 
-/* 任务列表中的外挂任务 */
+/* 任务列表项统一高度 */
+.checkbox_label {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    margin: 2px 0;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+/* 任务列表中的外挂任务 - 统一布局 */
 .checkbox_label.external-task {
-    background: rgba(100, 100, 255, 0.05);
-    border-left: 3px solid #6464ff;
-    padding-left: 10px;
-    margin-left: -10px;
+    position: relative;
+    /* 移除会影响布局的padding和margin */
+}
+
+/* 使用伪元素添加左边框，不影响布局 */
+.checkbox_label.external-task::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: #6464ff;
+    border-radius: 0 2px 2px 0;
+}
+
+/* 孤儿任务的左边框 */
+.checkbox_label.external-task.orphaned::before {
+    background: #ff6464;
+}
+
+/* 外挂任务的微妙背景 */
+.checkbox_label.external-task {
+    background: rgba(100, 100, 255, 0.02);
 }
 
 .checkbox_label.external-task.orphaned {
-    background: rgba(255, 100, 100, 0.05);
-    border-left-color: #ff6464;
+    background: rgba(255, 100, 100, 0.02);
 }
 
 /* 禁用的外挂任务 */

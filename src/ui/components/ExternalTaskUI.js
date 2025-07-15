@@ -393,7 +393,15 @@ export class ExternalTaskUI {
             }
             
             console.log('ExternalTaskUI: Using current chat ID for import:', currentChatId);
+            
+            // 检查是否尝试从自己导入
+            if (sourceChatId === currentChatId) {
+                this.showNotification('不能从当前聊天导入任务！', 'error');
+                return;
+            }
+            
             const currentTasks = this.settings.vector_tasks[currentChatId] || [];
+            let skippedCount = 0;
             
             for (const taskId of selectedTasks) {
                 try {
@@ -404,13 +412,16 @@ export class ExternalTaskUI {
                         continue;
                     }
                     
-                    // 检查是否已存在（除非跳过去重）
-                    if (!skipDeduplication) {
-                        const exists = currentTasks.some(t => t.name === sourceTask.name);
-                        if (exists) {
-                            console.log(`Task "${sourceTask.name}" already exists, skipping`);
-                            continue;
-                        }
+                    // 检查是否已存在相同的外挂任务
+                    const alreadyExists = currentTasks.some(t => 
+                        t.type === 'external' && 
+                        t.source === `${sourceChatId}_${taskId}`
+                    );
+                    
+                    if (alreadyExists) {
+                        console.log(`External task from ${sourceChatId}_${taskId} already exists, skipping`);
+                        skippedCount++;
+                        continue;
                     }
                     
                     // 创建外挂任务（引用而非复制）
@@ -444,7 +455,11 @@ export class ExternalTaskUI {
             }
 
             if (importedCount > 0) {
-                this.showNotification(`成功导入 ${importedCount} 个外挂任务`, 'success');
+                let message = `成功导入 ${importedCount} 个外挂任务`;
+                if (skippedCount > 0) {
+                    message += `，跳过 ${skippedCount} 个已存在的任务`;
+                }
+                this.showNotification(message, 'success');
                 
                 // 更新主任务列表UI
                 if (this.dependencies?.updateTaskList) {
@@ -456,6 +471,8 @@ export class ExternalTaskUI {
                 }
                 
                 await this.refreshExternalTasksList();
+            } else if (skippedCount > 0) {
+                this.showNotification(`所有选中的任务已存在，跳过了 ${skippedCount} 个任务`, 'warning');
             } else {
                 this.showNotification('导入失败', 'error');
             }
