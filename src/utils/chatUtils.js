@@ -228,12 +228,14 @@ export function shouldProcessMessage(msg, index, settings = {}) {
  * 创建消息的向量化项
  * @param {Object} messageData 从 getMessages 返回的消息数据
  * @param {string} text 处理后的文本（可能经过标签提取）
+ * @param {string} [rawText] - 可选的原始文本，用于预览
  * @returns {Object} 向量化项
  */
-export function createVectorItem(messageData, text) {
+export function createVectorItem(messageData, text, rawText = null) {
     return {
         type: 'chat',
         text: text,
+        rawText: rawText !== null ? rawText : text, // 如果没有提供rawText，则回退到使用处理后的文本
         metadata: messageData.metadata,
         selected: true
     };

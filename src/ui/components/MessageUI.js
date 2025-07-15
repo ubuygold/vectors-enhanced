@@ -118,35 +118,35 @@ export const MessageUI = {
       toastr.warning('未选择要预览的内容或过滤后内容为空');
       return;
     }
-    
+
     // Get chat settings for both raw text and statistics
     const context = getContext();
     const chatSettings = settings.selected_content.chat;
-    
+
     // Get raw text for chat items if needed
     if (showRawContent) {
       const rules = chatSettings.tag_rules || [];
-      
+
       if (chatSettings.enabled && context.chat) {
         const rawTextMap = new Map();
         const start = chatSettings.range?.start || 0;
         const end = chatSettings.range?.end || -1;
         const messages = context.chat.slice(start, end === -1 ? undefined : end + 1);
-        
+
         messages.forEach((msg, idx) => {
           const absoluteIndex = start + idx;
           if (msg.is_system) return;
-          
+
           let extractedText;
           if (absoluteIndex === 0 || msg.is_user === true) {
             extractedText = msg.mes;
           } else {
             extractedText = extractTagContent(msg.mes, rules);
           }
-          
+
           rawTextMap.set(absoluteIndex, extractedText);
         });
-        
+
         items.forEach(item => {
           if (item.type === 'chat' && rawTextMap.has(item.metadata.index)) {
             item.rawText = rawTextMap.get(item.metadata.index);
@@ -299,13 +299,13 @@ export const MessageUI = {
       const chatIndices = grouped.chat.map(item => item.metadata.index).sort((a, b) => a - b);
       const segments = this._identifyContinuousSegments(chatIndices);
       html += `<div style="margin: -1rem -1rem 1rem -1rem; padding: 0.75rem 1rem; background: transparent; border-bottom: 1px solid var(--SmartThemeBorderColor);"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
-      
+
       // Chat messages
       grouped.chat.forEach(item => {
         const msgType = item.metadata.is_user ? '用户' : 'AI';
         html += `<div class="preview-chat-message">`;
         html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-        
+
         if (showRawContent && item.rawText) {
           // Show raw text
           const escapedRawText = item.rawText
@@ -314,12 +314,12 @@ export const MessageUI = {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
-          html += `<pre class="preview-chat-content" style="white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
+          html += `<pre class="preview-chat-content" style="white-space: pre-wrap; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
         } else {
           // Show processed text
           html += `<div class="preview-chat-content">${item.text}</div>`;
         }
-        
+
         html += `</div>`;
       });
     } else {
@@ -342,11 +342,11 @@ export const MessageUI = {
    */
   _identifyContinuousSegments(indices) {
     if (indices.length === 0) return [];
-    
+
     const segments = [];
     let segmentStart = indices[0];
     let segmentEnd = indices[0];
-    
+
     for (let i = 1; i < indices.length; i++) {
       if (indices[i] === segmentEnd + 1) {
         // Continue current segment
@@ -358,16 +358,16 @@ export const MessageUI = {
         segmentEnd = indices[i];
       }
     }
-    
+
     // Add the last segment
     segments.push(this._formatSegment(segmentStart, segmentEnd));
-    
+
     return segments;
   },
 
   /**
    * Format segment (single number or range)
-   * @private  
+   * @private
    */
   _formatSegment(start, end) {
     if (start === end) {

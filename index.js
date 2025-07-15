@@ -468,9 +468,8 @@ async function getVectorizableContent(contentSettings = null) {
         const messages = getMessages(context.chat, messageOptions);
 
         messages.forEach(msg => {
-            // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
-            // 如果是，则不应用标签提取规则，直接使用原始文本
             let extractedText;
+            // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
             if (msg.index === 0 || msg.is_user === true) {
                 // 首楼或用户楼层：使用完整的原始文本，不应用标签提取规则
                 extractedText = msg.text;
@@ -479,7 +478,9 @@ async function getVectorizableContent(contentSettings = null) {
                 extractedText = extractTagContent(msg.text, rules);
             }
 
-            items.push(createVectorItem(msg, extractedText));
+            // 对于预览，text 和 rawText 都应该是标签提取后的结果
+            // createVectorItem 会在 rawText 为 null 时自动使用 text
+            items.push(createVectorItem(msg, extractedText, extractedText));
         });
     }
 

@@ -71,7 +71,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
     if (task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
       // Construct items for name generation
       const items = [];
-      
+
       // Add chat items
       if (task.actualProcessedItems.chat) {
         task.actualProcessedItems.chat.forEach(index => {
@@ -81,7 +81,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
           });
         });
       }
-      
+
       // Add file items
       if (task.actualProcessedItems.files) {
         task.actualProcessedItems.files.forEach(url => {
@@ -91,7 +91,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
           });
         });
       }
-      
+
       // Add world info items
       if (task.actualProcessedItems.world_info) {
         task.actualProcessedItems.world_info.forEach(uid => {
@@ -101,7 +101,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
           });
         });
       }
-      
+
       // Generate smart name
       displayName = TaskNameGenerator.generateSmartName(items, task.settings);
     }
@@ -110,7 +110,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
     let taskClass = '';
     if (task.type === 'external') {
       taskClass = 'external-task';
-      
+
       // 检查源是否存在
       if (task.source) {
         const [sourceChat] = task.source.split('_');
@@ -173,7 +173,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
     buttonGroup.append(previewBtn);
     buttonGroup.append(renameBtn);
     buttonGroup.append(deleteBtn);
-    
+
     taskDiv.append(checkbox);
     taskDiv.append(buttonGroup);
     taskList.append(taskDiv);
@@ -190,7 +190,7 @@ async function previewTaskContent(task) {
     let message = `这是一个外挂任务，引用了 "${task.sourceName || '未知任务'}" 的向量数据。\n`;
     message += `源聊天: ${task.sourceChat || '未知'}\n`;
     message += `源集合: ${task.source}`;
-    
+
     await callGenericPopup(message, POPUP_TYPE.TEXT, '', {
       okButton: '确定',
       wide: false,
@@ -198,7 +198,7 @@ async function previewTaskContent(task) {
     });
     return;
   }
-  
+
   if (!task.actualProcessedItems) {
     toastr.warning('此任务没有可预览的内容');
     return;
@@ -206,7 +206,7 @@ async function previewTaskContent(task) {
 
   const context = getContext();
   const items = [];
-  
+
   // Collect chat items
   if (task.actualProcessedItems.chat && task.actualProcessedItems.chat.length > 0) {
     const chatIndices = task.actualProcessedItems.chat;
@@ -226,12 +226,12 @@ async function previewTaskContent(task) {
       }
     });
   }
-  
+
   // Collect file items
   if (task.actualProcessedItems.files && task.actualProcessedItems.files.length > 0) {
     // Get all available files to match URLs with file objects
     const fileMap = getAllAvailableFiles();
-    
+
     task.actualProcessedItems.files.forEach(url => {
       const file = fileMap.get(url);
       if (file) {
@@ -257,7 +257,7 @@ async function previewTaskContent(task) {
       }
     });
   }
-  
+
   // Collect world info items
   if (task.actualProcessedItems.world_info && task.actualProcessedItems.world_info.length > 0) {
     // Get all world info entries
@@ -268,7 +268,7 @@ async function previewTaskContent(task) {
         entryMap.set(entry.uid, entry);
       }
     });
-    
+
     task.actualProcessedItems.world_info.forEach(uid => {
       const entry = entryMap.get(uid);
       if (entry) {
@@ -342,7 +342,7 @@ async function previewTaskContent(task) {
       if (!byWorld[item.metadata.world]) byWorld[item.metadata.world] = [];
       byWorld[item.metadata.world].push(item);
     });
-    
+
     for (const [world, entries] of Object.entries(byWorld)) {
       html += `<div class="preview-world-group">`;
       html += `<div class="preview-world-name">${world}</div>`;
@@ -365,15 +365,15 @@ async function previewTaskContent(task) {
     const chatIndices = grouped.chat.map(item => item.metadata.index).sort((a, b) => a - b);
     const segments = identifyContinuousSegments(chatIndices);
     html += `<div style="margin: -1rem -1rem 1rem -1rem; padding: 0.75rem 1rem; background: transparent; border-bottom: 1px solid var(--SmartThemeBorderColor);"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
-    
+
     // Check if raw content preview is enabled
     const showRawContent = $('#vectors_enhanced_preview_raw').prop('checked');
-    
+
     grouped.chat.forEach(item => {
       const msgType = item.metadata.is_user ? '用户' : 'AI';
       html += `<div class="preview-chat-message">`;
       html += `<div class="preview-chat-header">#${item.metadata.index} - ${msgType}（${item.metadata.name}）</div>`;
-      
+
       if (showRawContent && item.rawText) {
         // Show raw text
         const escapedRawText = item.rawText
@@ -382,12 +382,12 @@ async function previewTaskContent(task) {
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#039;');
-        html += `<pre class="preview-chat-content" style="white-space: pre-wrap; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px;">${escapedRawText}</pre>`;
+        html += `<pre class="preview-chat-content" style="white-space: pre-wrap; overflow-wrap: break-word; word-wrap: break-word; word-break: break-all; font-family: inherit; background: var(--SmartThemeBlurTintColor); border: 1px solid var(--SmartThemeBorderColor); padding: 0.5rem; border-radius: 4px; max-width: 100%; overflow-x: auto; font-size: 12px;">${escapedRawText}</pre>`;
       } else {
         // Show processed text
         html += `<div class="preview-chat-content">${item.text}</div>`;
       }
-      
+
       html += `</div>`;
     });
   } else {
@@ -409,11 +409,11 @@ async function previewTaskContent(task) {
  */
 function identifyContinuousSegments(indices) {
   if (indices.length === 0) return [];
-  
+
   const segments = [];
   let segmentStart = indices[0];
   let segmentEnd = indices[0];
-  
+
   for (let i = 1; i < indices.length; i++) {
     if (indices[i] === segmentEnd + 1) {
       // Continue current segment
@@ -425,10 +425,10 @@ function identifyContinuousSegments(indices) {
       segmentEnd = indices[i];
     }
   }
-  
+
   // Add the last segment
   segments.push(formatSegment(segmentStart, segmentEnd));
-  
+
   return segments;
 }
 
