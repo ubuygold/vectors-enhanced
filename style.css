@@ -641,3 +641,47 @@
     font-size: 0.85em;
     color: var(--SmartThemeEmColor);
 }
+
+/* External Task Styles - 外挂任务样式 */
+.external-task {
+    position: relative;
+}
+
+.external-task-badge {
+    display: inline-block;
+    margin-left: 0.5em;
+    font-size: 1.1em;
+    vertical-align: middle;
+}
+
+/* 孤儿任务样式 */
+.orphaned {
+    opacity: 0.6;
+}
+
+.orphaned-task {
+    color: var(--SmartThemeQuoteColor);
+    text-decoration: line-through;
+}
+
+.orphaned .external-task-badge {
+    filter: grayscale(100%);
+}
+
+/* 任务列表中的外挂任务 */
+.checkbox_label.external-task {
+    background: rgba(100, 100, 255, 0.05);
+    border-left: 3px solid #6464ff;
+    padding-left: 10px;
+    margin-left: -10px;
+}
+
+.checkbox_label.external-task.orphaned {
+    background: rgba(255, 100, 100, 0.05);
+    border-left-color: #ff6464;
+}
+
+/* 禁用的外挂任务 */
+.checkbox_label.external-task input[type="checkbox"]:not(:checked) ~ span {
+    opacity: 0.7;
+}

@@ -2052,8 +2052,15 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     const perTaskLimit = Math.max(Math.ceil((settings.max_results || 10) * 1.5), 20);
 
     for (const task of tasks) {
-      const collectionId = `${chatId}_${task.taskId}`;
-      console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
+      // 支持外挂任务：如果任务有 type 和 source 字段，使用源集合ID
+      let collectionId;
+      if (task.type === 'external' && task.source) {
+        collectionId = task.source;
+        console.debug(`Vectors: Querying external task "${task.name}" using source collection "${collectionId}"`);
+      } else {
+        collectionId = `${chatId}_${task.taskId}`;
+        console.debug(`Vectors: Querying collection "${collectionId}" for task "${task.name}"`);
+      }
 
       try {
         const results = await storageAdapter.queryCollection(collectionId, queryText, perTaskLimit, settings.score_threshold);
@@ -2472,25 +2479,25 @@ async function cleanupOrphanedExternalTasks(deletedChatId) {
   for (const [chatId, tasks] of Object.entries(settings.vector_tasks)) {
     if (!tasks || !Array.isArray(tasks)) continue;
     
-    const orphanedTasks = tasks.filter(task => 
-      task.type === "external" && task.sourceChat === deletedChatId
-    );
-    
-    if (orphanedTasks.length > 0) {
-      console.log(`Vectors: Found ${orphanedTasks.length} orphaned external tasks in chat ${chatId}`);
-      
-      for (const orphanedTask of orphanedTasks) {
-        try {
-          // 删除孤儿外挂任务（不删除向量数据，因为外挂任务没有自己的向量数据）
-          const taskIndex = tasks.findIndex(t => t.taskId === orphanedTask.taskId);
-          if (taskIndex !== -1) {
-            tasks.splice(taskIndex, 1);
-            console.log(`Vectors: Removed orphaned external task: ${orphanedTask.name}`);
-          }
-        } catch (error) {
-          console.error(`Vectors: Failed to remove orphaned external task ${orphanedTask.taskId}:`, error);
+    // 查找所有引用了被删除聊天的外挂任务
+    let foundOrphaned = false;
+    tasks.forEach(task => {
+      if (task.type === "external") {
+        // 检查是否引用了被删除的聊天
+        if (task.sourceChat === deletedChatId || (task.source && task.source.startsWith(`${deletedChatId}_`))) {
+          // 标记为孤儿任务
+          task.orphaned = true;
+          task.enabled = false; // 自动禁用
+          foundOrphaned = true;
+          console.log(`Vectors: Marked external task "${task.name}" as orphaned in chat ${chatId}`);
         }
       }
+    });
+    
+    if (foundOrphaned) {
+      // 保存更改
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
     }
   }
 }
@@ -2882,6 +2889,12 @@ jQuery(async () => {
     
     // 清理向量数据文件
     for (const task of tasksToDelete) {
+      // 外挂任务不删除向量文件（向量文件属于源任务）
+      if (task.type === 'external') {
+        console.log(`Vectors: Skipping external task ${task.taskId} - no vector data to delete`);
+        continue;
+      }
+      
       try {
         const collectionId = `${chatId}_${task.taskId}`;
         console.log(`Vectors: Deleting vector collection: ${collectionId}`);

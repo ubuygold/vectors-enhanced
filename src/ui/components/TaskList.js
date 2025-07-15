@@ -108,11 +108,28 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
       displayName = TaskNameGenerator.generateSmartName(items, task.settings);
     }
 
+    // 外挂任务标识
+    let externalBadge = '';
+    let taskClass = '';
+    if (task.type === 'external') {
+      externalBadge = ' <span class="external-task-badge" title="外挂任务">🔗</span>';
+      taskClass = 'external-task';
+      
+      // 检查源是否存在
+      if (task.source) {
+        const [sourceChat] = task.source.split('_');
+        if (!settings.vector_tasks[sourceChat]) {
+          displayName = `<span class="orphaned-task">源数据已删除</span>`;
+          taskClass += ' orphaned';
+        }
+      }
+    }
+
     const checkbox = $(`
-            <label class="checkbox_label flex-container alignItemsCenter">
+            <label class="checkbox_label flex-container alignItemsCenter ${taskClass}">
                 <input type="checkbox" ${task.enabled ? 'checked' : ''} />
                 <span class="flex1">
-                    <strong title="${task.name}">${displayName}</strong>${incrementalBadge}
+                    <strong title="${task.name}">${displayName}</strong>${incrementalBadge}${externalBadge}
                     <small class="text-muted"> - ${new Date(task.timestamp).toLocaleString('zh-CN')}</small>
                 </span>
             </label>
@@ -166,6 +183,20 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
  * @param {Object} task - The task to preview
  */
 async function previewTaskContent(task) {
+  // 如果是外挂任务，提示用户
+  if (task.type === 'external') {
+    let message = `这是一个外挂任务，引用了 "${task.sourceName || '未知任务'}" 的向量数据。\n`;
+    message += `源聊天: ${task.sourceChat || '未知'}\n`;
+    message += `源集合: ${task.source}`;
+    
+    await callGenericPopup(message, POPUP_TYPE.TEXT, '', {
+      okButton: '确定',
+      wide: false,
+      large: false
+    });
+    return;
+  }
+  
   if (!task.actualProcessedItems) {
     toastr.warning('此任务没有可预览的内容');
     return;

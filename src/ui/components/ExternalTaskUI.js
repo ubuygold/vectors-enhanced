@@ -413,17 +413,24 @@ export class ExternalTaskUI {
                         }
                     }
                     
-                    // 复制任务
-                    const newTask = JSON.parse(JSON.stringify(sourceTask));
-                    // 生成新的任务ID
-                    newTask.taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-                    newTask.timestamp = Date.now();
+                    // 创建外挂任务（引用而非复制）
+                    const externalTask = {
+                        taskId: `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+                        name: `外挂：${sourceTask.name}`,
+                        type: 'external',
+                        source: `${sourceChatId}_${taskId}`,  // 源集合ID
+                        enabled: true,
+                        timestamp: Date.now(),
+                        // 保存一些基本信息用于显示
+                        sourceName: sourceTask.name,
+                        sourceChat: sourceChatId
+                    };
                     
                     // 添加到当前聊天的任务列表
                     if (!this.settings.vector_tasks[currentChatId]) {
                         this.settings.vector_tasks[currentChatId] = [];
                     }
-                    this.settings.vector_tasks[currentChatId].push(newTask);
+                    this.settings.vector_tasks[currentChatId].push(externalTask);
                     
                     importedCount++;
                 } catch (error) {
@@ -438,6 +445,16 @@ export class ExternalTaskUI {
 
             if (importedCount > 0) {
                 this.showNotification(`成功导入 ${importedCount} 个外挂任务`, 'success');
+                
+                // 更新主任务列表UI
+                if (this.dependencies?.updateTaskList) {
+                    await this.dependencies.updateTaskList(
+                        this.dependencies.getChatTasks,
+                        this.dependencies.renameVectorTask,
+                        this.dependencies.removeVectorTask
+                    );
+                }
+                
                 await this.refreshExternalTasksList();
             } else {
                 this.showNotification('导入失败', 'error');
