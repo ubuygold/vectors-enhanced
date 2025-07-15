@@ -2462,6 +2462,40 @@ const onChatEvent = debounce(async () => {
 }, debounce_timeout.relaxed);
 
 /**
+ * Cleans up orphaned external tasks when a source chat is deleted
+ * @param {string} deletedChatId - The ID of the deleted chat
+ */
+async function cleanupOrphanedExternalTasks(deletedChatId) {
+  console.log(`Vectors: Cleaning up orphaned external tasks for deleted chat: ${deletedChatId}`);
+  
+  // 扫描所有聊天的外挂任务
+  for (const [chatId, tasks] of Object.entries(settings.vector_tasks)) {
+    if (!tasks || !Array.isArray(tasks)) continue;
+    
+    const orphanedTasks = tasks.filter(task => 
+      task.type === "external" && task.sourceChat === deletedChatId
+    );
+    
+    if (orphanedTasks.length > 0) {
+      console.log(`Vectors: Found ${orphanedTasks.length} orphaned external tasks in chat ${chatId}`);
+      
+      for (const orphanedTask of orphanedTasks) {
+        try {
+          // 删除孤儿外挂任务（不删除向量数据，因为外挂任务没有自己的向量数据）
+          const taskIndex = tasks.findIndex(t => t.taskId === orphanedTask.taskId);
+          if (taskIndex !== -1) {
+            tasks.splice(taskIndex, 1);
+            console.log(`Vectors: Removed orphaned external task: ${orphanedTask.name}`);
+          }
+        } catch (error) {
+          console.error(`Vectors: Failed to remove orphaned external task ${orphanedTask.taskId}:`, error);
+        }
+      }
+    }
+  }
+}
+
+/**
  * Cleans up invalid chat IDs from vector_tasks
  */
 function cleanupInvalidChatIds() {
@@ -2837,8 +2871,30 @@ jQuery(async () => {
   eventSource.on(event_types.MESSAGE_SENT, onChatEvent);
   eventSource.on(event_types.MESSAGE_RECEIVED, onChatEvent);
   eventSource.on(event_types.MESSAGE_SWIPED, onChatEvent);
-  eventSource.on(event_types.CHAT_DELETED, chatId => {
+  eventSource.on(event_types.CHAT_DELETED, async chatId => {
+    console.log(`Vectors: Cleaning up data for deleted chat: ${chatId}`);
+    
+    // 清除内存缓存
     cachedVectors.delete(chatId);
+    
+    // 获取要删除的任务
+    const tasksToDelete = getChatTasks(chatId);
+    
+    // 清理向量数据文件
+    for (const task of tasksToDelete) {
+      try {
+        const collectionId = `${chatId}_${task.taskId}`;
+        console.log(`Vectors: Deleting vector collection: ${collectionId}`);
+        await storageAdapter.purgeVectorIndex(collectionId);
+      } catch (error) {
+        console.error(`Vectors: Failed to delete vector collection for task ${task.taskId}:`, error);
+      }
+    }
+    
+    // 清理孤儿外挂任务
+    await cleanupOrphanedExternalTasks(chatId);
+    
+    // 删除任务元数据
     delete settings.vector_tasks[chatId];
     Object.assign(extension_settings.vectors_enhanced, settings);
     saveSettingsDebounced();

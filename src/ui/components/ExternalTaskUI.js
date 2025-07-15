@@ -4,7 +4,7 @@
  */
 
 // 导入必要的函数
-import { getCurrentChatId } from '../../../../../../script.js';
+import { getCurrentChatId } from '../../../../../../../script.js';
 
 export class ExternalTaskUI {
     constructor() {

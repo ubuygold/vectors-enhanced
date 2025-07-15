@@ -1,6 +1,69 @@
 # 项目迭代日志
 
 ---
+## 迭代 #42
+**开始时间**: 2025-07-15 21:30
+**请求**: 深入分析外挂任务的核心功能和业务逻辑，查找数据结构定义、存储机制、处理逻辑、向量化集成点和生命周期管理
+**响应**: 我将深入分析外挂任务系统的核心架构和业务逻辑
+
+### 操作 42.1
+**时间**: 21:35
+**描述**: 分析外挂任务的数据结构定义
+**分析文件**:
+- `src/core/entities/Task.js`: Task实体类定义，支持旧格式兼容
+- `index.js`: settings.vector_tasks 存储结构分析
+- 发现任务以 {taskId, name, timestamp, settings, enabled, textContent} 格式存储
+
+### 操作 42.2
+**时间**: 21:40
+**描述**: 分析外挂任务的存储机制
+**分析文件**:
+- `index.js`: getChatTasks/addVectorTask/removeVectorTask 函数
+- `src/infrastructure/storage/StorageAdapter.js`: 向量存储CRUD操作
+- 发现存储分为两层：settings持久化 + 向量数据库存储
+
+### 操作 42.3
+**时间**: 21:45
+**描述**: 分析外挂任务的处理逻辑
+**分析文件**:
+- `index.js`: performVectorization 主处理流程
+- `src/core/pipeline/processors/VectorizationProcessor.js`: 向量化处理器
+- 发现完整的管道处理流程：提取→处理→分发→执行
+
+### 操作 42.4
+**时间**: 21:50
+**描述**: 分析外挂任务与向量化系统的集成点
+**分析文件**:
+- `src/infrastructure/api/VectorizationAdapter.js`: 向量化适配器
+- `src/infrastructure/storage/StorageAdapter.js`: 存储适配器
+- 发现集成点：VectorizationAdapter准备数据 → StorageAdapter调用SillyTavern API
+
+### 操作 42.5
+**时间**: 21:55
+**描述**: 分析外挂任务的生命周期管理
+**分析文件**:
+- `src/core/pipeline/LifecycleManager.js`: 生命周期管理器
+- `src/ui/components/ExternalTaskUI.js`: 外挂任务UI管理
+- 发现完整的生命周期：注册→初始化→运行→完成/失败
+
+### 操作 42.6
+**时间**: 22:00
+**描述**: 更新项目架构文档
+**修改文件 `SuperAgent/Context/project-architecture.md`**:
+- 添加"外挂任务系统深度分析"章节
+- 详细描述数据结构、存储机制、处理逻辑
+- 分析向量化集成点和生命周期管理
+- 包含关键代码示例和数据流向分析
+
+### 操作 42.7
+**时间**: 22:05
+**描述**: 更新迭代日志
+**修改文件 `SuperAgent/Context/iterations-log.md`**:
+- 记录本次深度分析的完整过程
+- 文档化所有分析的核心文件和发现
+- 总结外挂任务系统的关键特性
+
+---
 ## 迭代 #41
 **开始时间**: 2025-07-14 14:30
 **请求**: 为插件开发一个外挂任务的功能，可以外挂来自其他聊天的向量化任务并加入查询队列（不纳入去重）

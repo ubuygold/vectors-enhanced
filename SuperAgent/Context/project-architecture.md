@@ -572,59 +572,260 @@ index.js
 4. **文档完善**: 创建用户指南和API文档
 5. **测试覆盖**: 添加单元测试和集成测试
 
-## 当前系统状态
+## 外挂任务系统深度分析
 
-### TaskManager系统运行状态
-- **运行模式**: TaskManager（新任务系统）
-- **向后兼容**: 完全保持，所有现有任务正常访问
-- **系统健康**: 全部模块正常运行
-- **状态检查**: 使用 `vectorsTaskSystemStatus()` 可查看详细状态
+### 1. 外挂任务的数据结构定义
 
-### 重构完成度
-- **Phase 0-1**: 基础设施层 ✅ 100%
-- **Phase 2**: 核心实体 ✅ 100% 
-- **Phase 3**: 工具函数提取 ✅ 100%
-- **Phase 4**: 适配器层 ✅ 100%
-- **Phase 5**: 内容提取器 ✅ 100%
-- **Phase 6**: 任务系统 ✅ 100%
-- **Phase 7**: UI层重构 ✅ 95% (ActionButtons + SettingsPanel架构 + ProgressManager/EventManager/StateManager完成)
-- **Phase 8**: 插件系统基础 ✅ 100% (插件接口和内置插件已实现)
-- **Phase 9**: 文本处理管道 ✅ 100%
-  - **Phase 9.1**: 管道架构基础 ✅ 100%
-  - **Phase 9.2**: 适配器模式集成 ✅ 100%
-  - **Phase 9.3**: 并行实现 ✅ 100%
-  - **Phase 9.4**: 扩展性支持 ✅ 100%
-    - **Phase 9.4.1**: 中间件系统 ✅ 100%
-    - **Phase 9.4.2**: 生命周期管理 ✅ 100%
-    - **Phase 9.4.3**: 事件支持 ✅ 100%
-- **Phase 9.5**: 安全验证和迁移 📋 待实施
-- **Phase 10**: 架构切换 📋 待实施  
-- **Phase 11**: 清理优化和新功能 📋 待实施
+#### Task实体类 (`src/core/entities/Task.js`)
+```javascript
+export class Task {
+  constructor(data) {
+    // 兼容旧格式处理
+    if (typeof data === 'string') {
+      this.id = data;
+      this.legacy = true;
+    } else {
+      this.id = data.id;
+      this.type = data.type;
+      this.status = data.status || 'pending';
+      this.content = data.content;
+      this.metadata = data.metadata || {};
+      this.legacy = false;
+    }
+  }
+}
+```
 
-### 关键特性
-1. **简化系统**: 使用旧格式直接存储，简化了架构
-2. **性能优化**: 减少了过度工程化的抽象层
-3. **维护性改善**: 代码更加简洁，易于理解和维护
-4. **向后兼容**: 所有现有数据和功能完全保留
+#### 存储结构 (`settings.vector_tasks`)
+```javascript
+// 在 extension_settings.vectors_enhanced.vector_tasks 中存储
+{
+  "chatId": [
+    {
+      "taskId": "task_1642567890123_abc123def",
+      "name": "楼层 0-3, 5 (5条)",
+      "timestamp": 1642567890123,
+      "settings": { /* 内容选择设置 */ },
+      "enabled": true,
+      "textContent": [ /* 实际处理的文本内容 */ ],
+      "type": "vectorization" // 任务类型标识
+    }
+  ]
+}
+```
 
-### 现代化模块使用情况 (2025-07-13更新)
-根据深度分析（见`SuperAgent/modernization-usage-analysis.md`）：
+### 2. 外挂任务的存储机制
 
-**初始状态**：
-- **代码编写完成度**: 约90%
-- **实际使用率**: 约60%
-- **主要问题**: 新旧实现并存、模块利用不足、代码冗余
+#### 核心存储函数 (`index.js`)
+```javascript
+// 获取聊天任务
+function getChatTasks(chatId) {
+  if (!settings.vector_tasks[chatId]) {
+    settings.vector_tasks[chatId] = [];
+  }
+  return settings.vector_tasks[chatId];
+}
 
-**完成管道迁移后**：
-- **实际使用率**: 提升至约85%
-- **代码量**: 减少约280行
-- **架构状态**: 管道模式已成为唯一实现
-- **已解决**: 
-  - ✅ 删除了旧的performVectorization实现
-  - ✅ 提取器模块现在被默认使用
-  - ✅ 清理了实验性功能和A/B测试代码
+// 添加任务
+function addVectorTask(chatId, task) {
+  const tasks = getChatTasks(chatId);
+  tasks.push(task);
+  settings.vector_tasks[chatId] = tasks;
+  saveSettingsDebounced();
+}
 
-**剩余工作**:
-  1. ProgressManager完全替代updateProgressNew
-  2. 激活插件系统
-  3. 充分利用EventManager/StateManager
+// 移除任务
+async function removeVectorTask(chatId, taskId) {
+  const tasks = getChatTasks(chatId);
+  const index = tasks.findIndex(t => t.taskId === taskId);
+  if (index !== -1) {
+    tasks.splice(index, 1);
+    settings.vector_tasks[chatId] = tasks;
+    saveSettingsDebounced();
+  }
+}
+```
+
+#### 存储适配器 (`src/infrastructure/storage/StorageAdapter.js`)
+- `insertVectorItems()`: 向量数据库插入
+- `queryCollection()`: 查询相似向量
+- `purgeVectorIndex()`: 清理向量索引
+- `getSavedHashes()`: 获取已存储的哈希值
+
+### 3. 外挂任务的处理逻辑
+
+#### 主要处理流程 (`index.js -> performVectorization()`)
+```javascript
+async function performVectorization(contentSettings, chatId, isIncremental, items, options = {}) {
+  // 1. 导入管道组件
+  const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
+  
+  // 2. 初始化管道
+  await pipelineIntegration.initialize({
+    vectorizationAdapter: new VectorizationAdapter(/* dependencies */),
+    settings: contentSettings
+  });
+  
+  // 3. 执行管道处理
+  const result = await pipelineIntegration.processVectorization(
+    contentSettings, chatId, isIncremental, items, options
+  );
+  
+  return result;
+}
+```
+
+#### 向量化处理器 (`src/core/pipeline/processors/VectorizationProcessor.js`)
+```javascript
+async process(input, context) {
+  // 1. 准备向量化数据块
+  const chunks = this.prepareVectorizationChunks(content, metadata, vectorizationSettings);
+  
+  // 2. 转换为向量化格式
+  const vectorItems = chunks.map((chunk, index) => ({
+    id: `chunk_${this.generateHash(chunk.text)}`,
+    text: chunk.text,
+    type: metadata.type || 'pipeline',
+    metadata: { ...metadata, ...chunk.metadata },
+    selected: true
+  }));
+  
+  // 3. 调用向量化适配器
+  const vectorizationResult = await this.adapter.vectorize(vectorItems, context.abortSignal);
+  
+  return {
+    success: true,
+    vectorized: processedChunks.length,
+    vectors: processedChunks,
+    source: source,
+    processingTime: processingTime
+  };
+}
+```
+
+### 4. 外挂任务与向量化系统的集成点
+
+#### 向量化适配器 (`src/infrastructure/api/VectorizationAdapter.js`)
+```javascript
+async vectorize(items, signal = null) {
+  // 1. 检查是否使用插件系统
+  if (this.pluginManager && this.settings.use_plugin_system) {
+    return await this.vectorizeWithPlugin(items, signal);
+  }
+  
+  // 2. 使用SillyTavern原生API
+  return await this.vectorizeViaSillyTavernAPI(items, signal);
+}
+
+async vectorizeViaSillyTavernAPI(items, signal) {
+  // 准备数据格式 - 实际向量化由 storageAdapter.insertVectorItems() 处理
+  const result = {
+    success: true,
+    items: items.map((item, index) => ({
+      text: item.text,
+      hash: item.hash || this.generateHash(item.text),
+      index: item.index !== undefined ? item.index : index,
+      metadata: {
+        ...(item.metadata || {}),
+        vectorization_source: source,
+        prepared_at: new Date().toISOString()
+      }
+    }))
+  };
+  
+  return result;
+}
+```
+
+#### 最终存储集成 (`src/infrastructure/storage/StorageAdapter.js`)
+```javascript
+async insertVectorItems(collectionId, items, signal = null, options = {}) {
+  const response = await fetch(`${this.baseUrl}/insert`, {
+    method: 'POST',
+    headers: this.getRequestHeaders(),
+    body: JSON.stringify({
+      ...this.getVectorsRequestBody(),
+      collectionId: collectionId,
+      items: items,
+      skipDeduplication: options.skipDeduplication || false,
+    }),
+    signal: signal,
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to insert vector items for collection ${collectionId}`);
+  }
+}
+```
+
+### 5. 外挂任务的生命周期管理
+
+#### 生命周期管理器 (`src/core/pipeline/LifecycleManager.js`)
+```javascript
+// 任务状态：registered → initialized → running → completed/failed
+async initializeProcessor(name, config = {}) {
+  const processorInfo = this.processors.get(name);
+  processorInfo.status = 'initializing';
+  
+  await processorInfo.processor.initialize(config);
+  processorInfo.status = 'initialized';
+  
+  this.eventBus.emit('lifecycle:processor-initialized', { name });
+}
+
+async startProcessor(name) {
+  const processorInfo = this.processors.get(name);
+  processorInfo.status = 'starting';
+  
+  if (typeof processorInfo.processor.start === 'function') {
+    await processorInfo.processor.start();
+  }
+  
+  processorInfo.status = 'running';
+  this.eventBus.emit('lifecycle:processor-started', { name });
+}
+```
+
+#### 外挂任务UI管理 (`src/ui/components/ExternalTaskUI.js`)
+```javascript
+// 外挂任务导入功能
+async handleImport() {
+  const sourceChatId = $('#source-chat-select').val();
+  const selectedTasks = $('.task-checkbox:checked').map((_, el) => el.value).get();
+  
+  // 复制任务到当前聊天
+  for (const taskId of selectedTasks) {
+    const sourceTask = sourceTasks.find(t => (t.taskId || t.id) === taskId);
+    const newTask = JSON.parse(JSON.stringify(sourceTask));
+    newTask.taskId = `task_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    if (!this.settings.vector_tasks[currentChatId]) {
+      this.settings.vector_tasks[currentChatId] = [];
+    }
+    this.settings.vector_tasks[currentChatId].push(newTask);
+  }
+  
+  // 保存设置
+  this.dependencies.saveSettingsDebounced();
+}
+```
+
+### 6. 关键业务逻辑特点
+
+#### 数据流向
+1. **内容提取** → ChatExtractor/FileExtractor/WorldInfoExtractor
+2. **文本处理** → VectorizationProcessor (分块、哈希生成)
+3. **向量化准备** → VectorizationAdapter (格式转换、配置验证)
+4. **向量存储** → StorageAdapter (调用SillyTavern API)
+5. **任务持久化** → 存储至 settings.vector_tasks[chatId]
+
+#### 去重机制
+- **文本级去重**: 基于哈希值检查已存在的向量
+- **任务级去重**: 基于任务ID防止重复创建
+- **跨聊天导入**: 支持跳过去重检查的选项
+
+#### 错误处理
+- **AbortController**: 支持任务取消
+- **重试机制**: 处理器级别的重启能力
+- **降级处理**: 管道失败时回退到旧实现
+

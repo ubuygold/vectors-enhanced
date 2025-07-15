@@ -708,8 +708,9 @@ export class SettingsManager {
    */
   async initializeExternalTaskUI() {
     try {
-      // 动态导入ExternalTaskUI
-      const { ExternalTaskUI } = await import('./components/ExternalTaskUI.js');
+      // 动态导入ExternalTaskUI - 使用完整路径解决模块加载问题
+      const modulePath = '/scripts/extensions/third-party/vectors-enhanced/src/ui/components/ExternalTaskUI.js';
+      const { ExternalTaskUI } = await import(modulePath);
       
       // 创建并初始化外挂任务UI
       const externalTaskUI = new ExternalTaskUI();
