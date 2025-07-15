@@ -1071,9 +1071,6 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
 
     // Generate task metadata
     let taskName = await generateTaskName(contentSettings, items);
-    if (isIncremental) {
-      taskName = '[增量] ' + taskName;
-    }
 
     // Set vectorization state
     isVectorizing = true;
@@ -1580,7 +1577,7 @@ function getProcessedItemIdentifiers(chatId) {
             if (task.type === 'external') {
                 continue;
             }
-            
+
             // Legacy tasks without actualProcessedItems - fallback to settings ranges
             const taskSettings = task.settings;
             if (taskSettings && taskSettings.chat && taskSettings.chat.enabled) {
@@ -2479,11 +2476,11 @@ const onChatEvent = debounce(async () => {
  */
 async function cleanupOrphanedExternalTasks(deletedChatId) {
   console.log(`Vectors: Cleaning up orphaned external tasks for deleted chat: ${deletedChatId}`);
-  
+
   // 扫描所有聊天的外挂任务
   for (const [chatId, tasks] of Object.entries(settings.vector_tasks)) {
     if (!tasks || !Array.isArray(tasks)) continue;
-    
+
     // 查找所有引用了被删除聊天的外挂任务
     let foundOrphaned = false;
     tasks.forEach(task => {
@@ -2498,7 +2495,7 @@ async function cleanupOrphanedExternalTasks(deletedChatId) {
         }
       }
     });
-    
+
     if (foundOrphaned) {
       // 保存更改
       Object.assign(extension_settings.vectors_enhanced, settings);
@@ -2514,17 +2511,17 @@ function cleanupInvalidChatIds() {
   if (!settings.vector_tasks) {
     return;
   }
-  
+
   let hasChanges = false;
   const invalidKeys = [];
-  
+
   for (const [chatId, tasks] of Object.entries(settings.vector_tasks)) {
     if (!chatId || chatId === 'null' || chatId === 'undefined' || chatId.trim() === '') {
       invalidKeys.push(chatId);
       hasChanges = true;
     }
   }
-  
+
   if (hasChanges) {
     console.warn('Vectors: Cleaning up invalid chat IDs:', invalidKeys);
     invalidKeys.forEach(key => {
@@ -2596,7 +2593,7 @@ jQuery(async () => {
 
   // 在设置加载后运行迁移
   migrateTagSettings();
-  
+
   // 清理无效的聊天ID
   cleanupInvalidChatIds();
 
@@ -2796,7 +2793,7 @@ jQuery(async () => {
   });
 
   // TaskManager removed - using legacy format only
-  
+
   // 添加全局处理函数作为后备
   window.handleExternalTaskImport = async () => {
     console.log('handleExternalTaskImport called');
@@ -2820,11 +2817,11 @@ jQuery(async () => {
       }
     }
   };
-  
-  
-  
-  
-  
+
+
+
+
+
   // 创建 ActionButtons 实例
   console.log('Vectors Enhanced: Creating ActionButtons...');
   const actionButtons = new ActionButtons({
@@ -2864,7 +2861,7 @@ jQuery(async () => {
   console.log('Vectors Enhanced: Initializing settings UI...');
   await settingsManager.initialize();
   console.log('Vectors Enhanced: Settings UI initialized');
-  
+
   // 保存全局引用
   globalSettingsManager = settingsManager;
 
@@ -2886,13 +2883,13 @@ jQuery(async () => {
   eventSource.on(event_types.MESSAGE_SWIPED, onChatEvent);
   eventSource.on(event_types.CHAT_DELETED, async chatId => {
     console.log(`Vectors: Cleaning up data for deleted chat: ${chatId}`);
-    
+
     // 清除内存缓存
     cachedVectors.delete(chatId);
-    
+
     // 获取要删除的任务
     const tasksToDelete = getChatTasks(chatId);
-    
+
     // 清理向量数据文件
     for (const task of tasksToDelete) {
       // 外挂任务不删除向量文件（向量文件属于源任务）
@@ -2900,7 +2897,7 @@ jQuery(async () => {
         console.log(`Vectors: Skipping external task ${task.taskId} - no vector data to delete`);
         continue;
       }
-      
+
       try {
         const collectionId = `${chatId}_${task.taskId}`;
         console.log(`Vectors: Deleting vector collection: ${collectionId}`);
@@ -2909,10 +2906,10 @@ jQuery(async () => {
         console.error(`Vectors: Failed to delete vector collection for task ${task.taskId}:`, error);
       }
     }
-    
+
     // 清理孤儿外挂任务
     await cleanupOrphanedExternalTasks(chatId);
-    
+
     // 删除任务元数据
     delete settings.vector_tasks[chatId];
     Object.assign(extension_settings.vectors_enhanced, settings);

@@ -295,10 +295,10 @@ export const MessageUI = {
     html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
     html += '<div class="preview-section-content">';
     if (grouped.chat && grouped.chat.length > 0) {
-      // Add floor info at the beginning of content
+      // Add floor info at the beginning of content with negative margins to break out of background
       const chatIndices = grouped.chat.map(item => item.metadata.index).sort((a, b) => a - b);
       const segments = this._identifyContinuousSegments(chatIndices);
-      html += `<div style="margin-bottom: 1rem;"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
+      html += `<div style="margin: -1rem -1rem 1rem -1rem; padding: 0.75rem 1rem; background: transparent; border-bottom: 1px solid var(--SmartThemeBorderColor);"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
       
       // Chat messages
       grouped.chat.forEach(item => {

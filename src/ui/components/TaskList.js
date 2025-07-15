@@ -66,8 +66,6 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
   tasks.forEach((task, index) => {
     const taskDiv = $('<div class="vector-enhanced-task-item"></div>');
 
-    const incrementalBadge = task.isIncremental ? '<span style="background: var(--SmartThemeQuoteColor); color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; margin-left: 0.5rem;">增量</span>' : '';
-
     // Generate smart task name if actualProcessedItems is available
     let displayName = task.name;
     if (task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
@@ -128,7 +126,7 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
                 <input type="checkbox" ${task.enabled ? 'checked' : ''} />
                 <div class="task-content">
                     <div class="task-name" title="${task.name}">
-                        <strong>${displayName}</strong>${incrementalBadge}
+                        <strong>${displayName}</strong>
                         <small class="task-info"> - ${new Date(task.timestamp).toLocaleString('zh-CN')}</small>
                     </div>
                     ${task.type === 'external' ? '<span class="external-task-badge" title="外挂任务">🔗</span>' : ''}
@@ -363,10 +361,10 @@ async function previewTaskContent(task) {
   html += `<div class="preview-section-title">聊天记录（${grouped.chat?.length || 0} 条消息）</div>`;
   html += '<div class="preview-section-content">';
   if (grouped.chat && grouped.chat.length > 0) {
-    // Add floor info at the beginning of content
+    // Add floor info at the beginning of content with negative margins to break out of background
     const chatIndices = grouped.chat.map(item => item.metadata.index).sort((a, b) => a - b);
     const segments = identifyContinuousSegments(chatIndices);
-    html += `<div style="margin-bottom: 1rem;"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
+    html += `<div style="margin: -1rem -1rem 1rem -1rem; padding: 0.75rem 1rem; background: transparent; border-bottom: 1px solid var(--SmartThemeBorderColor);"><strong style="color: var(--SmartThemeQuoteColor);">包含楼层：</strong>${segments.join(', ')}</div>`;
     
     // Check if raw content preview is enabled
     const showRawContent = $('#vectors_enhanced_preview_raw').prop('checked');
