@@ -434,65 +434,15 @@
             </small>
           </div>
           
-          <!-- Input Area -->
-          <div class="memory-input-section" style="margin-top: 10px;">
-            <label for="memory_input">
-              <small>输入消息:</small>
-            </label>
-            <textarea id="memory_input" 
-                     class="text_pole" 
-                     rows="4" 
-                     placeholder="在这里输入你想发送给AI的消息..."
-                     style="width: 100%; resize: vertical;"></textarea>
-          </div>
-          
-          <!-- System Prompt -->
-          <div class="memory-prompt-section" style="margin-top: 10px;">
-            <label for="memory_system_prompt">
-              <small>系统提示词 (可选):</small>
-            </label>
-            <textarea id="memory_system_prompt" 
-                     class="text_pole" 
-                     rows="3" 
-                     placeholder="设置AI的角色和行为，例如：你是一个友好的助手..."
-                     style="width: 100%; resize: vertical;"></textarea>
-          </div>
-          
-          <!-- Suffix Prompt -->
-          <div class="memory-suffix-section" style="margin-top: 10px;">
-            <label for="memory_suffix_prompt">
-              <small>尾部提示词 (可选):</small>
-            </label>
-            <textarea id="memory_suffix_prompt" 
-                     class="text_pole" 
-                     rows="2" 
-                     placeholder="会附加在用户输入后面，例如：请用中文回答..."
-                     style="width: 100%; resize: vertical;"></textarea>
-          </div>
-          
-          <!-- API Selection -->
+          <!-- API Selection (moved to top) -->
           <div class="memory-api-section" style="margin-top: 10px;">
             <label for="memory_api_source">
               <small>API 选择:</small>
             </label>
             <select id="memory_api_source" class="text_pole" style="width: 100%;">
-              <option value="main">主API (当前聊天API)</option>
               <option value="google">Google AI Studio</option>
               <option value="openai_compatible">OpenAI兼容格式</option>
             </select>
-            
-            <!-- Main API Settings (Read-only) -->
-            <div id="memory_main_settings" style="margin-top: 10px;">
-              <label for="memory_main_model">
-                <small>当前模型:</small>
-              </label>
-              <input id="memory_main_model" 
-                     type="text" 
-                     class="text_pole" 
-                     readonly 
-                     style="width: 100%; background-color: var(--black30a);"
-                     value="加载中..." />
-            </div>
             
             <!-- Google AI Studio Settings -->
             <div id="memory_google_settings" style="margin-top: 10px; display: none;">
@@ -508,21 +458,11 @@
               <label for="memory_google_model" style="margin-top: 5px;">
                 <small>模型名称:</small>
               </label>
-              <div style="display: flex; gap: 5px;">
-                <input id="memory_google_model" 
-                       type="text" 
-                       class="text_pole" 
-                       placeholder="gemini-pro" 
-                       value="gemini-pro" 
-                       style="flex: 1;" />
-                <select id="memory_google_model_preset" class="text_pole" style="width: auto;">
-                  <option value="">自定义</option>
-                  <option value="gemini-pro" selected>Gemini Pro</option>
-                  <option value="gemini-pro-vision">Gemini Pro Vision</option>
-                  <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro</option>
-                  <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash</option>
-                </select>
-              </div>
+              <input id="memory_google_model" 
+                     type="text" 
+                     class="text_pole" 
+                     placeholder="例如: gemini-pro, gemini-1.5-pro-latest" 
+                     style="width: 100%;" />
             </div>
             
             <!-- OpenAI Compatible Settings -->
@@ -551,33 +491,81 @@
               <input id="memory_openai_model" 
                      type="text" 
                      class="text_pole" 
-                     placeholder="gpt-3.5-turbo" 
-                     value="gpt-3.5-turbo" 
+                     placeholder="例如: gpt-3.5-turbo, gpt-4, claude-3-sonnet, deepseek-chat" 
                      style="width: 100%;" />
-              
-              <!-- Quick Model Selection -->
-              <div class="memory_model_presets" style="margin-top: 5px;">
-                <small>快速选择:</small>
-                <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px;">
-                  <button class="menu_button menu_button_icon" data-model="gpt-3.5-turbo" style="padding: 5px 10px;">
-                    <span>GPT-3.5</span>
-                  </button>
-                  <button class="menu_button menu_button_icon" data-model="gpt-4-turbo-preview" style="padding: 5px 10px;">
-                    <span>GPT-4 Turbo</span>
-                  </button>
-                  <button class="menu_button menu_button_icon" data-model="gpt-4" style="padding: 5px 10px;">
-                    <span>GPT-4</span>
-                  </button>
-                  <button class="menu_button menu_button_icon" data-model="claude-3-sonnet-20240229" style="padding: 5px 10px;">
-                    <span>Claude 3</span>
-                  </button>
-                  <button class="menu_button menu_button_icon" data-model="deepseek-chat" style="padding: 5px 10px;">
-                    <span>DeepSeek</span>
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
+          
+          <!-- Input Area -->
+          <div class="memory-input-section" style="margin-top: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+              <label for="memory_input">
+                <small>输入消息:</small>
+              </label>
+              <button id="memory_inject_content" 
+                      class="menu_button menu_button_icon" 
+                      title="将提取的内容注入到输入框"
+                      style="padding: 5px 10px; font-size: 0.9em;">
+                <i class="fa-solid fa-syringe"></i>
+                <span>注入提取内容</span>
+              </button>
+            </div>
+            <textarea id="memory_input" 
+                     class="text_pole" 
+                     rows="4" 
+                     placeholder="在这里输入你想发送给AI的消息..."
+                     style="width: 100%; resize: vertical;"></textarea>
+          </div>
+          
+          <!-- Prompts Section (collapsible) -->
+          <details style="margin-top: 10px;">
+            <summary style="cursor: pointer;">
+              <small><strong>提示词设置</strong></small>
+            </summary>
+            <div style="padding: 10px 0;">
+              <!-- System Prompt -->
+              <div class="memory-prompt-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                  <label for="memory_system_prompt">
+                    <small>系统提示词 (可选):</small>
+                  </label>
+                  <button id="memory_system_prompt_restore" 
+                          class="menu_button menu_button_icon" 
+                          title="恢复默认系统提示词"
+                          style="padding: 3px 8px; font-size: 0.8em;">
+                    <i class="fa-solid fa-undo"></i>
+                    <span>恢复默认</span>
+                  </button>
+                </div>
+                <textarea id="memory_system_prompt" 
+                         class="text_pole" 
+                         rows="3" 
+                         placeholder="设置AI的角色和行为，例如：你是一个友好的助手..."
+                         style="width: 100%; resize: vertical;"></textarea>
+              </div>
+              
+              <!-- Suffix Prompt -->
+              <div class="memory-suffix-section" style="margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                  <label for="memory_suffix_prompt">
+                    <small>尾部提示词 (可选):</small>
+                  </label>
+                  <button id="memory_suffix_prompt_restore" 
+                          class="menu_button menu_button_icon" 
+                          title="恢复默认尾部提示词"
+                          style="padding: 3px 8px; font-size: 0.8em;">
+                    <i class="fa-solid fa-undo"></i>
+                    <span>恢复默认</span>
+                  </button>
+                </div>
+                <textarea id="memory_suffix_prompt" 
+                         class="text_pole" 
+                         rows="2" 
+                         placeholder="会附加在用户输入后面，例如：请用中文回答..."
+                         style="width: 100%; resize: vertical;"></textarea>
+              </div>
+            </div>
+          </details>
           
           <!-- Send Button -->
           <div class="memory-actions" style="margin-top: 10px;">

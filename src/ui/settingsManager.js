@@ -655,8 +655,28 @@ export class SettingsManager {
    */
   updateAndSave() {
     const { extension_settings, saveSettingsDebounced } = this.dependencies;
-    Object.assign(extension_settings.vectors_enhanced, this.settings);
+    // 使用深度合并以保留嵌套对象
+    this.deepMerge(extension_settings.vectors_enhanced, this.settings);
     saveSettingsDebounced();
+  }
+  
+  /**
+   * 深度合并工具函数
+   */
+  deepMerge(target, source) {
+    for (const key in source) {
+      if (source.hasOwnProperty(key)) {
+        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+          if (!target[key] || typeof target[key] !== 'object') {
+            target[key] = {};
+          }
+          this.deepMerge(target[key], source[key]);
+        } else {
+          target[key] = source[key];
+        }
+      }
+    }
+    return target;
   }
 
   /**
@@ -685,12 +705,11 @@ export class SettingsManager {
    * 初始化记忆管理UI
    */
   async initializeMemoryUI() {
-    const { getContext, generateRaw, toastr } = this.dependencies;
+    const { getContext, toastr } = this.dependencies;
     
     // 创建记忆服务
     this.memoryService = new MemoryService({
       getContext,
-      generateRaw,
       eventBus,
       getRequestHeaders: this.dependencies.getRequestHeaders
     });
@@ -701,7 +720,9 @@ export class SettingsManager {
       toastr,
       eventBus,
       getContext,
-      oai_settings: this.dependencies.oai_settings
+      oai_settings: this.dependencies.oai_settings,
+      settings: this.settings, // 传入settings引用
+      saveSettingsDebounced: this.dependencies.saveSettingsDebounced // 传入保存函数
     });
     
     await this.memoryUI.init();

@@ -4,7 +4,6 @@
  */
 export class MemoryService {
     constructor(dependencies = {}) {
-        this.generateRaw = dependencies.generateRaw;
         this.getContext = dependencies.getContext;
         this.eventBus = dependencies.eventBus;
         this.getRequestHeaders = dependencies.getRequestHeaders;
@@ -27,6 +26,7 @@ export class MemoryService {
     async sendMessage(message, options = {}) {
         const {
             systemPrompt = '',
+            suffixPrompt = '', // 新增尾部提示词参数
             includeContext = true,
             apiSource = 'main',
             apiConfig = {}
@@ -51,25 +51,14 @@ export class MemoryService {
             let response;
             
             switch(apiSource) {
-                case 'main':
-                    // 使用主API（当前聊天API）
-                    response = await this.generateRaw(
-                        fullPrompt,
-                        '',           // negative_prompt
-                        false,        // quiet_prompt
-                        false,        // skipWIAN
-                        systemPrompt || '' // 使用传入的系统提示词
-                    );
-                    break;
-                    
                 case 'google':
                     // 调用Google AI Studio
-                    response = await this.callGoogleAPI(fullPrompt, systemPrompt, apiConfig);
+                    response = await this.callGoogleAPI(fullPrompt, systemPrompt, suffixPrompt, apiConfig);
                     break;
                     
                 case 'openai_compatible':
                     // 调用OpenAI兼容API
-                    response = await this.callOpenAICompatibleAPI(fullPrompt, systemPrompt, apiConfig);
+                    response = await this.callOpenAICompatibleAPI(fullPrompt, systemPrompt, suffixPrompt, apiConfig);
                     break;
                     
                 default:
@@ -243,10 +232,11 @@ export class MemoryService {
      * 调用Google AI Studio API
      * @param {string} prompt - 提示词
      * @param {string} systemPrompt - 系统提示词
+     * @param {string} suffixPrompt - 尾部提示词（assistant身份）
      * @param {Object} config - API配置
      * @returns {Promise<string>} AI响应
      */
-    async callGoogleAPI(prompt, systemPrompt, config) {
+    async callGoogleAPI(prompt, systemPrompt, suffixPrompt, config) {
         const { apiKey, model } = config;
         
         if (!apiKey) {
@@ -259,10 +249,10 @@ export class MemoryService {
         const url = `${baseUrl}/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
         
         try {
-            // 构建消息内容
+            // 构建消息内容 - 新的顺序
             const contents = [];
             
-            // 如果有系统提示词，添加为第一条消息
+            // 1. 系统提示词作为user消息
             if (systemPrompt) {
                 contents.push({
                     role: 'user',
@@ -270,11 +260,21 @@ export class MemoryService {
                 });
             }
             
-            // 添加用户消息
-            contents.push({
-                role: 'user',
-                parts: [{ text: prompt }]
-            });
+            // 2. 用户输入内容作为assistant/model消息
+            if (prompt) {
+                contents.push({
+                    role: 'model',
+                    parts: [{ text: prompt }]
+                });
+            }
+            
+            // 3. 尾部提示词作为user消息
+            if (suffixPrompt) {
+                contents.push({
+                    role: 'user',
+                    parts: [{ text: suffixPrompt }]
+                });
+            }
             
             const response = await fetch(url, {
                 method: 'POST',
@@ -303,6 +303,10 @@ export class MemoryService {
                         {
                             category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
                             threshold: 'BLOCK_NONE'
+                        },
+                        {
+                            category: 'HARM_CATEGORY_CIVIC_INTEGRITY',
+                            threshold: 'BLOCK_NONE'
                         }
                     ]
                 })
@@ -310,20 +314,74 @@ export class MemoryService {
             
             if (!response.ok) {
                 const error = await response.text();
+                console.error('[Google AI] API错误:', error);
                 throw new Error(`Google API错误: ${error}`);
             }
             
             const data = await response.json();
             
-            // 提取响应文本
-            if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
-                return data.candidates[0].content.parts[0].text;
+            // 检查是否被安全过滤阻止
+            if (data.promptFeedback?.blockReason) {
+                const blockReason = data.promptFeedback.blockReason;
+                console.error('[Google AI] 内容被安全过滤阻止:', blockReason);
+                
+                let errorMessage = 'Google AI 安全过滤: ';
+                switch (blockReason) {
+                    case 'PROHIBITED_CONTENT':
+                        errorMessage += '内容包含被禁止的内容';
+                        break;
+                    case 'BLOCKED_REASON_UNSPECIFIED':
+                        errorMessage += '内容被阻止（未指定原因）';
+                        break;
+                    case 'SAFETY':
+                        errorMessage += '内容违反安全政策';
+                        break;
+                    case 'OTHER':
+                        errorMessage += '其他原因';
+                        break;
+                    default:
+                        errorMessage += blockReason;
+                }
+                
+                throw new Error(errorMessage);
             }
             
-            throw new Error('无法从Google API响应中提取文本');
+            // 检查是否有候选响应
+            if (!data.candidates || data.candidates.length === 0) {
+                console.error('[Google AI] 没有候选响应:', data);
+                throw new Error('Google AI 没有返回任何响应');
+            }
+            
+            // 提取响应文本
+            const candidate = data.candidates[0];
+            
+            // 检查候选响应是否被过滤
+            if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
+                console.error('[Google AI] 响应被过滤:', candidate.finishReason);
+                throw new Error(`Google AI 响应被过滤: ${candidate.finishReason}`);
+            }
+            
+            // 尝试提取文本
+            let responseText = null;
+            
+            if (candidate.content?.parts?.[0]?.text) {
+                responseText = candidate.content.parts[0].text;
+            } else if (candidate.output) {
+                responseText = candidate.output;
+            } else if (candidate.text) {
+                responseText = candidate.text;
+            }
+            
+            if (responseText) {
+                return responseText;
+            }
+            
+            console.error('[Google AI] 无法提取文本，响应结构:', JSON.stringify(data, null, 2));
+            throw new Error('无法从Google AI响应中提取文本');
             
         } catch (error) {
-            console.error('Google API调用失败:', error);
+            console.error('[Google AI] 调用失败:', error.message);
+            console.error('[Google AI] 错误详情:', error);
             throw error;
         }
     }
@@ -332,10 +390,11 @@ export class MemoryService {
      * 调用OpenAI兼容API
      * @param {string} prompt - 提示词
      * @param {string} systemPrompt - 系统提示词
+     * @param {string} suffixPrompt - 尾部提示词（assistant身份）
      * @param {Object} config - API配置
      * @returns {Promise<string>} AI响应
      */
-    async callOpenAICompatibleAPI(prompt, systemPrompt, config) {
+    async callOpenAICompatibleAPI(prompt, systemPrompt, suffixPrompt, config) {
         const { url, apiKey, model } = config;
         
         if (!url || !apiKey) {
@@ -352,12 +411,23 @@ export class MemoryService {
         }
         
         try {
-            // 构建消息格式
+            // 构建消息格式 - 新的顺序
             const messages = [];
+            
+            // 1. 系统提示词作为user消息（OpenAI API中改为user角色）
             if (systemPrompt) {
-                messages.push({ role: 'system', content: systemPrompt });
+                messages.push({ role: 'user', content: systemPrompt });
             }
-            messages.push({ role: 'user', content: prompt });
+            
+            // 2. 用户输入内容作为assistant消息
+            if (prompt) {
+                messages.push({ role: 'assistant', content: prompt });
+            }
+            
+            // 3. 尾部提示词作为user消息
+            if (suffixPrompt) {
+                messages.push({ role: 'user', content: suffixPrompt });
+            }
             
             const response = await fetch(apiUrl, {
                 method: 'POST',
@@ -376,14 +446,18 @@ export class MemoryService {
             
             if (!response.ok) {
                 const error = await response.text();
+                console.error('[OpenAI] API错误:', error);
                 throw new Error(`OpenAI兼容API错误: ${error}`);
             }
             
             const data = await response.json();
-            return data.choices?.[0]?.message?.content || '';
+            
+            const content = data.choices?.[0]?.message?.content || '';
+            return content;
             
         } catch (error) {
-            console.error('OpenAI兼容API调用失败:', error);
+            console.error('[OpenAI] 调用失败:', error.message);
+            console.error('[OpenAI] 错误详情:', error);
             throw error;
         }
     }
