@@ -21,6 +21,8 @@ vectors-enhanced/
 │   │   │   ├── Vector.js       # 向量实体类 (新增)
 │   │   │   ├── Task.js         # 任务实体类 (新增)
 │   │   │   └── README.md
+│   │   ├── memory/     # 记忆管理模块 (memory分支新增)
+│   │   │   └── MemoryService.js # 记忆管理核心服务
 │   │   ├── extractors/ # 内容提取器 (新增)
 │   │   │   ├── IContentExtractor.js    # 提取器接口 (新增)
 │   │   │   ├── ChatExtractor.js        # 聊天消息提取器 (新增)
@@ -79,6 +81,7 @@ vectors-enhanced/
 │   │       ├── ProgressManager.js   # 进度管理器 (Phase 7.3 - 已完成)
 │   │       ├── NotificationManager.js # 通知管理器 (Phase 7.6 - 已完成)
 │   │       ├── ExternalTaskUI.js    # 外挂任务UI组件 (新增)
+│   │       ├── MemoryUI.js         # 记忆管理UI组件 (memory分支新增)
 │   │       └── README.md
 │   │   ├── EventManager.js      # UI事件协调器 (Phase 7.4 - 已完成)
 │   │   ├── StateManager.js      # UI状态管理器 (Phase 7.5 - 已完成)
@@ -109,6 +112,12 @@ vectors-enhanced/
 │   ├── analyzers/       # 分析工具
 │   ├── templates/       # UI模板
 │   └── tools/          # 辅助工具
+├── memory-architecture.md # Memory功能架构设计文档 (memory分支新增)
+├── memory-plugin-analysis.md # Memory插件分析报告 (memory分支新增)
+├── memory-plugin-deep-analysis.md # Memory插件深度分析 (memory分支新增)
+├── memory-plugin-ui-analysis.md # Memory插件UI分析 (memory分支新增)
+├── memory-to-vector-analysis.md # 摘要到向量化演进分析 (memory分支新增)
+├── implementation-recommendations.md # 实现建议文档 (memory分支新增)
 └── SuperAgent/         # 项目管理目录
     ├── tech-structure.md         # 技术栈说明
     ├── project-brief.md          # 项目简介
@@ -140,6 +149,14 @@ index.js
 目标架构（分层解耦）：
 应用层 → 核心层 → UI层 → 基础设施层
 详见架构深度分析总结部分
+
+Memory功能架构（memory分支）：
+MemoryUI
+├──> MemoryService (业务逻辑)
+│    ├──> generateRaw (AI通信)
+│    ├──> getContext (上下文)
+│    └──> EventBus (事件通信)
+└──> EventBus (UI事件监听)
 ```
 
 ## 模块描述
@@ -414,6 +431,40 @@ index.js
   - **FileExtractor.js**: 文件内容提取器，处理各种文件格式
   - **WorldInfoExtractor.js**: 世界信息提取器，按世界和条目组织内容
 
+### 记忆管理系统 (memory分支新增)
+- **src/core/memory/**: 记忆管理核心模块
+  - **MemoryService.js**: 记忆管理服务
+    - 处理与AI的对话交互
+    - 管理对话历史记录
+    - 提供上下文构建功能
+    - 支持历史导出（JSON/Text/Markdown）
+    - 发布事件通知UI更新
+- **src/ui/components/MemoryUI.js**: 记忆管理UI组件
+  - 纯UI逻辑，不含业务处理
+  - 通过事件监听更新显示
+  - 管理用户输入和参数设置
+  - 委托给MemoryService处理业务
+
+#### 记忆管理架构特点
+1. **分层设计**
+   - UI层：仅负责界面交互和显示
+   - 服务层：处理所有业务逻辑
+   - 基础设施层：提供API调用和事件通信
+
+2. **事件驱动**
+   - 使用EventBus进行组件间通信
+   - 支持的事件：
+     - `memory:message-start`: 消息发送开始
+     - `memory:message-complete`: 消息处理完成
+     - `memory:message-error`: 处理出错
+     - `memory:history-updated`: 历史更新
+
+3. **扩展性设计**
+   - 支持对话历史管理
+   - 可配置的生成参数
+   - 预留多轮对话接口
+   - 支持导入/导出功能
+
 ## 架构深度分析总结
 
 ### 核心架构设计模式
@@ -577,6 +628,11 @@ index.js
 3. **构建系统**: 完善webpack配置和生产环境优化
 4. **文档完善**: 创建用户指南和API文档
 5. **测试覆盖**: 添加单元测试和集成测试
+6. **记忆管理增强** (memory分支):
+   - 实现多轮对话上下文
+   - 添加记忆持久化存储
+   - 集成向量化记忆检索
+   - 实现记忆摘要功能
 
 ## 外挂任务系统深度分析
 

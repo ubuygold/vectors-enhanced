@@ -9,6 +9,8 @@ import { updateWorldInfoList } from './components/WorldInfoList.js';
 import { renderTagRulesUI } from './components/TagRulesEditor.js';
 import { updateTaskList } from './components/TaskList.js';
 import { MessageUI } from './components/MessageUI.js';
+import { MemoryUI } from './components/MemoryUI.js';
+import { MemoryService } from '../core/memory/MemoryService.js';
 import { 
   updateMasterSwitchState, 
   updateContentSelection,
@@ -16,6 +18,7 @@ import {
 } from './domUtils.js';
 import { updateChatSettings } from './components/ChatSettings.js';
 import { clearTagSuggestions } from './components/TagUI.js';
+import { eventBus } from '../infrastructure/events/eventBus.instance.js';
 
 /**
  * 设置管理器类
@@ -72,6 +75,9 @@ export class SettingsManager {
     
     // 初始化实验性设置
     this.initializeExperimentalSettings();
+    
+    // 初始化记忆管理UI
+    await this.initializeMemoryUI();
 
     // 初始化UI状态
     this.initializeUIState();
@@ -673,6 +679,32 @@ export class SettingsManager {
   async initializeTaskList() {
     const { getChatTasks, renameVectorTask, removeVectorTask } = this.dependencies;
     await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
+  }
+
+  /**
+   * 初始化记忆管理UI
+   */
+  async initializeMemoryUI() {
+    const { getContext, generateRaw, toastr } = this.dependencies;
+    
+    // 创建记忆服务
+    this.memoryService = new MemoryService({
+      getContext,
+      generateRaw,
+      eventBus,
+      getRequestHeaders: this.dependencies.getRequestHeaders
+    });
+    
+    // 创建并初始化MemoryUI组件
+    this.memoryUI = new MemoryUI({
+      memoryService: this.memoryService,
+      toastr,
+      eventBus,
+      getContext,
+      oai_settings: this.dependencies.oai_settings
+    });
+    
+    await this.memoryUI.init();
   }
   
   /**

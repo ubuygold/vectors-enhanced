@@ -1070,4 +1070,223 @@ $(document).on('click', '#vectors_import_external_task', async (e) => {
 
 **结果**: 成功更新了外挂任务相关的代码和文档，修复了角色名显示问题，完善了系统架构描述
 
-**解决方案**: 移除HTML中的内联事件处理器，完全依赖JavaScript的事件委托机制
+---
+## 迭代 #9
+**开始时间**: 2025-01-15 14:30
+**请求**: 分析SillyTavern的Memory插件，创建memory分支并实现基础的AI对话功能
+**响应**: 我将分析Memory插件并在vectors-enhanced中实现基础的记忆管理功能
+
+### 操作 9.1
+**时间**: 14:30:15
+**描述**: 创建memory分支
+**执行的命令**:
+```bash
+git checkout -b memory
+```
+**结果**: 成功切换到新分支 'memory'
+
+### 操作 9.2
+**时间**: 14:31:00
+**描述**: 分析Memory插件文件结构
+**分析的文件**:
+- `/mnt/e/Bar/SillyTavern/public/scripts/extensions/memory/manifest.json`
+- `/mnt/e/Bar/SillyTavern/public/scripts/extensions/memory/index.js`
+- `/mnt/e/Bar/SillyTavern/public/scripts/extensions/memory/settings.html`
+- `/mnt/e/Bar/SillyTavern/public/scripts/extensions/memory/style.css`
+
+### 操作 9.3
+**时间**: 14:32:00
+**描述**: 创建详细的分析报告
+**创建的文件**:
+- `memory-plugin-analysis.md`: Memory插件概述和功能分析
+- `memory-plugin-deep-analysis.md`: 内存管理机制和数据结构深度分析
+- `memory-plugin-ui-analysis.md`: UI组件与交互流程分析
+- `memory-to-vector-analysis.md`: 从摘要到向量化的演进分析
+- `implementation-recommendations.md`: Vector-Enhanced Memory实现建议
+
+### 操作 9.4
+**时间**: 14:35:00
+**描述**: 在settings-modular.html中添加记忆管理UI
+**修改文件 `settings-modular.html`**:
+```html
+<!-- Memory Management -->
+<div id="vectors_enhanced_memory" class="vectors-enhanced-section">
+  <details>
+    <summary><strong>记忆管理</strong></summary>
+    <div style="padding: 10px;">
+      <!-- Input Area -->
+      <textarea id="memory_input" placeholder="在这里输入你想发送给AI的消息..."></textarea>
+      
+      <!-- API Settings -->
+      <input id="memory_temperature" type="number" value="0.7" />
+      <input id="memory_max_tokens" type="number" value="500" />
+      
+      <!-- Send Button -->
+      <button id="memory_send_btn">发送</button>
+      
+      <!-- Output Area -->
+      <textarea id="memory_output" readonly placeholder="AI的回复将显示在这里..."></textarea>
+    </div>
+  </details>
+</div>
+```
+
+### 操作 9.5
+**时间**: 14:36:00
+**描述**: 创建MemoryUI组件
+**创建文件 `src/ui/components/MemoryUI.js`**:
+```javascript
+export class MemoryUI {
+    constructor(dependencies) {
+        this.getContext = dependencies.getContext;
+        this.generateRaw = dependencies.generateRaw;
+        this.toastr = dependencies.toastr;
+    }
+    
+    async handleSend() {
+        const input = $('#memory_input').val().trim();
+        const response = await this.generateRaw(input, '', false, false, '', maxTokens, temperature);
+        $('#memory_output').val(response);
+    }
+}
+```
+
+### 操作 9.6
+**时间**: 14:37:00
+**描述**: 集成MemoryUI到主系统
+**修改文件**:
+1. `src/ui/settingsManager.js`: 添加MemoryUI导入和初始化
+2. `index.js`: 添加generateRaw导入和传递给SettingsManager
+
+### 操作 9.7
+**时间**: 14:38:00
+**描述**: 更新项目架构文档
+**修改文件 `SuperAgent/Context/project-architecture.md`**:
+- 添加MemoryUI.js到UI组件列表
+- 标注为memory分支新增功能
+
+**结果**: 成功实现基础的AI对话功能，用户可以在插件中直接与当前AI进行对话测试
+
+### 操作 9.8
+**时间**: 14:40:00
+**描述**: 重构记忆管理架构，实现关注点分离
+**创建文件 `src/core/memory/MemoryService.js`**:
+- 将业务逻辑从UI层分离到服务层
+- 实现对话历史管理
+- 支持导出功能（JSON/Text/Markdown）
+- 使用事件驱动通信
+
+**修改文件 `src/ui/components/MemoryUI.js`**:
+- 重构为纯UI组件
+- 通过MemoryService处理业务逻辑
+- 监听事件更新显示
+
+**创建文件 `memory-architecture.md`**:
+- 详细说明分层架构设计
+- UI层、服务层、基础设施层职责
+- 事件驱动通信机制
+
+### 操作 9.9
+**时间**: 14:45:00
+**描述**: 添加系统提示词功能
+**修改文件 `settings-modular.html`**:
+```html
+<!-- System Prompt -->
+<div class="memory-prompt-section">
+  <textarea id="memory_system_prompt" placeholder="设置AI的角色和行为..."></textarea>
+  <button id="memory_prompt_presets">预设模板</button>
+  <button id="memory_prompt_clear">清除</button>
+</div>
+```
+
+**创建文件 `src/core/memory/PromptPresets.js`**:
+- 内置12种预设模板（默认、友好、专业、老师、程序员等）
+- 支持自定义预设的保存和删除
+- 本地存储持久化
+- 导入/导出功能
+
+**更新 `MemoryUI.js`**:
+- 添加预设选择对话框
+- 实现预设加载和清除功能
+- 系统提示词与服务集成
+
+**结果**: 成功添加了系统提示词功能，用户可以：
+1. 自定义AI的角色和行为
+2. 从12种预设模板中选择
+3. 保存自定义预设供将来使用
+4. 清除系统提示词恢复默认行为
+
+### 操作 9.10
+**时间**: 14:50:00
+**描述**: 简化系统提示词功能，移除预设模板
+**修改文件**:
+1. `settings-modular.html`: 移除预设按钮，只保留系统提示词输入框
+2. `MemoryUI.js`: 删除所有预设相关代码
+3. 删除 `PromptPresets.js` 文件
+
+---
+## 迭代 #10
+**开始时间**: 2025-07-16 10:00
+**请求**: 为记忆管理功能添加API选择功能，支持主API、Google AI Studio和OpenAI兼容格式
+**响应**: 我将为记忆管理功能添加多API支持
+
+### 操作 10.1
+**时间**: 10:01:00
+**描述**: 在settings-modular.html中添加API选择UI
+**修改文件 `settings-modular.html`**:
+- 在系统提示词和发送按钮之间添加API选择下拉框
+- 添加Google AI Studio设置区域（API Key和模型选择）
+- 添加OpenAI兼容格式设置区域（URL、API Key和模型）
+- 添加模型快速选择按钮
+
+### 操作 10.2
+**时间**: 10:05:00
+**描述**: 更新MemoryUI.js添加API切换逻辑
+**修改文件 `src/ui/components/MemoryUI.js`**:
+- 添加API配置对象
+- 实现API源切换处理
+- 添加Google模型预设选择
+- 添加OpenAI模型快速选择
+- 实现配置保存和加载
+- 添加密钥存储功能
+
+### 操作 10.3
+**时间**: 10:10:00
+**描述**: 更新MemoryService.js支持多API调用
+**修改文件 `src/core/memory/MemoryService.js`**:
+- 添加getRequestHeaders依赖
+- 实现callGoogleAPI方法（直接调用Google API）
+- 实现callOpenAICompatibleAPI方法（直接调用OpenAI兼容API）
+- 更新sendMessage方法支持apiSource和apiConfig参数
+
+### 操作 10.4
+**时间**: 10:15:00
+**描述**: 添加必要的依赖传递
+**修改文件**:
+1. `index.js`: 导入oai_settings并传递给settingsManager
+2. `src/ui/settingsManager.js`: 将getRequestHeaders和oai_settings传递给MemoryUI
+
+### 操作 10.5
+**时间**: 10:20:00
+**描述**: 修复Google API调用路径
+**修改文件 `src/core/memory/MemoryService.js`**:
+- 将Google API调用改为直接使用Google官方API而非SillyTavern代理
+- 使用正确的URL格式和参数
+- 添加安全设置以允许所有内容类型
+
+### 操作 10.6
+**时间**: 10:25:00
+**描述**: 更新项目架构文档
+**修改文件 `SuperAgent/Context/project-architecture.md`**:
+- 添加记忆管理系统的API支持说明
+- 更新Memory功能架构图
+- 添加多API调用的依赖关系
+
+**结果**: 成功实现了记忆管理功能的多API支持，用户可以：
+1. 使用主API（当前聊天使用的API）
+2. 使用Google AI Studio（需要配置API Key）
+3. 使用任何OpenAI兼容的API（需要配置URL和API Key）
+4. 为记忆功能选择不同的模型
+5. API密钥安全存储在SillyTavern的secrets系统中
+
+**结果**: 简化后的实现只包含一个系统提示词输入框，用户可以直接输入自定义的系统提示词来影响AI的行为

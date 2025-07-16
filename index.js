@@ -11,6 +11,7 @@ import {
   setExtensionPrompt,
   substituteParams,
   substituteParamsExtended,
+  generateRaw,
 } from '../../../../script.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource, getFileAttachment } from '../../../chats.js';
 import { debounce_timeout } from '../../../constants.js';
@@ -20,6 +21,7 @@ import {
   getContext,
   renderExtensionTemplateAsync,
 } from '../../../extensions.js';
+import { oai_settings } from '../../../openai.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../popup.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
@@ -2778,7 +2780,12 @@ jQuery(async () => {
     updateTaskList,  // 添加这个函数引用
     toggleMessageRangeVisibility,
     showTagExamples,
-    scanAndSuggestTags
+    scanAndSuggestTags,
+    getContext,
+    generateRaw,
+    toastr,
+    oai_settings,
+    getRequestHeaders
   });
 
   // TaskManager removed - using legacy format only
