@@ -3,6 +3,7 @@
  * 处理记忆管理的核心业务逻辑
  */
 import { chat_metadata, saveMetadata } from '../../../../../../../script.js';
+import { createWorldInfoEntry, saveWorldInfo } from '../../../../../../world-info.js';
 
 export class MemoryService {
     constructor(dependencies = {}) {
@@ -467,10 +468,11 @@ export class MemoryService {
 
 
     /**
-     * 创建世界书
+     * 创建世界书并添加总结条目
+     * @param {string} summaryContent - AI总结的内容（可选）
      * @returns {Promise<Object>} 创建结果
      */
-    async createWorldBook() {
+    async createWorldBook(summaryContent = null) {
         try {
             // 获取当前角色名称和时间
             let characterName = 'Unknown';
@@ -518,35 +520,79 @@ export class MemoryService {
             // 组合世界书名称（如果没有时间，只用角色名）
             const worldBookName = formattedDate ? `${characterName} ${formattedDate}` : characterName;
 
-            // 构建空的世界书数据
-            const worldBookData = {
-                entries: {}
-            };
+            // 先尝试获取现有的世界书
+            let worldBookData = null;
+            let isNewWorldBook = true; // 标记是否为新建世界书
+            
+            try {
+                const getResponse = await fetch('/api/worldinfo/get', {
+                    method: 'POST',
+                    headers: {
+                        ...(this.getRequestHeaders ? this.getRequestHeaders() : {}),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: worldBookName
+                    })
+                });
 
-            // 获取请求头
-            const headers = this.getRequestHeaders ? this.getRequestHeaders() : {};
-
-            // 使用edit API创建/更新世界书
-            const response = await fetch('/api/worldinfo/edit', {
-                method: 'POST',
-                headers: {
-                    ...headers,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    name: worldBookName,
-                    data: worldBookData
-                })
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`创建失败: ${errorText}`);
+                if (getResponse.ok) {
+                    worldBookData = await getResponse.json();
+                    isNewWorldBook = false; // 世界书已存在
+                    console.log('[MemoryService] 找到现有世界书:', worldBookName);
+                }
+            } catch (error) {
+                console.log('[MemoryService] 未找到现有世界书，将创建新的');
             }
 
-            await response.json();
+            // 如果没有找到现有世界书，创建新的
+            if (!worldBookData) {
+                worldBookData = {
+                    entries: {}
+                };
+            }
 
-            // 将新创建的世界书绑定为chat lore
+            // 如果提供了总结内容，添加新条目
+            if (summaryContent) {
+                // 获取当前AI回复的内容（从输出框获取）
+                const outputContent = $('#memory_output').val();
+                if (!outputContent || !outputContent.trim()) {
+                    throw new Error('没有可用的AI回复内容进行总结');
+                }
+
+                // 创建新条目
+                const newEntry = createWorldInfoEntry(worldBookName, worldBookData);
+                if (!newEntry) {
+                    throw new Error('创建世界书条目失败');
+                }
+
+                // 计算条目名称（总结1、总结2等）
+                const existingEntries = Object.values(worldBookData.entries);
+                const summaryEntries = existingEntries.filter(entry =>
+                    entry.comment && entry.comment.startsWith('总结')
+                );
+                const nextNumber = summaryEntries.length + 1;
+                const entryName = `总结${nextNumber}`;
+
+                // 设置条目内容
+                newEntry.comment = entryName;
+                newEntry.content = outputContent;  // 使用AI的回复内容
+                newEntry.key = [`${entryName}`];  // 设置关键词为条目名称
+                newEntry.addMemo = true;  // 显示备注
+                newEntry.constant = false; // 非常驻
+                newEntry.selective = true; // 设为选择性触发
+                newEntry.order = 100; // 默认顺序
+                newEntry.position = 0; // 默认位置
+                newEntry.probability = 100; // 触发概率100%
+                newEntry.useProbability = true;
+
+                console.log('[MemoryService] 创建新条目:', entryName);
+            }
+
+            // 保存世界书（创建或更新）
+            await saveWorldInfo(worldBookName, worldBookData, true);
+
+            // 将世界书绑定为chat lore
             if (chat_metadata && saveMetadata) {
                 // 设置chat metadata，使用正确的key名称
                 chat_metadata['world_info'] = worldBookName;
@@ -566,17 +612,27 @@ export class MemoryService {
             }
 
             // 发布事件通知创建成功
+            const eventSource = window.eventSource || this.dependencies.eventSource;
+            const event_types = window.event_types || this.dependencies.event_types;
+            if (eventSource && event_types) {
+                await eventSource.emit(event_types.WORLDINFO_UPDATED, worldBookName, worldBookData);
+            }
+
             this.eventBus?.emit('memory:worldbook-created', {
                 name: worldBookName,
                 data: worldBookData,
-                boundToChatLore: true
+                boundToChatLore: true,
+                newEntry: summaryContent ? true : false,
+                isNewWorldBook: isNewWorldBook
             });
 
             return {
                 success: true,
                 name: worldBookName,
                 data: worldBookData,
-                boundToChatLore: true
+                boundToChatLore: true,
+                newEntry: summaryContent ? true : false,
+                isNewWorldBook: isNewWorldBook
             };
 
         } catch (error) {

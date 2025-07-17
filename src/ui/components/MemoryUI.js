@@ -246,16 +246,37 @@ export class MemoryUI {
      */
     async createWorldBook() {
         try {
-            // 调用服务层方法创建世界书
-            const result = await this.memoryService.createWorldBook();
+            // 检查是否有AI回复内容
+            const outputContent = $('#memory_output').val();
+            const hasSummaryContent = outputContent && outputContent.trim();
+            
+            // 调用服务层方法创建世界书，传入总结标志
+            const result = await this.memoryService.createWorldBook(hasSummaryContent);
             
             if (result.success) {
-                // 根据是否绑定到chat lore显示不同的消息
-                if (result.boundToChatLore) {
-                    this.toastr?.success(`成功创建世界书: ${result.name}，并已绑定为当前聊天的知识库`);
+                // 根据不同操作构建不同的成功消息
+                let successMessage = '';
+                
+                if (result.isNewWorldBook) {
+                    // 新建世界书的情况
+                    successMessage = `成功创建世界书: ${result.name}`;
+                    if (result.newEntry) {
+                        successMessage += '，并添加了第一个总结条目';
+                    }
                 } else {
-                    this.toastr?.success(`成功创建世界书: ${result.name}`);
+                    // 世界书已存在的情况
+                    if (result.newEntry) {
+                        successMessage = `在世界书"${result.name}"中添加了新的总结条目`;
+                    } else {
+                        successMessage = `世界书"${result.name}"已存在`;
+                    }
                 }
+                
+                if (result.boundToChatLore) {
+                    successMessage += '，已绑定为当前聊天的知识库';
+                }
+                
+                this.toastr?.success(successMessage);
                 
                 // 触发世界书更新事件
                 if (this.eventSource && this.event_types) {
