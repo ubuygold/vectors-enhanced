@@ -722,10 +722,18 @@ export class SettingsManager {
       getContext,
       oai_settings: this.dependencies.oai_settings,
       settings: this.settings, // 传入settings引用
-      saveSettingsDebounced: this.dependencies.saveSettingsDebounced // 传入保存函数
+      saveSettingsDebounced: this.dependencies.saveSettingsDebounced, // 传入保存函数
+      setExtensionPrompt: this.dependencies.setExtensionPrompt, // 传入注入API
+      substituteParamsExtended: this.dependencies.substituteParamsExtended, // 传入模板替换API
+      generateRaw: this.dependencies.generateRaw, // 传入generateRaw API
+      eventSource: this.dependencies.eventSource || window.eventSource, // 传入eventSource
+      event_types: this.dependencies.event_types || window.event_types // 传入event_types
     });
     
     await this.memoryUI.init();
+    
+    // 将记忆服务实例暴露到全局，供注入钩子使用
+    window.memoryServiceInstance = this.memoryService;
   }
   
   /**

@@ -439,11 +439,20 @@ MemoryUI
     - 提供上下文构建功能
     - 支持历史导出（JSON/Text/Markdown）
     - 发布事件通知UI更新
+    - **新增注入功能**:
+      - getLatestMemoryForInjection(): 获取最新AI响应
+      - getFormattedMemoryHistory(): 格式化历史记录
+      - triggerMemoryInjection(): 触发记忆注入事件
 - **src/ui/components/MemoryUI.js**: 记忆管理UI组件
   - 纯UI逻辑，不含业务处理
   - 通过事件监听更新显示
   - 管理用户输入和参数设置
   - 委托给MemoryService处理业务
+  - **新增注入功能**:
+    - 注入设置UI控件（模板、位置、深度等）
+    - AI回复后显示"注入到聊天"按钮
+    - handleInjectToChat(): 处理注入操作
+    - 使用setExtensionPrompt API注入内容
 
 #### 记忆管理架构特点
 1. **分层设计**
@@ -458,12 +467,64 @@ MemoryUI
      - `memory:message-complete`: 消息处理完成
      - `memory:message-error`: 处理出错
      - `memory:history-updated`: 历史更新
+     - `memory:injection-ready`: 记忆准备注入
 
 3. **扩展性设计**
    - 支持对话历史管理
    - 可配置的生成参数
    - 预留多轮对话接口
    - 支持导入/导出功能
+   - 支持记忆内容注入到聊天
+
+### 记忆注入功能详解
+
+#### 功能概述
+记忆注入功能允许用户将AI生成的记忆/总结内容注入到当前聊天对话中，类似于向量注入功能。这使得AI可以在后续对话中参考之前生成的记忆内容。
+
+#### 注入配置结构
+```javascript
+injection: {
+    enabled: false,                    // 是否启用注入功能
+    template: '<memory_context>以下是AI助手的记忆和总结内容：\n{{text}}</memory_context>',
+    position: 2,                       // 注入位置: 0=主提示后, 1=聊天中, 2=主提示前
+    depth: 2,                         // 聊天中注入时的深度
+    depth_role: 0,                    // 角色: 0=System, 1=User, 2=Assistant
+    include_wi: false                 // 是否包含在WI扫描中
+}
+```
+
+#### 实现细节
+
+1. **UI层实现** (MemoryUI.js)
+   - 添加了完整的注入设置UI控件
+   - 支持启用/禁用注入功能
+   - 可自定义注入模板（使用{{text}}占位符）
+   - 三种注入位置可选
+   - 聊天中注入时支持深度和角色设置
+   - AI回复后自动显示"注入到聊天"按钮
+
+2. **服务层实现** (MemoryService.js)
+   - getLatestMemoryForInjection(): 获取最新的AI响应内容
+   - getFormattedMemoryHistory(): 格式化多条历史记录
+   - triggerMemoryInjection(): 触发注入事件（预留接口）
+
+3. **API集成**
+   - 使用SillyTavern的setExtensionPrompt API进行注入
+   - 使用substituteParamsExtended处理模板替换
+   - 通过依赖注入传递API函数引用
+
+4. **设置持久化**
+   - 注入配置保存在extension_settings中
+   - 与其他记忆设置一起管理
+   - 支持默认值和用户自定义
+
+#### 使用流程
+1. 用户在记忆管理界面启用注入功能
+2. 配置注入模板和位置等参数
+3. 发送消息给AI并获得回复
+4. 点击"注入到聊天"按钮
+5. 记忆内容按照配置注入到聊天提示中
+6. 后续对话中AI可以参考注入的记忆内容
 
 ## 架构深度分析总结
 

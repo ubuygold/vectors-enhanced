@@ -268,10 +268,10 @@ export class MemoryService {
                 });
             }
             
-            // 3. 尾部提示词作为user消息
+            // 3. 尾部提示词作为model消息
             if (suffixPrompt) {
                 contents.push({
-                    role: 'user',
+                    role: 'model',
                     parts: [{ text: suffixPrompt }]
                 });
             }
@@ -424,9 +424,9 @@ export class MemoryService {
                 messages.push({ role: 'assistant', content: prompt });
             }
             
-            // 3. 尾部提示词作为user消息
+            // 3. 尾部提示词作为assistant消息
             if (suffixPrompt) {
-                messages.push({ role: 'user', content: suffixPrompt });
+                messages.push({ role: 'assistant', content: suffixPrompt });
             }
             
             const response = await fetch(apiUrl, {
@@ -459,6 +459,135 @@ export class MemoryService {
             console.error('[OpenAI] 调用失败:', error.message);
             console.error('[OpenAI] 错误详情:', error);
             throw error;
+        }
+    }
+
+    /**
+     * 获取最新的记忆内容用于注入
+     * @returns {string} 最新的AI响应内容
+     */
+    getLatestMemoryForInjection() {
+        if (this.conversationHistory.length === 0) {
+            return '';
+        }
+        
+        // 获取最新的AI响应
+        const latestEntry = this.conversationHistory[this.conversationHistory.length - 1];
+        return latestEntry.aiResponse || '';
+    }
+
+    /**
+     * 获取格式化的记忆历史用于注入
+     * @param {number} limit - 要包含的历史条目数量
+     * @returns {string} 格式化的历史记录
+     */
+    getFormattedMemoryHistory(limit = 5) {
+        if (this.conversationHistory.length === 0) {
+            return '';
+        }
+        
+        // 获取最近的历史记录
+        const recentHistory = this.conversationHistory.slice(-limit);
+        
+        // 格式化历史记录
+        const formattedHistory = recentHistory.map((entry, index) => {
+            return `[记忆 ${index + 1}]\n用户: ${entry.userMessage}\nAI: ${entry.aiResponse}`;
+        }).join('\n\n');
+        
+        return formattedHistory;
+    }
+
+    /**
+     * 触发记忆注入
+     * @param {Object} injectionConfig - 注入配置
+     */
+    async triggerMemoryInjection(injectionConfig) {
+        if (!injectionConfig?.enabled) {
+            return;
+        }
+
+        try {
+            // 获取记忆内容
+            const memoryContent = this.getLatestMemoryForInjection();
+            
+            if (!memoryContent) {
+                console.log('[MemoryService] 没有可注入的记忆内容');
+                return;
+            }
+
+            // 发布记忆注入事件
+            this.eventBus?.emit('memory:injection-ready', {
+                content: memoryContent,
+                config: injectionConfig,
+                timestamp: Date.now()
+            });
+
+            console.log('[MemoryService] 记忆注入事件已发布');
+        } catch (error) {
+            console.error('[MemoryService] 触发记忆注入失败:', error);
+        }
+    }
+
+    /**
+     * 在聊天时执行记忆注入（类似向量的 rearrangeChat）
+     * @param {Object} setExtensionPrompt - 注入API函数
+     * @param {Object} substituteParamsExtended - 模板替换函数
+     * @param {Object} settings - 记忆设置
+     * @param {string} type - 生成类型
+     */
+    performMemoryInjection(setExtensionPrompt, substituteParamsExtended, settings, type) {
+        try {
+            // 如果是quiet模式，跳过
+            if (type === 'quiet') {
+                console.debug('Memory: Skipping quiet prompt');
+                return;
+            }
+
+            // 先清除之前的注入
+            const MEMORY_EXTENSION_TAG = '4_memory';
+            const injectionConfig = settings?.memory?.injection || {};
+            
+            setExtensionPrompt(
+                MEMORY_EXTENSION_TAG,
+                '',
+                injectionConfig.position || 2,
+                injectionConfig.depth || 2,
+                injectionConfig.include_wi || false,
+                injectionConfig.depth_role || 0
+            );
+
+            // 检查是否启用注入
+            if (!injectionConfig.enabled) {
+                console.debug('Memory: Injection disabled');
+                return;
+            }
+
+            // 获取最新的记忆内容
+            const memoryContent = this.getLatestMemoryForInjection();
+            if (!memoryContent) {
+                console.debug('Memory: No memory content to inject');
+                return;
+            }
+
+            // 使用模板格式化内容
+            const insertedText = substituteParamsExtended(
+                injectionConfig.template || '<memory_context>以下是AI助手的记忆和总结内容：\n{{text}}</memory_context>',
+                { text: memoryContent }
+            );
+
+            // 执行注入
+            setExtensionPrompt(
+                MEMORY_EXTENSION_TAG,
+                insertedText,
+                injectionConfig.position || 2,
+                injectionConfig.depth || 2,
+                injectionConfig.include_wi || false,
+                injectionConfig.depth_role || 0
+            );
+
+            console.log('[MemoryService] 记忆内容已自动注入，长度:', insertedText.length);
+        } catch (error) {
+            console.error('[MemoryService] 自动注入失败:', error);
         }
     }
 }

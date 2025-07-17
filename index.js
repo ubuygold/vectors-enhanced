@@ -79,6 +79,7 @@ import { eventBus } from './src/infrastructure/events/eventBus.instance.js';
 const MODULE_NAME = 'vectors-enhanced';
 
 export const EXTENSION_PROMPT_TAG = '3_vectors';
+export const MEMORY_EXTENSION_TAG = '4_memory';
 
 
 // Global ActionButtons instance (initialized in jQuery ready)
@@ -2422,6 +2423,35 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
 window['vectors_rearrangeChat'] = rearrangeChat;
 
+/**
+ * Memory injection hook for chat generation
+ * @param {object[]} chat - Chat messages (unused, for compatibility)
+ * @param {number} contextSize - Context size (unused, for compatibility)
+ * @param {function} abort - Abort function (unused, for compatibility)
+ * @param {string} type - Generation type
+ */
+async function memoryRearrangeChat(chat, contextSize, abort, type) {
+  try {
+    // 如果没有记忆服务实例，跳过
+    if (!window.memoryServiceInstance) {
+      console.debug('Memory: Service not initialized');
+      return;
+    }
+
+    // 调用记忆服务的注入方法
+    window.memoryServiceInstance.performMemoryInjection(
+      setExtensionPrompt,
+      substituteParamsExtended,
+      settings,
+      type
+    );
+  } catch (error) {
+    console.error('Memory: Injection failed:', error);
+  }
+}
+
+window['memory_rearrangeChat'] = memoryRearrangeChat;
+
 
 
 /**
@@ -2807,12 +2837,16 @@ jQuery(async () => {
     updateTaskList,  // 添加这个函数引用
     toggleMessageRangeVisibility,
     showTagExamples,
+    setExtensionPrompt,  // 添加注入API
+    substituteParamsExtended,  // 添加模板替换API
     scanAndSuggestTags,
     getContext,
     generateRaw,
     toastr,
     oai_settings,
-    getRequestHeaders
+    getRequestHeaders,
+    eventSource,  // 添加eventSource
+    event_types   // 添加event_types
   });
 
   // TaskManager removed - using legacy format only
