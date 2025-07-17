@@ -2,15 +2,18 @@
  * Memory Service
  * 处理记忆管理的核心业务逻辑
  */
+import { chat_metadata, saveMetadata } from '../../../../../../../script.js';
+
 export class MemoryService {
     constructor(dependencies = {}) {
         this.getContext = dependencies.getContext;
         this.eventBus = dependencies.eventBus;
         this.getRequestHeaders = dependencies.getRequestHeaders;
-        
+        this.dependencies = dependencies; // 保存所有依赖
+
         // 对话历史
         this.conversationHistory = [];
-        
+
         // 配置
         this.config = {
             maxHistoryLength: 50
@@ -43,24 +46,24 @@ export class MemoryService {
             }
 
             // 构建完整的提示词（可以包含历史记录）
-            const fullPrompt = includeContext 
+            const fullPrompt = includeContext
                 ? this.buildContextualPrompt(message)
                 : message;
 
             // 根据API源调用不同的生成方法
             let response;
-            
+
             switch(apiSource) {
                 case 'google':
                     // 调用Google AI Studio
                     response = await this.callGoogleAPI(fullPrompt, systemPrompt, suffixPrompt, apiConfig);
                     break;
-                    
+
                 case 'openai_compatible':
                     // 调用OpenAI兼容API
                     response = await this.callOpenAICompatibleAPI(fullPrompt, systemPrompt, suffixPrompt, apiConfig);
                     break;
-                    
+
                 default:
                     throw new Error(`不支持的API源: ${apiSource}`);
             }
@@ -81,10 +84,10 @@ export class MemoryService {
             this.addToHistory(historyEntry);
 
             // 发布完成事件
-            this.eventBus?.emit('memory:message-complete', { 
-                message, 
-                response, 
-                historyEntry 
+            this.eventBus?.emit('memory:message-complete', {
+                message,
+                response,
+                historyEntry
             });
 
             return {
@@ -96,7 +99,7 @@ export class MemoryService {
         } catch (error) {
             // 发布错误事件
             this.eventBus?.emit('memory:message-error', { message, error });
-            
+
             throw error;
         }
     }
@@ -117,15 +120,15 @@ export class MemoryService {
      */
     addToHistory(entry) {
         this.conversationHistory.push(entry);
-        
+
         // 限制历史长度
         if (this.conversationHistory.length > this.config.maxHistoryLength) {
             this.conversationHistory.shift();
         }
 
         // 发布历史更新事件
-        this.eventBus?.emit('memory:history-updated', { 
-            history: this.conversationHistory 
+        this.eventBus?.emit('memory:history-updated', {
+            history: this.conversationHistory
         });
     }
 
@@ -189,21 +192,21 @@ export class MemoryService {
         switch (format) {
             case 'json':
                 return JSON.stringify(this.conversationHistory, null, 2);
-            
+
             case 'text':
-                return this.conversationHistory.map(entry => 
+                return this.conversationHistory.map(entry =>
                     `[${new Date(entry.timestamp).toLocaleString()}]\n` +
                     `User: ${entry.userMessage}\n` +
                     `AI: ${entry.aiResponse}\n`
                 ).join('\n---\n\n');
-            
+
             case 'markdown':
-                return this.conversationHistory.map(entry => 
+                return this.conversationHistory.map(entry =>
                     `## ${new Date(entry.timestamp).toLocaleString()}\n\n` +
                     `**User**: ${entry.userMessage}\n\n` +
                     `**AI**: ${entry.aiResponse}\n`
                 ).join('\n\n---\n\n');
-            
+
             default:
                 throw new Error(`不支持的导出格式: ${format}`);
         }
@@ -227,7 +230,7 @@ export class MemoryService {
             ...newConfig
         };
     }
-    
+
     /**
      * 调用Google AI Studio API
      * @param {string} prompt - 提示词
@@ -238,20 +241,20 @@ export class MemoryService {
      */
     async callGoogleAPI(prompt, systemPrompt, suffixPrompt, config) {
         const { apiKey, model } = config;
-        
+
         if (!apiKey) {
             throw new Error('请先配置Google AI API Key');
         }
-        
+
         const baseUrl = 'https://generativelanguage.googleapis.com';
         const apiVersion = 'v1beta';
         const modelName = model || 'gemini-pro';
         const url = `${baseUrl}/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
-        
+
         try {
             // 构建消息内容 - 新的顺序
             const contents = [];
-            
+
             // 1. 系统提示词作为user消息
             if (systemPrompt) {
                 contents.push({
@@ -259,7 +262,7 @@ export class MemoryService {
                     parts: [{ text: systemPrompt }]
                 });
             }
-            
+
             // 2. 用户输入内容作为assistant/model消息
             if (prompt) {
                 contents.push({
@@ -267,7 +270,7 @@ export class MemoryService {
                     parts: [{ text: prompt }]
                 });
             }
-            
+
             // 3. 尾部提示词作为model消息
             if (suffixPrompt) {
                 contents.push({
@@ -275,7 +278,7 @@ export class MemoryService {
                     parts: [{ text: suffixPrompt }]
                 });
             }
-            
+
             const response = await fetch(url, {
                 method: 'POST',
                 headers: {
@@ -311,20 +314,20 @@ export class MemoryService {
                     ]
                 })
             });
-            
+
             if (!response.ok) {
                 const error = await response.text();
                 console.error('[Google AI] API错误:', error);
                 throw new Error(`Google API错误: ${error}`);
             }
-            
+
             const data = await response.json();
-            
+
             // 检查是否被安全过滤阻止
             if (data.promptFeedback?.blockReason) {
                 const blockReason = data.promptFeedback.blockReason;
                 console.error('[Google AI] 内容被安全过滤阻止:', blockReason);
-                
+
                 let errorMessage = 'Google AI 安全过滤: ';
                 switch (blockReason) {
                     case 'PROHIBITED_CONTENT':
@@ -342,28 +345,28 @@ export class MemoryService {
                     default:
                         errorMessage += blockReason;
                 }
-                
+
                 throw new Error(errorMessage);
             }
-            
+
             // 检查是否有候选响应
             if (!data.candidates || data.candidates.length === 0) {
                 console.error('[Google AI] 没有候选响应:', data);
                 throw new Error('Google AI 没有返回任何响应');
             }
-            
+
             // 提取响应文本
             const candidate = data.candidates[0];
-            
+
             // 检查候选响应是否被过滤
             if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
                 console.error('[Google AI] 响应被过滤:', candidate.finishReason);
                 throw new Error(`Google AI 响应被过滤: ${candidate.finishReason}`);
             }
-            
+
             // 尝试提取文本
             let responseText = null;
-            
+
             if (candidate.content?.parts?.[0]?.text) {
                 responseText = candidate.content.parts[0].text;
             } else if (candidate.output) {
@@ -371,21 +374,21 @@ export class MemoryService {
             } else if (candidate.text) {
                 responseText = candidate.text;
             }
-            
+
             if (responseText) {
                 return responseText;
             }
-            
+
             console.error('[Google AI] 无法提取文本，响应结构:', JSON.stringify(data, null, 2));
             throw new Error('无法从Google AI响应中提取文本');
-            
+
         } catch (error) {
             console.error('[Google AI] 调用失败:', error.message);
             console.error('[Google AI] 错误详情:', error);
             throw error;
         }
     }
-    
+
     /**
      * 调用OpenAI兼容API
      * @param {string} prompt - 提示词
@@ -396,11 +399,11 @@ export class MemoryService {
      */
     async callOpenAICompatibleAPI(prompt, systemPrompt, suffixPrompt, config) {
         const { url, apiKey, model } = config;
-        
+
         if (!url || !apiKey) {
             throw new Error('请先配置API端点和密钥');
         }
-        
+
         // 确保URL以/v1/chat/completions结尾
         let apiUrl = url.trim();
         if (!apiUrl.endsWith('/chat/completions')) {
@@ -409,26 +412,26 @@ export class MemoryService {
             }
             apiUrl = apiUrl + '/chat/completions';
         }
-        
+
         try {
             // 构建消息格式 - 新的顺序
             const messages = [];
-            
+
             // 1. 系统提示词作为user消息（OpenAI API中改为user角色）
             if (systemPrompt) {
                 messages.push({ role: 'user', content: systemPrompt });
             }
-            
+
             // 2. 用户输入内容作为assistant消息
             if (prompt) {
                 messages.push({ role: 'assistant', content: prompt });
             }
-            
+
             // 3. 尾部提示词作为assistant消息
             if (suffixPrompt) {
                 messages.push({ role: 'assistant', content: suffixPrompt });
             }
-            
+
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
@@ -443,18 +446,18 @@ export class MemoryService {
                     stream: false
                 })
             });
-            
+
             if (!response.ok) {
                 const error = await response.text();
                 console.error('[OpenAI] API错误:', error);
                 throw new Error(`OpenAI兼容API错误: ${error}`);
             }
-            
+
             const data = await response.json();
-            
+
             const content = data.choices?.[0]?.message?.content || '';
             return content;
-            
+
         } catch (error) {
             console.error('[OpenAI] 调用失败:', error.message);
             console.error('[OpenAI] 错误详情:', error);
@@ -462,132 +465,123 @@ export class MemoryService {
         }
     }
 
-    /**
-     * 获取最新的记忆内容用于注入
-     * @returns {string} 最新的AI响应内容
-     */
-    getLatestMemoryForInjection() {
-        if (this.conversationHistory.length === 0) {
-            return '';
-        }
-        
-        // 获取最新的AI响应
-        const latestEntry = this.conversationHistory[this.conversationHistory.length - 1];
-        return latestEntry.aiResponse || '';
-    }
 
     /**
-     * 获取格式化的记忆历史用于注入
-     * @param {number} limit - 要包含的历史条目数量
-     * @returns {string} 格式化的历史记录
+     * 创建世界书
+     * @returns {Promise<Object>} 创建结果
      */
-    getFormattedMemoryHistory(limit = 5) {
-        if (this.conversationHistory.length === 0) {
-            return '';
-        }
-        
-        // 获取最近的历史记录
-        const recentHistory = this.conversationHistory.slice(-limit);
-        
-        // 格式化历史记录
-        const formattedHistory = recentHistory.map((entry, index) => {
-            return `[记忆 ${index + 1}]\n用户: ${entry.userMessage}\nAI: ${entry.aiResponse}`;
-        }).join('\n\n');
-        
-        return formattedHistory;
-    }
-
-    /**
-     * 触发记忆注入
-     * @param {Object} injectionConfig - 注入配置
-     */
-    async triggerMemoryInjection(injectionConfig) {
-        if (!injectionConfig?.enabled) {
-            return;
-        }
-
+    async createWorldBook() {
         try {
-            // 获取记忆内容
-            const memoryContent = this.getLatestMemoryForInjection();
-            
-            if (!memoryContent) {
-                console.log('[MemoryService] 没有可注入的记忆内容');
-                return;
+            // 获取当前角色名称和时间
+            let characterName = 'Unknown';
+            let formattedDate = '';
+
+            try {
+                // 获取当前上下文
+                const context = this.getContext ? this.getContext() : window.getContext?.();
+
+                if (context) {
+                    // 优先使用 name2 (显示名称)，其次使用 name
+                    characterName = context.name2 || context.name || 'Unknown';
+
+                    // 从 chatId 中提取时间
+                    if (context.chatId) {
+                        // chatId 格式: "角色名 - 2025-07-16@02h30m11s" 或 "2025-7-9 @20h 26m 15s 653ms"
+                        const parts = context.chatId.split(' - ');
+
+                        // 如果分割成功且有角色名部分
+                        if (parts.length > 1 && characterName === 'Unknown') {
+                            characterName = parts[0];
+                        }
+
+                        // 获取时间戳部分
+                        const timestampString = parts.length > 1 ? parts[1] : parts[0];
+
+                        try {
+                            // 解析时间戳
+                            const dateTimeMatch = timestampString.match(/(\d{4})-(\d{1,2})-(\d{1,2})\s*@?\s*(\d{1,2})h\s*(\d{1,2})m/);
+
+                            if (dateTimeMatch) {
+                                const [, yearFull, month, day, hours, minutes] = dateTimeMatch;
+                                const year = yearFull.slice(2); // 取后两位
+                                formattedDate = `${year}${month.padStart(2, '0')}${day.padStart(2, '0')} ${hours.padStart(2, '0')}${minutes.padStart(2, '0')}`;
+                            }
+                        } catch (e) {
+                            // 解析失败时静默处理
+                        }
+                    }
+                }
+            } catch (error) {
+                // 获取角色名称失败时静默处理
             }
 
-            // 发布记忆注入事件
-            this.eventBus?.emit('memory:injection-ready', {
-                content: memoryContent,
-                config: injectionConfig,
-                timestamp: Date.now()
+            // 组合世界书名称（如果没有时间，只用角色名）
+            const worldBookName = formattedDate ? `${characterName} ${formattedDate}` : characterName;
+
+            // 构建空的世界书数据
+            const worldBookData = {
+                entries: {}
+            };
+
+            // 获取请求头
+            const headers = this.getRequestHeaders ? this.getRequestHeaders() : {};
+
+            // 使用edit API创建/更新世界书
+            const response = await fetch('/api/worldinfo/edit', {
+                method: 'POST',
+                headers: {
+                    ...headers,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: worldBookName,
+                    data: worldBookData
+                })
             });
 
-            console.log('[MemoryService] 记忆注入事件已发布');
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`创建失败: ${errorText}`);
+            }
+
+            await response.json();
+
+            // 将新创建的世界书绑定为chat lore
+            if (chat_metadata && saveMetadata) {
+                // 设置chat metadata，使用正确的key名称
+                chat_metadata['world_info'] = worldBookName;
+
+                // 保存metadata
+                await saveMetadata();
+
+                // 更新UI按钮状态
+                const $ = window.$;
+                if ($) {
+                    $('.chat_lorebook_button').addClass('world_set');
+                }
+
+                console.log('[MemoryService] 世界书已绑定为chat lore:', worldBookName);
+            } else {
+                console.warn('[MemoryService] chat_metadata 或 saveMetadata 不可用，无法绑定世界书为chat lore');
+            }
+
+            // 发布事件通知创建成功
+            this.eventBus?.emit('memory:worldbook-created', {
+                name: worldBookName,
+                data: worldBookData,
+                boundToChatLore: true
+            });
+
+            return {
+                success: true,
+                name: worldBookName,
+                data: worldBookData,
+                boundToChatLore: true
+            };
+
         } catch (error) {
-            console.error('[MemoryService] 触发记忆注入失败:', error);
-        }
-    }
-
-    /**
-     * 在聊天时执行记忆注入（类似向量的 rearrangeChat）
-     * @param {Object} setExtensionPrompt - 注入API函数
-     * @param {Object} substituteParamsExtended - 模板替换函数
-     * @param {Object} settings - 记忆设置
-     * @param {string} type - 生成类型
-     */
-    performMemoryInjection(setExtensionPrompt, substituteParamsExtended, settings, type) {
-        try {
-            // 如果是quiet模式，跳过
-            if (type === 'quiet') {
-                console.debug('Memory: Skipping quiet prompt');
-                return;
-            }
-
-            // 先清除之前的注入
-            const MEMORY_EXTENSION_TAG = '4_memory';
-            const injectionConfig = settings?.memory?.injection || {};
-            
-            setExtensionPrompt(
-                MEMORY_EXTENSION_TAG,
-                '',
-                injectionConfig.position || 2,
-                injectionConfig.depth || 2,
-                injectionConfig.include_wi || false,
-                injectionConfig.depth_role || 0
-            );
-
-            // 检查是否启用注入
-            if (!injectionConfig.enabled) {
-                console.debug('Memory: Injection disabled');
-                return;
-            }
-
-            // 获取最新的记忆内容
-            const memoryContent = this.getLatestMemoryForInjection();
-            if (!memoryContent) {
-                console.debug('Memory: No memory content to inject');
-                return;
-            }
-
-            // 使用模板格式化内容
-            const insertedText = substituteParamsExtended(
-                injectionConfig.template || '<memory_context>以下是AI助手的记忆和总结内容：\n{{text}}</memory_context>',
-                { text: memoryContent }
-            );
-
-            // 执行注入
-            setExtensionPrompt(
-                MEMORY_EXTENSION_TAG,
-                insertedText,
-                injectionConfig.position || 2,
-                injectionConfig.depth || 2,
-                injectionConfig.include_wi || false,
-                injectionConfig.depth_role || 0
-            );
-
-            console.log('[MemoryService] 记忆内容已自动注入，长度:', insertedText.length);
-        } catch (error) {
-            console.error('[MemoryService] 自动注入失败:', error);
+            console.error('[MemoryService] 创建世界书失败:', error);
+            throw error;
         }
     }
 }

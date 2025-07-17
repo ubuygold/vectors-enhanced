@@ -731,9 +731,6 @@ export class SettingsManager {
     });
     
     await this.memoryUI.init();
-    
-    // 将记忆服务实例暴露到全局，供注入钩子使用
-    window.memoryServiceInstance = this.memoryService;
   }
   
   /**

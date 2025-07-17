@@ -2423,34 +2423,6 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
 window['vectors_rearrangeChat'] = rearrangeChat;
 
-/**
- * Memory injection hook for chat generation
- * @param {object[]} chat - Chat messages (unused, for compatibility)
- * @param {number} contextSize - Context size (unused, for compatibility)
- * @param {function} abort - Abort function (unused, for compatibility)
- * @param {string} type - Generation type
- */
-async function memoryRearrangeChat(chat, contextSize, abort, type) {
-  try {
-    // 如果没有记忆服务实例，跳过
-    if (!window.memoryServiceInstance) {
-      console.debug('Memory: Service not initialized');
-      return;
-    }
-
-    // 调用记忆服务的注入方法
-    window.memoryServiceInstance.performMemoryInjection(
-      setExtensionPrompt,
-      substituteParamsExtended,
-      settings,
-      type
-    );
-  } catch (error) {
-    console.error('Memory: Injection failed:', error);
-  }
-}
-
-window['memory_rearrangeChat'] = memoryRearrangeChat;
 
 
 
