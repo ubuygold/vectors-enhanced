@@ -165,7 +165,31 @@
       </div>
       </details>
 
+      <details open class="m-t-0-5">
+         <!-- 自动归档设置 -->
+        <summary><strong>自动归档设置</strong></summary>
+        <label class="checkbox_label" for="vectors_enhanced_auto_archive_enabled" title="启用后，当未向量化的消息数达到阈值时，将自动处理旧消息。">
+          <input id="vectors_enhanced_auto_archive_enabled" type="checkbox" />
+          <span>启用自动归档 (向量化并隐藏)</span>
+        </label>
+        <div class="description">开头。</div>
+        <div class="flex-container flexFlowColumn m-t-0-5">
+          <label for="vectors_enhanced_auto_vectorize_threshold">自动处理触发阈值 (N)</label>
+          <input id="vectors_enhanced_auto_vectorize_threshold" type="number" class="text_pole" min="30" value="50" />
+          <small>当未隐藏消息数达到此值时，将触发自动向量化和隐藏。</small>
+        </div>
+
+        <div class="flex-container flexFlowColumn m-t-0-5">
+          <label for="vectors_enhanced_keep_recent_count">保留最新消息数 (M)</label>
+          <input id="vectors_enhanced_keep_recent_count" type="number" class="text_pole" min="10" value="20" />
+          <small>自动处理后，将保留这么多条最新的消息不被隐藏。该值必须小于触发阈值。</small>
+        </div>
+      </details>
+
       <hr />
+
+     
+
 <!-- Rerank 设置 -->
       <details>
         <summary><strong>Rerank 设置</strong></summary>
@@ -559,3 +583,4 @@
     </div>
   </div>
 </div>
+

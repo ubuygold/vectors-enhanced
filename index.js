@@ -74,9 +74,14 @@ const settings = {
   score_threshold: 0.25,
   force_chunk_delimiter: '',
   lightweight_storage: false, // 大内容轻量化存储模式
+ 
+   // Auto-vectorization settings
+  auto_archive_enabled: false, // 新增：独立的自动归档开关
+  auto_vectorize_threshold: 50, // 自动处理触发阈值 (N)
+  keep_recent_count: 20, // 保留最新消息数 (M)
 
-  // Query settings
-  enabled: true, // 是否启用向量查询
+   // Query settings
+   enabled: true, // 是否启用向量查询
   query_messages: 3, // 查询使用的最近消息数
   max_results: 10, // 返回的最大结果数
   show_query_notification: false, // 是否显示查询结果通知
@@ -2388,6 +2393,103 @@ function getHashValue(str) {
 }
 
 /**
+ * Checks and runs the auto-vectorization and hiding process.
+ */
+async function handleAutoVectorization() {
+    // 1. Check if master switch and auto-vectorize are enabled
+    // 1. Check if master switch and the NEW auto-archive switch are enabled
+    if (!settings.master_enabled || !settings.auto_archive_enabled) {
+        return;
+    }
+
+    // 2. Get settings from the main settings object
+    const { auto_vectorize_threshold, keep_recent_count } = settings;
+    const threshold = auto_vectorize_threshold; // N
+    const keepCount = keep_recent_count; // M
+
+    // Ensure keepCount is less than threshold to avoid processing nothing
+    if (keepCount >= threshold) {
+        console.warn('Vectors: keep_recent_count must be less than auto_vectorize_threshold. Auto-vectorization skipped.');
+        return;
+    }
+
+    // 3. Get chat context
+    const context = getContext();
+    const chatId = getCurrentChatId();
+    if (!context.chat || !chatId) {
+        return;
+    }
+
+    // 4. Identify unvectorized (visible) messages
+    const unvectorizedMessages = context.chat
+        .map((msg, index) => ({ msg, index }))
+        .filter(item => !item.msg.is_system); // is_system === true means hidden/vectorized
+
+    const unvectorizedCount = unvectorizedMessages.length;
+
+    // 5. New Trigger Condition: Check if the number of unvectorized messages meets the threshold
+    if (unvectorizedCount < threshold) {
+        return; // Not enough unvectorized messages to trigger
+    }
+
+    // 6. New Message Selection Logic: Determine messages to process
+    // Process all unvectorized messages except the newest M
+    const messagesToProcessCount = unvectorizedCount - keepCount;
+    if (messagesToProcessCount <= 0) {
+        return; // Nothing to process
+    }
+
+    // The messages to process are the oldest ones from the unvectorized list
+    const messagesToProcess = unvectorizedMessages.slice(0, messagesToProcessCount);
+
+    if (messagesToProcess.length === 0) {
+        console.log('Vectors: No new messages to auto-vectorize.');
+        return;
+    }
+
+    // Assuming the oldest unvectorized messages form a contiguous block
+    const startIdx = messagesToProcess[0].index;
+    const endIdx = messagesToProcess[messagesToProcess.length - 1].index;
+
+    console.log(`Vectors: Auto-vectorizer triggered. Processing ${messagesToProcess.length} messages from index ${startIdx} to ${endIdx}.`);
+
+    // 7. Prepare settings for vectorization
+    const tempContentSettings = {
+        chat: {
+            ...settings.selected_content.chat, // Inherit types, include_hidden etc.
+            enabled: true,
+            range: { start: startIdx, end: endIdx },
+            tag_rules: settings.selected_content.chat.tag_rules || [],
+        },
+        files: { enabled: false, selected: [] },
+        world_info: { enabled: false, selected: {} },
+    };
+
+    try {
+        // 8. Get content and vectorize
+        const items = await getVectorizableContent(tempContentSettings);
+        if (items.length > 0) {
+            await performVectorization(tempContentSettings, chatId, false, items);
+
+            // 9. Hide the processed messages
+            // The range for hiding is from the start index to the end index + 1 (exclusive)
+            await toggleMessageRangeVisibility(startIdx, endIdx + 1, true);
+
+            // 10. Notify user
+            toastr.success(`已自动归档 ${items.length} 条旧消息。`, '聊天记录管理器');
+            
+            updateHiddenMessagesInfo();
+        } else {
+            console.log('Vectors: No content to auto-vectorize after filtering.');
+        }
+
+    } catch (error) {
+        console.error('Vectors: Auto-vectorization failed.', error);
+        toastr.error('自动归档消息失败。', '错误');
+    }
+}
+
+/**
  * Synchronizes chat vectors
  * @param {number} batchSize Batch size for processing
  * @returns {Promise<number>} Number of remaining items
@@ -2395,10 +2497,6 @@ function getHashValue(str) {
 async function synchronizeChat(batchSize = 5) {
   // 检查主开关是否启用
   if (!settings.master_enabled) {
-    return -1;
-  }
-
-  if (!settings.auto_vectorize) {
     return -1;
   }
 
@@ -2411,7 +2509,8 @@ async function synchronizeChat(batchSize = 5) {
 
   try {
     syncBlocked = true;
-    // Auto-vectorization logic will be implemented based on settings
+    // Run the new auto-vectorization and hiding logic
+    await handleAutoVectorization();
     return -1;
   } finally {
     syncBlocked = false;
@@ -3602,6 +3701,15 @@ jQuery(async () => {
       saveSettingsDebounced();
     });
 
+  // New Auto-Archive switch handler
+  $('#vectors_enhanced_auto_archive_enabled')
+    .prop('checked', settings.auto_archive_enabled)
+    .on('input', () => {
+      settings.auto_archive_enabled = $('#vectors_enhanced_auto_archive_enabled').prop('checked');
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    });
+
   $('#vectors_enhanced_overlap_percent')
     .val(settings.overlap_percent)
     .on('input', () => {
@@ -3649,9 +3757,26 @@ jQuery(async () => {
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
     });
+ 
+   // Auto-vectorization settings handlers
+  $('#vectors_enhanced_auto_vectorize_threshold')
+    .val(settings.auto_vectorize_threshold)
+    .on('input', () => {
+      settings.auto_vectorize_threshold = Number($('#vectors_enhanced_auto_vectorize_threshold').val());
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    });
 
-  // Rerank settings handlers
-  $('#vectors_enhanced_rerank_enabled').prop('checked', settings.rerank_enabled).on('input', function() {
+  $('#vectors_enhanced_keep_recent_count')
+    .val(settings.keep_recent_count)
+    .on('input', () => {
+      settings.keep_recent_count = Number($('#vectors_enhanced_keep_recent_count').val());
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    });
+
+   // Rerank settings handlers
+   $('#vectors_enhanced_rerank_enabled').prop('checked', settings.rerank_enabled).on('input', function() {
       settings.rerank_enabled = $(this).prop('checked');
 
     // --- 新增逻辑开始 ---
