@@ -81,6 +81,8 @@ export class MemoryUI {
         // Vectorize summary button handler
         $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
 
+        // Inject content button handler
+        $('#memory_inject_content').off('click').on('click', () => this.injectSelectedContent());
 
         // Initialize API source display (without saving)
         this.initializeApiSourceDisplay($('#memory_api_source').val() || 'google');
@@ -513,6 +515,90 @@ export class MemoryUI {
     }
 
     /**
+     * 注入选中的聊天内容到输入框
+     */
+    async injectSelectedContent() {
+        try {
+            // 获取 extension_settings 和 context
+            const { extension_settings, getContext } = await import('../../../../../../extensions.js');
+            const settings = extension_settings.vectors_enhanced;
+            const context = getContext();
+            
+            // 检查聊天内容是否启用
+            if (!settings.selected_content.chat.enabled) {
+                this.toastr?.warning('请先在内容选择中启用聊天记录');
+                return;
+            }
+            
+            // 检查是否有聊天记录
+            if (!context.chat || context.chat.length === 0) {
+                this.toastr?.warning('当前没有聊天记录');
+                return;
+            }
+            
+            // 导入必要的函数和工具
+            const { getMessages } = await import('../../utils/chatUtils.js');
+            const { extractTagContent } = await import('../../utils/tagExtractor.js');
+            
+            // 获取聊天设置
+            const chatSettings = settings.selected_content.chat;
+            const rules = chatSettings.tag_rules || settings.tag_extraction_rules || [];
+            
+            // 使用 getMessages 函数获取过滤后的消息
+            const messageOptions = {
+                includeHidden: chatSettings.include_hidden || false,
+                types: chatSettings.types || { user: true, assistant: true },
+                range: chatSettings.range,
+                newRanges: chatSettings.newRanges
+            };
+            
+            const messages = getMessages(context.chat, messageOptions);
+            
+            if (messages.length === 0) {
+                this.toastr?.warning('没有找到符合条件的聊天内容');
+                return;
+            }
+            
+            // 处理并格式化聊天内容
+            const chatTexts = messages.map(msg => {
+                let extractedText;
+                
+                // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
+                if (msg.index === 0 || msg.is_user === true) {
+                    // 首楼或用户楼层：使用完整的原始文本，不应用标签提取规则
+                    extractedText = msg.text;
+                } else {
+                    // 其他楼层：应用标签提取规则
+                    extractedText = extractTagContent(msg.text, rules);
+                }
+                
+                const msgType = msg.is_user ? '用户' : 'AI';
+                return `#${msg.index} [${msgType}]: ${extractedText}`;
+            }).join('\n\n');
+            
+            // 注入到输入框
+            const inputElement = $('#memory_input');
+            const currentValue = inputElement.val();
+            
+            // 如果输入框已有内容，添加分隔符
+            if (currentValue && currentValue.trim()) {
+                inputElement.val(currentValue + '\n\n---\n\n' + chatTexts);
+            } else {
+                inputElement.val(chatTexts);
+            }
+            
+            // 触发 input 事件，以防有其他监听器
+            inputElement.trigger('input');
+            
+            this.toastr?.info(`已注入 ${messages.length} 条聊天记录`);
+            
+        } catch (error) {
+            console.error('[MemoryUI] 注入内容失败:', error);
+            this.toastr?.error('注入内容失败: ' + error.message);
+        }
+    }
+
+    /**
      * 向量化当前聊天的总结内容
      */
     async vectorizeChatLore() {
@@ -545,12 +631,7 @@ export class MemoryUI {
                 return;
             }
             
-            // 显示确认对话框
-            const confirmation = confirm(`确定要向量化世界书 "${chatWorld}" 吗？`);
-            
-            if (!confirmation) {
-                return;
-            }
+            // 直接执行，不需要确认
             
             // 加载世界书数据
             const worldData = await loadWorldInfo(chatWorld);
@@ -614,6 +695,7 @@ export class MemoryUI {
         $('#memory_input').off('keydown');
         $('#memory_api_source').off('change');
         $('#memory_vectorize_summary').off('click');
+        $('#memory_inject_content').off('click');
         // Prompt buttons removed
         $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book').off('change');
 
