@@ -440,30 +440,9 @@
               <small>API 选择:</small>
             </label>
             <select id="memory_api_source" class="text_pole" style="width: 100%;">
-              <option value="google">Google AI Studio</option>
               <option value="openai_compatible">OpenAI兼容格式</option>
+              <option value="google_openai">Google OpenAI兼容端点</option>
             </select>
-            
-            <!-- Google AI Studio Settings -->
-            <div id="memory_google_settings" style="margin-top: 10px; display: none;">
-              <label for="memory_google_api_key">
-                <small>Google AI API Key:</small>
-              </label>
-              <input id="memory_google_api_key" 
-                     type="password" 
-                     class="text_pole" 
-                     placeholder="AIza..." 
-                     style="width: 100%;" />
-              
-              <label for="memory_google_model" style="margin-top: 5px;">
-                <small>模型名称:</small>
-              </label>
-              <input id="memory_google_model" 
-                     type="text" 
-                     class="text_pole" 
-                     placeholder="例如: gemini-pro, gemini-1.5-pro-latest" 
-                     style="width: 100%;" />
-            </div>
             
             <!-- OpenAI Compatible Settings -->
             <div id="memory_openai_settings" style="margin-top: 10px; display: none;">
@@ -494,6 +473,27 @@
                      placeholder="例如: gpt-3.5-turbo, gpt-4, claude-3-sonnet, deepseek-chat" 
                      style="width: 100%;" />
             </div>
+            
+            <!-- Google to OpenAI Settings -->
+            <div id="memory_google_openai_settings" style="margin-top: 10px; display: none;">
+              <label for="memory_google_openai_api_key">
+                <small>Google API Key:</small>
+              </label>
+              <input id="memory_google_openai_api_key" 
+                     type="password" 
+                     class="text_pole" 
+                     placeholder="输入你的Google API Key" 
+                     style="width: 100%;" />
+              
+              <label for="memory_google_openai_model" style="margin-top: 5px;">
+                <small>模型名称:</small>
+              </label>
+              <input id="memory_google_openai_model" 
+                     type="text" 
+                     class="text_pole" 
+                     placeholder="例如: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash" 
+                     style="width: 100%;" />
+            </div>
           </div>
           
           <!-- Input Area -->
@@ -518,54 +518,6 @@
           </div>
           
           <!-- Prompts Section (collapsible) -->
-          <details style="margin-top: 10px;">
-            <summary style="cursor: pointer;">
-              <small><strong>提示词设置</strong></small>
-            </summary>
-            <div style="padding: 10px 0;">
-              <!-- System Prompt -->
-              <div class="memory-prompt-section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                  <label for="memory_system_prompt">
-                    <small>系统提示词 (可选):</small>
-                  </label>
-                  <button id="memory_system_prompt_restore" 
-                          class="menu_button menu_button_icon" 
-                          title="恢复默认系统提示词"
-                          style="padding: 3px 8px; font-size: 0.8em;">
-                    <i class="fa-solid fa-undo"></i>
-                    <span>恢复默认</span>
-                  </button>
-                </div>
-                <textarea id="memory_system_prompt" 
-                         class="text_pole" 
-                         rows="3" 
-                         placeholder="设置AI的角色和行为，例如：你是一个友好的助手..."
-                         style="width: 100%; resize: vertical;"></textarea>
-              </div>
-              
-              <!-- Suffix Prompt -->
-              <div class="memory-suffix-section" style="margin-top: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                  <label for="memory_suffix_prompt">
-                    <small>尾部提示词 (可选):</small>
-                  </label>
-                  <button id="memory_suffix_prompt_restore" 
-                          class="menu_button menu_button_icon" 
-                          title="恢复默认尾部提示词"
-                          style="padding: 3px 8px; font-size: 0.8em;">
-                    <i class="fa-solid fa-undo"></i>
-                    <span>恢复默认</span>
-                  </button>
-                </div>
-                <textarea id="memory_suffix_prompt" 
-                         class="text_pole" 
-                         rows="2" 
-                         placeholder="会附加在用户输入后面，例如：请用中文回答..."
-                         style="width: 100%; resize: vertical;"></textarea>
-              </div>
-            </div>
-          </details>
           
           <!-- Send Button -->
           <div class="memory-actions" style="margin-top: 10px;">
