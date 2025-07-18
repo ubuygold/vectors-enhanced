@@ -106,6 +106,11 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
       // Generate smart name
       displayName = TaskNameGenerator.generateSmartName(items, task.settings);
     }
+    
+    // 检查是否是总结向量化任务，如果是则添加标识
+    if (task.name && task.name.includes('(总结向量化)')) {
+      displayName = `${displayName} <span style="color: #ff6b6b; font-weight: 600;">[总结]</span>`;
+    }
 
     // 外挂任务标识
     let taskClass = '';

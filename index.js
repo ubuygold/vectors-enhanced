@@ -1084,7 +1084,7 @@ function createIncrementalSettings(currentSettings, chatId, conflicts) {
  */
 async function performVectorization(contentSettings, chatId, isIncremental, items, options = {}) {
   console.log('Pipeline: Starting FULL pipeline processing with settings:', JSON.stringify(contentSettings, null, 2));
-  const { skipDeduplication = false, taskType = 'vectorization' } = options;
+  const { skipDeduplication = false, taskType = 'vectorization', customTaskName = null } = options;
 
   // Import all pipeline components
   const { pipelineIntegration } = await import('./src/core/pipeline/PipelineIntegration.js');
@@ -1104,7 +1104,14 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     }
 
     // Generate task metadata
-    let taskName = await generateTaskName(contentSettings, items);
+    let taskName;
+    if (customTaskName) {
+      // Use custom task name if provided
+      taskName = customTaskName;
+    } else {
+      // Generate task name normally
+      taskName = await generateTaskName(contentSettings, items);
+    }
 
     // Set vectorization state
     isVectorizing = true;
@@ -3008,8 +3015,24 @@ jQuery(async () => {
         worldInfoSelected: settings.selected_content.world_info.selected
       });
       
-      // 使用标准的vectorizeContent函数，它会自动生成任务名
-      await vectorizeContent();
+      // 获取要向量化的内容
+      const items = await getVectorizableContent(settings.selected_content);
+      
+      // 生成自定义任务名称
+      const entryNames = content.map(entry => entry.comment || `UID:${entry.uid}`).join('、');
+      const customTaskName = `${entryNames} (总结向量化)`;
+      
+      // 使用自定义任务名进行向量化
+      await performVectorization(
+        settings.selected_content, 
+        getCurrentChatId(), 
+        false, 
+        items,
+        { 
+          taskType: 'summary_vectorization',
+          customTaskName: customTaskName
+        }
+      );
       
       // 恢复原始设置
       settings.selected_content = originalSelectedContent;
