@@ -4,8 +4,10 @@
  */
 
 // Import updateWorldInfoList functions
-import { updateWorldInfoList as updateSillyTavernWorldInfoList } from '../../../../../../world-info.js';
+import { updateWorldInfoList as updateSillyTavernWorldInfoList, loadWorldInfo, METADATA_KEY } from '../../../../../../world-info.js';
 import { updateWorldInfoList as updatePluginWorldInfoList } from './WorldInfoList.js';
+import { getContext, extension_settings } from '../../../../../../extensions.js';
+import { chat_metadata } from '../../../../../../../script.js';
 
 
 // Using preset format - prompts removed
@@ -75,6 +77,9 @@ export class MemoryUI {
         // Save config on input changes
         $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book')
             .off('change').on('change', () => this.saveApiConfig());
+
+        // Vectorize summary button handler
+        $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
 
 
         // Initialize API source display (without saving)
@@ -507,11 +512,108 @@ export class MemoryUI {
         }
     }
 
+    /**
+     * 向量化当前聊天的总结内容
+     */
+    async vectorizeChatLore() {
+        try {
+            // 尝试多种方式获取chat world
+            let chatWorld = chat_metadata?.[METADATA_KEY];
+            
+            // 如果直接获取失败，尝试从getContext获取
+            if (!chatWorld) {
+                const context = this.getContext ? this.getContext() : window.getContext?.();
+                if (context && context.chat_metadata) {
+                    chatWorld = context.chat_metadata[METADATA_KEY];
+                }
+            }
+            
+            // 如果还是没有，尝试window.chat_metadata
+            if (!chatWorld && window.chat_metadata) {
+                chatWorld = window.chat_metadata[METADATA_KEY];
+            }
+            
+            console.log('[MemoryUI] Chat world from various sources:', {
+                fromImport: chat_metadata?.[METADATA_KEY],
+                fromContext: this.getContext?.()?.chat_metadata?.[METADATA_KEY],
+                fromWindow: window.chat_metadata?.[METADATA_KEY],
+                final: chatWorld
+            });
+            
+            if (!chatWorld) {
+                this.toastr?.warning('当前聊天没有绑定的世界书');
+                return;
+            }
+            
+            // 显示确认对话框
+            const confirmation = confirm(`确定要向量化世界书 "${chatWorld}" 吗？`);
+            
+            if (!confirmation) {
+                return;
+            }
+            
+            // 加载世界书数据
+            const worldData = await loadWorldInfo(chatWorld);
+            if (!worldData || !worldData.entries) {
+                this.toastr?.error('无法加载世界书数据');
+                return;
+            }
+            
+            // 获取所有有效条目（不筛选，但排除禁用的条目）
+            const validEntries = Object.values(worldData.entries).filter(entry => 
+                !entry.disable && entry.content && entry.content.trim()
+            );
+            
+            if (validEntries.length === 0) {
+                this.toastr?.warning('世界书中没有有效条目');
+                return;
+            }
+            
+            // 准备向量化的内容
+            const contentToVectorize = validEntries.map(entry => ({
+                uid: entry.uid,
+                world: chatWorld,
+                key: entry.key,
+                keysecondary: entry.keysecondary,
+                comment: entry.comment,
+                content: entry.content,
+                order: entry.order,
+                position: entry.position,
+                disable: entry.disable
+            }));
+            
+            // 调用向量化功能
+            const settings = extension_settings.vectors_enhanced;
+            
+            // 创建一个特殊的向量化任务
+            const taskName = `${chatWorld} - 世界书向量化`;
+            const taskId = `worldbook_${Date.now()}`;
+            
+            // 触发向量化
+            const event = new CustomEvent('vectors:vectorize-summary', {
+                detail: {
+                    taskName,
+                    taskId,
+                    content: contentToVectorize,
+                    worldName: chatWorld
+                }
+            });
+            document.dispatchEvent(event);
+            
+            this.toastr?.info(`开始向量化世界书 "${chatWorld}"，共 ${validEntries.length} 个条目...`);
+            
+        } catch (error) {
+            console.error('[MemoryUI] 向量化总结失败:', error);
+            this.toastr?.error('向量化总结失败: ' + error.message);
+        }
+    }
+
     destroy() {
         // Unbind event listeners
         $('#memory_send_btn').off('click');
         $('#memory_input').off('keydown');
         $('#memory_api_source').off('change');
+        $('#memory_vectorize_summary').off('click');
         // Prompt buttons removed
         $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book').off('change');
 

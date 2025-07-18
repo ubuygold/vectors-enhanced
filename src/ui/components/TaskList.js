@@ -262,11 +262,29 @@ async function previewTaskContent(task) {
 
   // Collect world info items
   if (task.actualProcessedItems.world_info && task.actualProcessedItems.world_info.length > 0) {
-    // Get all world info entries
-    const entries = await getSortedEntries();
+    // Import world info functions
+    const { world_info } = await import('../../../../../../world-info.js');
+    
+    // Try to find entries from all loaded world books
     const entryMap = new Map();
-    entries.forEach(entry => {
-      if (entry.uid) {
+    
+    // Check all world info data
+    if (world_info && world_info.data) {
+      for (const [worldName, worldData] of Object.entries(world_info.data)) {
+        if (worldData && worldData.entries) {
+          Object.values(worldData.entries).forEach(entry => {
+            if (entry.uid !== undefined && entry.uid !== null) {
+              entryMap.set(entry.uid, { ...entry, world: worldName });
+            }
+          });
+        }
+      }
+    }
+    
+    // Also check from getSortedEntries as fallback
+    const sortedEntries = await getSortedEntries();
+    sortedEntries.forEach(entry => {
+      if (entry.uid !== undefined && entry.uid !== null && !entryMap.has(entry.uid)) {
         entryMap.set(entry.uid, entry);
       }
     });

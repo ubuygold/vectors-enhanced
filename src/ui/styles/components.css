@@ -157,6 +157,28 @@
   margin-bottom: 0.5rem;
 }
 
+/* World Info Group Styles */
+.wi-world-group {
+  margin-bottom: 10px;
+  padding: 5px;
+  border: 1px solid var(--SmartThemeBorderColor);
+  border-radius: 4px;
+}
+
+/* World info source categories */
+.wi-source-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--SmartThemeQuoteColor);
+  margin-bottom: 10px;
+}
+
+.wi-source-header:not(:first-child) {
+  margin-top: 20px;
+}
+
 .task-list {
   max-height: 300px;
   overflow-y: auto;

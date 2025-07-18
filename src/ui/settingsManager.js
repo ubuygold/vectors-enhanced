@@ -367,15 +367,8 @@ export class SettingsManager {
     this.initializeChatSettings();
 
     // 刷新按钮
-    $('#vectors_enhanced_files_refresh').on('click', async () => {
-      await updateFileList();
-      toastr.info('文件列表已刷新');
-    });
-
-    $('#vectors_enhanced_wi_refresh').on('click', async () => {
-      await updateWorldInfoList();
-      toastr.info('世界信息列表已刷新');
-    });
+    // File and WI refresh are handled in ContentSelectionSettings.js
+    // Removed duplicate bindings to prevent double updates
   }
 
   /**

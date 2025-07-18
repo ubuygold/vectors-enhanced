@@ -2964,6 +2964,68 @@ jQuery(async () => {
     MessageUI.updateHiddenMessagesInfo();
   });
 
+  // 监听向量化总结事件
+  document.addEventListener('vectors:vectorize-summary', async (event) => {
+    const { taskName, taskId, content, worldName } = event.detail;
+    
+    try {
+      console.log('[Vectors] 准备向量化总结:', {
+        taskName,
+        worldName,
+        contentCount: content.length,
+        content: content
+      });
+      
+      // 保存当前设置的完整备份
+      const originalSettings = JSON.parse(JSON.stringify(settings));
+      const originalSelectedContent = JSON.parse(JSON.stringify(settings.selected_content));
+      
+      // 清空所有选择，然后只选中指定的世界书条目
+      settings.selected_content = {
+        chat: { 
+          enabled: false,
+          range: { start: 0, end: -1 },
+          user: true,
+          assistant: true,
+          include_hidden: false
+        },
+        files: { 
+          enabled: false,
+          selected: []
+        },
+        world_info: {
+          enabled: true,
+          selected: {}  // 先清空
+        },
+        tag_rules: settings.selected_content.tag_rules || [],
+        content_blacklist: settings.selected_content.content_blacklist || ''
+      };
+      
+      // 只添加指定世界书的指定条目
+      settings.selected_content.world_info.selected[worldName] = content.map(entry => entry.uid);
+      
+      console.log('[Vectors] 临时设置:', {
+        worldInfoSelected: settings.selected_content.world_info.selected
+      });
+      
+      // 使用标准的vectorizeContent函数，它会自动生成任务名
+      await vectorizeContent();
+      
+      // 恢复原始设置
+      settings.selected_content = originalSelectedContent;
+      saveSettingsDebounced();
+      
+    } catch (error) {
+      console.error('[Vectors] 向量化总结失败:', error);
+      toastr.error('向量化总结失败: ' + error.message);
+      // 确保恢复原始设置
+      if (originalSettings) {
+        settings.selected_content = originalSettings.selected_content;
+        saveSettingsDebounced();
+      }
+    }
+  });
+
   // Register slash commands
   SlashCommandParser.addCommandObject(
     SlashCommand.fromProps({

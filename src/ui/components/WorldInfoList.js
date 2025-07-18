@@ -1,6 +1,66 @@
-import { extension_settings } from '../../../../../../extensions.js';
-import { saveSettingsDebounced } from '../../../../../../../script.js';
-import { getSortedEntries } from '../../../../../../world-info.js';
+import { extension_settings, getContext } from '../../../../../../extensions.js';
+import { saveSettingsDebounced, chat_metadata, characters, this_chid } from '../../../../../../../script.js';
+import { getSortedEntries, selected_world_info, METADATA_KEY, world_info } from '../../../../../../world-info.js';
+import { getCharaFilename } from '../../../../../../utils.js';
+
+/**
+ * Categorize world info entries by their source
+ * @param {Array} entries - World info entries
+ * @returns {Object} Categorized entries by source
+ */
+async function categorizeWorldInfoBySource(entries) {
+  const context = getContext();
+  const chatWorld = chat_metadata[METADATA_KEY];
+  const character = context.characters[context.characterId];
+  const characterPrimaryWorld = character?.data?.extensions?.world;
+  
+  // Get character's extra books
+  const fileName = getCharaFilename(this_chid);
+  const extraCharLore = world_info.charLore?.find((e) => e.name === fileName);
+  const characterExtraBooks = extraCharLore?.extraBooks || [];
+  
+  // Group entries by world name first to avoid duplicates
+  const worldMap = new Map();
+  entries.forEach(entry => {
+    if (!entry.world || entry.disable || !entry.content) return;
+    
+    if (!worldMap.has(entry.world)) {
+      worldMap.set(entry.world, []);
+    }
+    worldMap.get(entry.world).push(entry);
+  });
+  
+  // Categorize each world (not each entry) to avoid duplicates
+  const categorized = {
+    chat: [],
+    character: [],
+    global: []
+  };
+  
+  worldMap.forEach((worldEntries, worldName) => {
+    // Priority order: chat > character > global
+    // Each world appears only in ONE category
+    if (chatWorld && worldName === chatWorld) {
+      categorized.chat.push(...worldEntries.map(e => ({ ...e, source: 'chat' })));
+    }
+    else if (characterPrimaryWorld && worldName === characterPrimaryWorld) {
+      categorized.character.push(...worldEntries.map(e => ({ ...e, source: 'character' })));
+    }
+    else if (characterExtraBooks.includes(worldName)) {
+      categorized.character.push(...worldEntries.map(e => ({ ...e, source: 'character' })));
+    }
+    else if (selected_world_info.includes(worldName)) {
+      categorized.global.push(...worldEntries.map(e => ({ ...e, source: 'global' })));
+    }
+    else {
+      // Default to global if no match
+      categorized.global.push(...worldEntries.map(e => ({ ...e, source: 'global' })));
+    }
+  });
+  
+  // Flatten back to array with source attached
+  return [...categorized.chat, ...categorized.character, ...categorized.global];
+}
 
 export async function updateWorldInfoList() {
   const settings = extension_settings.vectors_enhanced;
@@ -13,23 +73,41 @@ export async function updateWorldInfoList() {
     return;
   }
 
-  // Group entries by world
-  const grouped = {};
-  entries.forEach(entry => {
-    if (!entry.world || entry.disable || !entry.content) return;
-    if (!grouped[entry.world]) grouped[entry.world] = [];
-    grouped[entry.world].push(entry);
+  // Categorize entries by source - this already filters and groups them
+  const categorizedEntries = await categorizeWorldInfoBySource(entries);
+  
+  // Group entries by source and then by world
+  const grouped = {
+    global: {},
+    character: {},
+    chat: {}
+  };
+  
+  // The entries are already categorized and don't have duplicates
+  categorizedEntries.forEach(entry => {
+    const source = entry.source || 'global';
+    if (!grouped[source][entry.world]) grouped[source][entry.world] = [];
+    grouped[source][entry.world].push(entry);
   });
 
-  if (Object.keys(grouped).length === 0) {
+  // Check if any source has entries
+  const hasAnyEntries = Object.values(grouped).some(sourceWorlds => Object.keys(sourceWorlds).length > 0);
+  if (!hasAnyEntries) {
     wiList.append('<div class="text-muted">未找到有效的世界信息条目</div>');
     return;
   }
 
   // Clean up invalid world info selections (entries that no longer exist or worlds not in current context)
   const allValidUids = new Set();
-  const currentValidWorlds = new Set(Object.keys(grouped));
-  Object.values(grouped).flat().forEach(entry => allValidUids.add(entry.uid));
+  const currentValidWorlds = new Set();
+  
+  // Collect all valid worlds and UIDs from all sources
+  Object.values(grouped).forEach(sourceWorlds => {
+    Object.entries(sourceWorlds).forEach(([world, worldEntries]) => {
+      currentValidWorlds.add(world);
+      worldEntries.forEach(entry => allValidUids.add(entry.uid));
+    });
+  });
 
   let hasChanges = false;
   const originalSelected = JSON.parse(JSON.stringify(settings.selected_content.world_info.selected));
@@ -73,23 +151,41 @@ export async function updateWorldInfoList() {
     saveSettingsDebounced();
   }
 
-  for (const [world, worldEntries] of Object.entries(grouped)) {
-    const worldDiv = $('<div class="wi-world-group"></div>');
+  // Display by source category
+  const sourceLabels = {
+    global: '🌍 全局世界书',
+    character: '👤 角色世界书',
+    chat: '💬 聊天世界书'
+  };
+  
+  for (const [source, sourceWorlds] of Object.entries(grouped)) {
+    if (Object.keys(sourceWorlds).length === 0) continue;
+    
+    // Source category header
+    const sourceHeader = $(`
+      <div class="wi-source-header" style="margin-top: 10px; margin-bottom: 5px; font-weight: bold; color: var(--SmartThemeQuoteColor);">
+        ${sourceLabels[source]}
+      </div>
+    `);
+    wiList.append(sourceHeader);
+    
+    for (const [world, worldEntries] of Object.entries(sourceWorlds)) {
+      const worldDiv = $('<div class="wi-world-group" style="margin-left: 10px;"></div>');
 
-    // 世界名称和全选复选框
-    const selectedEntries = settings.selected_content.world_info.selected[world] || [];
-    const allChecked = worldEntries.length > 0 && worldEntries.every(e => selectedEntries.includes(e.uid));
+      // 世界名称和全选复选框
+      const selectedEntries = settings.selected_content.world_info.selected[world] || [];
+      const allChecked = worldEntries.length > 0 && worldEntries.every(e => selectedEntries.includes(e.uid));
 
-    const worldHeader = $(`
-            <div class="wi-world-header flex-container alignItemsCenter">
-                <label class="checkbox_label flex1">
-                    <input type="checkbox" class="world-select-all" data-world="${world}" ${
-      allChecked ? 'checked' : ''
-    } />
-                    <span class="wi-world-name">${world}</span>
-                </label>
-            </div>
-        `);
+      const worldHeader = $(`
+              <div class="wi-world-header flex-container alignItemsCenter">
+                  <label class="checkbox_label flex1">
+                      <input type="checkbox" class="world-select-all" data-world="${world}" ${
+        allChecked ? 'checked' : ''
+      } />
+                      <span class="wi-world-name">${world}</span>
+                  </label>
+              </div>
+          `);
 
     // 全选复选框事件
     worldHeader.find('.world-select-all').on('change', function () {
@@ -154,6 +250,7 @@ export async function updateWorldInfoList() {
       worldDiv.append(checkbox);
     });
 
-    wiList.append(worldDiv);
+      wiList.append(worldDiv);
+    }
   }
 }

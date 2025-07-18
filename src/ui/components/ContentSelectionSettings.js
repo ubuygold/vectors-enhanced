@@ -283,20 +283,22 @@ export class ContentSelectionSettings {
     /**
      * Handle files refresh
      */
-    handleFilesRefresh() {
+    async handleFilesRefresh() {
         console.log('ContentSelectionSettings: Refreshing files...');
         if (this.updateFileList) {
-            this.updateFileList();
+            await this.updateFileList();
+            toastr.info('文件列表已刷新');
         }
     }
 
     /**
      * Handle world info refresh
      */
-    handleWorldInfoRefresh() {
+    async handleWorldInfoRefresh() {
         console.log('ContentSelectionSettings: Refreshing world info...');
         if (this.updateWorldInfoList) {
-            this.updateWorldInfoList();
+            await this.updateWorldInfoList();
+            toastr.info('世界信息列表已刷新');
         }
     }
 
