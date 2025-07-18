@@ -30,7 +30,7 @@ export class MemoryService {
     async sendMessage(message, options = {}) {
         const {
             includeContext = true,
-            apiSource = 'main',
+            apiSource = 'google_openai',
             apiConfig = {},
             summaryLength = 'normal' // 新增总结长度参数
         } = options;
@@ -342,9 +342,10 @@ export class MemoryService {
     /**
      * 创建世界书并添加总结条目
      * @param {string} summaryContent - AI总结的内容（可选）
+     * @param {Object} floorRange - 楼层范围信息 { start, end, count }（可选）
      * @returns {Promise<Object>} 创建结果
      */
-    async createWorldBook(summaryContent = null) {
+    async createWorldBook(summaryContent = null, floorRange = null) {
         try {
             // 获取当前角色名称和时间
             let characterName = 'Unknown';
@@ -438,23 +439,39 @@ export class MemoryService {
                     throw new Error('创建世界书条目失败');
                 }
 
-                // 计算条目名称（总结1、总结2等）
-                const existingEntries = Object.values(worldBookData.entries);
-                const summaryEntries = existingEntries.filter(entry =>
-                    entry.comment && entry.comment.startsWith('总结')
-                );
-                const nextNumber = summaryEntries.length + 1;
-                const entryName = `总结${nextNumber}`;
+                 // 计算下一个顺序号
+                 const existingEntries = Object.values(worldBookData.entries);
+                const maxOrder = existingEntries.reduce((max, entry) => {
+                 return Math.max(max, entry.order || 0);
+                }, 0);
+                const nextOrder = maxOrder + 1;
 
-                // 设置条目内容
+                // 根据是否有楼层信息来决定条目名称
+                let entryName;
+                if (floorRange && floorRange.start !== undefined && floorRange.end !== undefined) {
+                    // 如果有楼层信息，使用楼层范围作为名称
+                    if (floorRange.start === floorRange.end) {
+                        entryName = `楼层 #${floorRange.start}`;
+                    } else {
+                        entryName = `楼层 #${floorRange.start}-${floorRange.end}`;
+                    }
+                } else {
+                    // 否则使用原来的逻辑（总结1、总结2等）
+                    const existingEntries = Object.values(worldBookData.entries);
+                    const summaryEntries = existingEntries.filter(entry =>
+                        entry.comment && entry.comment.startsWith('总结')
+                    );
+                    const nextNumber = summaryEntries.length + 1;
+                    entryName = `总结${nextNumber}`;
+                }
                 newEntry.comment = entryName;
                 newEntry.content = outputContent;  // 使用AI的回复内容
                 newEntry.key = [`${entryName}`];  // 设置关键词为条目名称
                 newEntry.addMemo = true;  // 显示备注
-                newEntry.constant = false; // 非常驻
+                newEntry.constant = true; // 非常驻
                 newEntry.selective = true; // 设为选择性触发
-                newEntry.order = 100; // 默认顺序
-                newEntry.position = 0; // 默认位置
+                newEntry.order = nextOrder;; // 递增顺序
+                newEntry.position = 1; // 默认位置
                 newEntry.probability = 100; // 触发概率100%
                 newEntry.useProbability = true;
 

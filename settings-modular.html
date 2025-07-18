@@ -441,7 +441,7 @@
             </label>
             <select id="memory_api_source" class="text_pole" style="width: 100%;">
               <option value="openai_compatible">OpenAI兼容格式</option>
-              <option value="google_openai">Google</option>
+              <option value="google_openai" selected>Google</option>
             </select>
             
             <!-- OpenAI Compatible Settings -->
@@ -496,26 +496,6 @@
             </div>
           </div>
           
-          <!-- Input Area -->
-          <div class="memory-input-section" style="margin-top: 15px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-              <label for="memory_input">
-                <small>输入消息:</small>
-              </label>
-              <button id="memory_inject_content" 
-                      class="menu_button menu_button_icon" 
-                      title="将提取的内容注入到输入框"
-                      style="padding: 5px 10px; font-size: 0.9em;">
-                <i class="fa-solid fa-syringe"></i>
-                <span>注入提取内容</span>
-              </button>
-            </div>
-            <textarea id="memory_input" 
-                     class="text_pole" 
-                     rows="4" 
-                     placeholder="在这里输入你想发送给AI的消息..."
-                     style="width: 100%; resize: vertical;"></textarea>
-          </div>
           
           <!-- Prompts Section (collapsible) -->
           
@@ -531,13 +511,6 @@
             </select>
           </div>
           
-          <!-- Auto Create World Book Option -->
-          <label class="checkbox_label" for="memory_auto_create_world_book" 
-                 title="在收到AI回复后自动创建世界书条目"
-                 style="margin-top: 10px; margin-bottom: 10px;">
-            <input id="memory_auto_create_world_book" type="checkbox" />
-            <span>自动生成世界书</span>
-          </label>
           
           <!-- Vectorize Summary Button -->
           <button id="memory_vectorize_summary" 
@@ -548,13 +521,14 @@
             <span>向量化世界书</span>
           </button>
           
-          <!-- Send Button -->
+          <!-- Summarize Button -->
           <div class="memory-actions" style="margin-top: 10px;">
-            <button id="memory_send_btn" 
+            <button id="memory_summarize_btn" 
                     class="menu_button menu_button_icon" 
+                    title="总结选中的聊天内容并生成世界书"
                     style="width: 100%;">
-              <i class="fa-solid fa-paper-plane"></i>
-              <span>发送</span>
+              <i class="fa-solid fa-brain"></i>
+              <span>总结并生成世界书</span>
             </button>
           </div>
           

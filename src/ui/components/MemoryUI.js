@@ -18,7 +18,7 @@ const defaultMemorySettings = {
     summaryLength: 'normal', // 默认使用正常长度
     autoCreateWorldBook: false, // 默认不自动生成世界书
     google_openai: {
-        model: ''
+        model: 'gemini-1.5-flash'  // 设置默认模型
     },
     openai_compatible: {
         url: '',
@@ -49,22 +49,15 @@ export class MemoryUI {
         if (this.initialized) return;
         this.initialized = true;
 
+        // 先加载配置，再绑定事件
+        await this.loadApiConfig();
         this.bindEventListeners();
         this.subscribeToEvents();
-        await this.loadApiConfig();
     }
 
     bindEventListeners() {
-        // Send button click handler
-        $('#memory_send_btn').off('click').on('click', () => this.handleSendClick());
-
-        // Enter key in input textarea
-        $('#memory_input').off('keydown').on('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-                e.preventDefault();
-                this.handleSendClick();
-            }
-        });
+        // Summarize button click handler
+        $('#memory_summarize_btn').off('click').on('click', () => this.handleSummarizeClick());
 
         // API source change
         $('#memory_api_source').off('change').on('change', (e) => {
@@ -74,18 +67,14 @@ export class MemoryUI {
 
         // Prompt buttons removed - using preset format
 
-        // Save config on input changes
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book')
-            .off('change').on('change', () => this.saveApiConfig());
+        // Save config on input changes (包括API密钥)
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length')
+            .off('change input').on('change input', () => this.saveApiConfig());
 
         // Vectorize summary button handler
         $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
 
-        // Inject content button handler
-        $('#memory_inject_content').off('click').on('click', () => this.injectSelectedContent());
-
-        // Initialize API source display (without saving)
-        this.initializeApiSourceDisplay($('#memory_api_source').val() || 'google');
+        // 不在这里初始化API源显示，因为loadApiConfig已经处理了
     }
 
     subscribeToEvents() {
@@ -100,9 +89,8 @@ export class MemoryUI {
             this.displayResponse(data.response);
             this.hideLoading();
             
-            // 检查是否启用了自动生成世界书
-            const autoCreateWorldBook = $('#memory_auto_create_world_book').prop('checked');
-            if (autoCreateWorldBook && data.response) {
+            // 总是自动生成世界书
+            if (data.response) {
                 // 延迟一下确保UI已更新
                 setTimeout(() => {
                     this.createWorldBook();
@@ -118,6 +106,119 @@ export class MemoryUI {
         this.eventBus.on('memory:history-updated', () => {
             // Future: Update history display
         });
+    }
+
+    /**
+     * Handle summarize button click
+     */
+    async handleSummarizeClick() {
+        if (this.isProcessing) return;
+
+        try {
+            // 获取 extension_settings 和 context
+            const { extension_settings, getContext } = await import('../../../../../../extensions.js');
+            const settings = extension_settings.vectors_enhanced;
+            const context = getContext();
+            
+            // 检查聊天内容是否启用
+            if (!settings.selected_content.chat.enabled) {
+                this.toastr?.warning('请先在内容选择中启用聊天记录');
+                return;
+            }
+            
+            // 检查是否有聊天记录
+            if (!context.chat || context.chat.length === 0) {
+                this.toastr?.warning('当前没有聊天记录');
+                return;
+            }
+            
+            // 导入必要的函数和工具
+            const { getMessages } = await import('../../utils/chatUtils.js');
+            const { extractTagContent } = await import('../../utils/tagExtractor.js');
+            
+            // 获取聊天设置
+            const chatSettings = settings.selected_content.chat;
+            const rules = chatSettings.tag_rules || settings.tag_extraction_rules || [];
+            
+            // 使用 getMessages 函数获取过滤后的消息
+            const messageOptions = {
+                includeHidden: chatSettings.include_hidden || false,
+                types: chatSettings.types || { user: true, assistant: true },
+                range: chatSettings.range,
+                newRanges: chatSettings.newRanges
+            };
+            
+            const messages = getMessages(context.chat, messageOptions);
+            
+            if (messages.length === 0) {
+                this.toastr?.warning('没有找到符合条件的聊天内容');
+                return;
+            }
+            
+            // 获取楼层编号范围
+            const indices = messages.map(msg => msg.index).sort((a, b) => a - b);
+            const startIndex = indices[0];
+            const endIndex = indices[indices.length - 1];
+            const floorRange = { start: startIndex, end: endIndex, count: messages.length };
+            
+            // 处理并格式化聊天内容
+            const chatTexts = messages.map(msg => {
+                let extractedText;
+                
+                // 检查是否为首楼（index === 0）或用户楼层（msg.is_user === true）
+                if (msg.index === 0 || msg.is_user === true) {
+                    // 首楼或用户楼层：使用完整的原始文本，不应用标签提取规则
+                    extractedText = msg.text;
+                } else {
+                    // 其他楼层：应用标签提取规则
+                    extractedText = extractTagContent(msg.text, rules);
+                }
+                
+                const msgType = msg.is_user ? '用户' : 'AI';
+                return `#${msg.index} [${msgType}]: ${extractedText}`;
+            }).join('\n\n');
+            
+            // 添加楼层信息头部
+            const headerInfo = `【楼层 #${startIndex} 至 #${endIndex}，共 ${messages.length} 条消息】\n\n`;
+            const contentWithHeader = headerInfo + chatTexts;
+            
+            // Get API configuration
+            const apiSource = $('#memory_api_source').val();
+            const apiConfig = this.getApiConfig();
+            
+            console.log('[MemoryUI] API配置:', {
+                source: apiSource,
+                config: apiConfig,
+                hasApiKey: !!apiConfig.apiKey
+            });
+            
+            // Get summary length selection
+            const summaryLength = $('#memory_summary_length').val() || 'normal';
+
+            this.showLoading();
+            
+            // 临时存储楼层信息
+            this._tempFloorRange = floorRange;
+            
+            try {
+                const result = await this.memoryService.sendMessage(contentWithHeader, {
+                    apiSource: apiSource,
+                    apiConfig: apiConfig,
+                    summaryLength: summaryLength
+                });
+                
+                if (result.success) {
+                    this.toastr?.success(`已总结楼层 #${startIndex} 至 #${endIndex} 的内容`);
+                }
+            } catch (error) {
+                console.error('[MemoryUI] 总结失败:', error);
+                this.toastr?.error('总结失败: ' + error.message);
+                this.hideLoading();
+            }
+        } catch (error) {
+            console.error('[MemoryUI] 获取聊天内容失败:', error);
+            this.toastr?.error('获取聊天内容失败: ' + error.message);
+        }
     }
 
     /**
@@ -243,8 +344,14 @@ export class MemoryUI {
             const outputContent = $('#memory_output').val();
             const hasSummaryContent = outputContent && outputContent.trim();
             
-            // 调用服务层方法创建世界书，传入总结标志
-            const result = await this.memoryService.createWorldBook(hasSummaryContent);
+            // 获取楼层信息（使用临时存储的信息）
+            const floorRange = this._tempFloorRange;
+            
+            // 调用服务层方法创建世界书，传入总结标志和楼层信息
+            const result = await this.memoryService.createWorldBook(hasSummaryContent, floorRange);
+            
+            // 清除临时存储的楼层信息
+            this._tempFloorRange = null;
             
             if (result.success) {
                 // 根据不同操作构建不同的成功消息
@@ -466,7 +573,7 @@ export class MemoryUI {
 
         // 加载配置到UI
         
-        $('#memory_api_source').val(config.source || 'openai_compatible');
+        $('#memory_api_source').val(config.source || 'google_openai');
         $('#memory_summary_length').val(config.summaryLength || 'normal');
         $('#memory_auto_create_world_book').prop('checked', config.autoCreateWorldBook || false);
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
@@ -479,7 +586,7 @@ export class MemoryUI {
         await this.loadApiKeys();
 
         // 更新UI显示
-        this.initializeApiSourceDisplay(config.source || 'openai_compatible');
+        this.initializeApiSourceDisplay(config.source || 'google_openai');
     }
 
     /**
@@ -507,6 +614,9 @@ export class MemoryUI {
                 // 加载Google转OpenAI API Key
                 if (secrets.memory_google_openai_api_key) {
                     $('#memory_google_openai_api_key').val(secrets.memory_google_openai_api_key);
+                    console.log('[MemoryUI] 已加载Google API Key');
+                } else {
+                    console.log('[MemoryUI] 未找到保存的Google API Key');
                 }
             }
         } catch (error) {
@@ -559,6 +669,11 @@ export class MemoryUI {
                 return;
             }
             
+            // 获取楼层编号范围
+            const indices = messages.map(msg => msg.index).sort((a, b) => a - b);
+            const startIndex = indices[0];
+            const endIndex = indices[indices.length - 1];
+            
             // 处理并格式化聊天内容
             const chatTexts = messages.map(msg => {
                 let extractedText;
@@ -576,21 +691,29 @@ export class MemoryUI {
                 return `#${msg.index} [${msgType}]: ${extractedText}`;
             }).join('\n\n');
             
+            // 添加楼层信息头部
+            const headerInfo = `【注入内容：楼层 #${startIndex} 至 #${endIndex}，共 ${messages.length} 条消息】\n\n`;
+            const contentWithHeader = headerInfo + chatTexts;
+            
             // 注入到输入框
             const inputElement = $('#memory_input');
             const currentValue = inputElement.val();
             
             // 如果输入框已有内容，添加分隔符
             if (currentValue && currentValue.trim()) {
-                inputElement.val(currentValue + '\n\n---\n\n' + chatTexts);
+                inputElement.val(currentValue + '\n\n---\n\n' + contentWithHeader);
             } else {
-                inputElement.val(chatTexts);
+                inputElement.val(contentWithHeader);
             }
             
             // 触发 input 事件，以防有其他监听器
             inputElement.trigger('input');
             
-            this.toastr?.info(`已注入 ${messages.length} 条聊天记录`);
+            // 存储楼层信息到数据属性，以便其他功能使用
+            inputElement.data('injected-range', { start: startIndex, end: endIndex, count: messages.length });
+            
+            // 显示更详细的提示
+            this.toastr?.info(`已注入楼层 #${startIndex} 至 #${endIndex} 的 ${messages.length} 条聊天记录`);
             
         } catch (error) {
             console.error('[MemoryUI] 注入内容失败:', error);
@@ -691,13 +814,11 @@ export class MemoryUI {
 
     destroy() {
         // Unbind event listeners
-        $('#memory_send_btn').off('click');
-        $('#memory_input').off('keydown');
+        $('#memory_summarize_btn').off('click');
         $('#memory_api_source').off('change');
         $('#memory_vectorize_summary').off('click');
-        $('#memory_inject_content').off('click');
         // Prompt buttons removed
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book').off('change');
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length').off('change');
 
         // Unsubscribe from events
         if (this.eventBus) {
