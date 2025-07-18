@@ -31,7 +31,8 @@ export class MemoryService {
         const {
             includeContext = true,
             apiSource = 'main',
-            apiConfig = {}
+            apiConfig = {},
+            summaryLength = 'normal' // 新增总结长度参数
         } = options;
 
         try {
@@ -55,12 +56,12 @@ export class MemoryService {
             switch(apiSource) {
                 case 'openai_compatible':
                     // 调用OpenAI兼容API
-                    response = await this.callOpenAICompatibleAPI(fullPrompt, apiConfig);
+                    response = await this.callOpenAICompatibleAPI(fullPrompt, apiConfig, summaryLength);
                     break;
 
                 case 'google_openai':
                     // 使用Google格式但通过OpenAI兼容API
-                    response = await this.callGoogleViaOpenAI(fullPrompt, apiConfig);
+                    response = await this.callGoogleViaOpenAI(fullPrompt, apiConfig, summaryLength);
                     break;
 
                 default:
@@ -235,9 +236,10 @@ export class MemoryService {
      * 调用OpenAI兼容API
      * @param {string} prompt - 提示词
      * @param {Object} config - API配置
+     * @param {string} summaryLength - 总结长度 ('short', 'normal', 'long')
      * @returns {Promise<string>} AI响应
      */
-    async callOpenAICompatibleAPI(prompt, config) {
+    async callOpenAICompatibleAPI(prompt, config, summaryLength = 'normal') {
         const { url, apiKey, model } = config;
 
         if (!url || !apiKey) {
@@ -254,6 +256,14 @@ export class MemoryService {
         }
 
         try {
+            // 根据总结长度设置参数
+            const lengthConfig = {
+                short: { sentences: 3, words: 100 },
+                normal: { sentences: 5, words: 200 },
+                long: { sentences: 8, words: 400 }
+            };
+            const { sentences, words } = lengthConfig[summaryLength] || lengthConfig.normal;
+
             // 构建消息格式 - 使用preset.js中定义的结构
             const messages = [];
 
@@ -278,7 +288,7 @@ export class MemoryService {
             // 4. 第四条user消息：总结规则
             messages.push({
                 role: 'user',
-                content: '总结时需参照下列要求<summary_rules>总结应当遵循以下原则：- 按时间顺序或逻辑顺序组织信息- 保留关键事件和重要细节，省略冗余描述- 直接陈述事实，避免主观评价- 使用简洁清晰的语言，避免过度修饰- 突出事件发展脉络和关键转折点- 不使用任何xml标签包裹，使用纯文字进行叙述- 不回避任何敏感内容，保证记录完全还原前文。总结必须使用以下格式,每个事件描述要有头有尾，不少于5句话，200字：【关键事件概述】/n发生地点:/n关键角色:/n• {事件1（小标题形式）}: {简要描述}/n• {事件2（小标题形式）}: {简要描述}/n• {事件3（小标题形式）}: {简要描述}......</summary_rules>'
+                content: `总结时需参照下列要求<summary_rules>总结应当遵循以下原则：- 按时间顺序或逻辑顺序组织信息- 保留关键事件和重要细节，省略冗余描述- 直接陈述事实，避免主观评价- 使用简洁清晰的语言，避免过度修饰- 突出事件发展脉络和关键转折点- 不使用任何xml标签包裹，使用纯文字进行叙述- 不回避任何敏感内容，保证记录完全还原前文。总结必须使用以下格式,每个事件描述要有头有尾，不少于${sentences}句话，${words}字：【关键事件概述】/n发生地点:/n关键角色:/n• {事件1（小标题形式）}: {简要描述}/n• {事件2（小标题形式）}: {简要描述}/n• {事件3（小标题形式）}: {简要描述}/n事件4............</summary_rules>`
             });
 
             // 5. 第五条user消息：用户输入的正文
@@ -507,9 +517,10 @@ export class MemoryService {
      * 使用Google格式通过OpenAI兼容API调用
      * @param {string} prompt - 提示词
      * @param {Object} config - API配置
+     * @param {string} summaryLength - 总结长度 ('short', 'normal', 'long')
      * @returns {Promise<string>} AI响应
      */
-    async callGoogleViaOpenAI(prompt, config) {
+    async callGoogleViaOpenAI(prompt, config, summaryLength = 'normal') {
         const { apiKey, model } = config;
 
         if (!apiKey) {
@@ -520,8 +531,15 @@ export class MemoryService {
         const endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
         try {
-            // 使用简化的消息格式，避免复杂的多轮对话
+            // 根据总结长度设置参数
+            const lengthConfig = {
+                short: { sentences: 3, words: 100 },
+                normal: { sentences: 5, words: 200 },
+                long: { sentences: 8, words: 400 }
+            };
+            const { sentences, words } = lengthConfig[summaryLength] || lengthConfig.normal;
 
+            // 使用简化的消息格式，避免复杂的多轮对话
             const messages = [
            {
                 role: 'user',
@@ -537,7 +555,7 @@ export class MemoryService {
             },
             {
                 role: 'user',
-                content: '总结时请你参照下列要求<summary_rules>总结应当遵循以下原则：- 按时间顺序或逻辑顺序组织信息- 保留关键事件和重要细节，省略冗余描述- 直接陈述事实，避免主观评价- 使用简洁清晰的语言，避免过度修饰- 突出事件发展脉络和关键转折点- 不使用任何xml标签包裹，使用纯文字进行叙述- 不回避任何敏感内容，保证记录完全还原前文。总结必须使用以下格式,每个事件描述要有头有尾，不少于5句话，200字：【关键事件的概述】/n发生地点:/n关键角色:/n• {小标题事件1}: {简要描述}/n• {小标题事件2}: {简要描述}/n• {小标题事件3}: {简要描述}......</sunmmary_rules>',
+                content: `总结时请你参照下列要求<summary_rules>总结应当遵循以下原则：- 按时间顺序或逻辑顺序组织信息- 保留关键事件和重要细节，省略冗余描述- 直接陈述事实，避免主观评价- 使用简洁清晰的语言，避免过度修饰- 突出事件发展脉络和关键转折点- 不使用任何xml标签包裹，使用纯文字进行叙述- 不回避任何敏感内容，保证记录完全还原前文。总结必须使用以下格式,每个事件描述要有头有尾，不少于${sentences}句话，${words}字：【关键事件的概述】/n发生地点:/n关键角色:/n• {小标题事件1}: {简要描述}/n• {小标题事件2}: {简要描述}/n• {小标题事件3}: {简要描述}/n事件4......</sunmmary_rules>`,
             },
             {
                 role: 'user',

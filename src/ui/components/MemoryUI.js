@@ -12,8 +12,10 @@ import { updateWorldInfoList as updatePluginWorldInfoList } from './WorldInfoLis
 
 // Default memory settings
 const defaultMemorySettings = {
-    source: 'google', // 改为默认使用Google
-    google: {
+    source: 'google_openai', // 默认使用Google
+    summaryLength: 'normal', // 默认使用正常长度
+    autoCreateWorldBook: false, // 默认不自动生成世界书
+    google_openai: {
         model: ''
     },
     openai_compatible: {
@@ -71,12 +73,8 @@ export class MemoryUI {
         // Prompt buttons removed - using preset format
 
         // Save config on input changes
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model')
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book')
             .off('change').on('change', () => this.saveApiConfig());
-
-
-        // Create world book button handler
-        $('#memory_create_world_book').off('click').on('click', () => this.createWorldBook());
 
 
         // Initialize API source display (without saving)
@@ -91,9 +89,18 @@ export class MemoryUI {
             this.showLoading();
         });
 
-        this.eventBus.on('memory:message-complete', (data) => {
+        this.eventBus.on('memory:message-complete', async (data) => {
             this.displayResponse(data.response);
             this.hideLoading();
+            
+            // 检查是否启用了自动生成世界书
+            const autoCreateWorldBook = $('#memory_auto_create_world_book').prop('checked');
+            if (autoCreateWorldBook && data.response) {
+                // 延迟一下确保UI已更新
+                setTimeout(() => {
+                    this.createWorldBook();
+                }, 100);
+            }
         });
 
         this.eventBus.on('memory:message-error', (data) => {
@@ -121,11 +128,15 @@ export class MemoryUI {
         // Get API configuration
         const apiSource = $('#memory_api_source').val();
         const apiConfig = this.getApiConfig();
+        
+        // Get summary length selection
+        const summaryLength = $('#memory_summary_length').val() || 'normal';
 
         // Get UI settings - prompts removed, using preset format
         const options = {
             apiSource: apiSource,
-            apiConfig: apiConfig
+            apiConfig: apiConfig,
+            summaryLength: summaryLength
         };
 
         // Delegate to service
@@ -351,6 +362,8 @@ export class MemoryUI {
         // 直接保存到settings对象
         const memoryConfig = {
             source: $('#memory_api_source').val(),
+            summaryLength: $('#memory_summary_length').val() || 'normal',
+            autoCreateWorldBook: $('#memory_auto_create_world_book').prop('checked'),
             openai_compatible: {
                 url: $('#memory_openai_url').val(),
                 model: $('#memory_openai_model').val() || ''
@@ -447,6 +460,8 @@ export class MemoryUI {
         // 加载配置到UI
         
         $('#memory_api_source').val(config.source || 'openai_compatible');
+        $('#memory_summary_length').val(config.summaryLength || 'normal');
+        $('#memory_auto_create_world_book').prop('checked', config.autoCreateWorldBook || false);
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
         $('#memory_openai_model').val(config.openai_compatible?.model || '');
         $('#memory_google_openai_model').val(config.google_openai?.model || '');
@@ -498,8 +513,7 @@ export class MemoryUI {
         $('#memory_input').off('keydown');
         $('#memory_api_source').off('change');
         // Prompt buttons removed
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model').off('change');
-        $('#memory_create_world_book').off('click');
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_auto_create_world_book').off('change');
 
         // Unsubscribe from events
         if (this.eventBus) {

@@ -441,7 +441,7 @@
             </label>
             <select id="memory_api_source" class="text_pole" style="width: 100%;">
               <option value="openai_compatible">OpenAI兼容格式</option>
-              <option value="google_openai">Google OpenAI兼容端点</option>
+              <option value="google_openai">Google</option>
             </select>
             
             <!-- OpenAI Compatible Settings -->
@@ -519,6 +519,26 @@
           
           <!-- Prompts Section (collapsible) -->
           
+          <!-- Summary Length Selection -->
+          <div class="memory-summary-length" style="margin-top: 10px;">
+            <label for="memory_summary_length">
+              <small>总结长度:</small>
+            </label>
+            <select id="memory_summary_length" class="text_pole" style="width: 100%;">
+              <option value="short">短总结 (3句话, 100字)</option>
+              <option value="normal" selected>正常总结 (5句话, 200字)</option>
+              <option value="long">长总结 (8句话, 400字)</option>
+            </select>
+          </div>
+          
+          <!-- Auto Create World Book Option -->
+          <label class="checkbox_label" for="memory_auto_create_world_book" 
+                 title="在收到AI回复后自动创建世界书条目"
+                 style="margin-top: 10px; margin-bottom: 10px;">
+            <input id="memory_auto_create_world_book" type="checkbox" />
+            <span>自动生成世界书</span>
+          </label>
+          
           <!-- Send Button -->
           <div class="memory-actions" style="margin-top: 10px;">
             <button id="memory_send_btn" 
@@ -548,18 +568,6 @@
             <i class="fa-solid fa-spinner fa-spin"></i>
             <span style="margin-left: 5px;">正在处理...</span>
           </div>
-
-          
-          <!-- World Book Creation Button -->
-          <hr class="m-t-1 m-b-1">
-          <h4 class="m-t-1">世界书创建</h4>
-          <button id="memory_create_world_book" 
-                  class="menu_button menu_button_icon" 
-                  title="创建一本以当前角色名和聊天创建时间命名的世界书"
-                  style="width: 100%;">
-            <i class="fa-solid fa-book"></i>
-            <span>创建世界书 (角色名 YY/MM/DD HH:MM)</span>
-          </button>
         </div>
       </details>
     </div>
