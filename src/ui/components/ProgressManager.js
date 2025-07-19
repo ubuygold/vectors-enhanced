@@ -270,7 +270,8 @@ export class ProgressManager {
             this.progressBar.css('background-color', 'var(--SmartThemeRedColor, #ff4444)');
         } else if (this.progressState.isComplete) {
             this.progressContainer.addClass('complete');
-            this.progressBar.css('background-color', 'var(--SmartThemeGreenColor, #44ff44)');
+            // 保持默认颜色，不变绿
+            this.progressBar.css('background-color', 'var(--SmartThemeQuoteColor)');
         } else {
             this.progressBar.css('background-color', 'var(--SmartThemeQuoteColor)');
         }

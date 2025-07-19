@@ -302,21 +302,21 @@
                   <input id="memory_auto_summarize_interval" 
                          type="number" 
                          class="text_pole" 
-                         min="10" 
+                         min="1" 
                          max="200" 
-                         value="10"
+                         value="20"
                          style="width: 100%;" />
                 </div>
                 <div style="flex: 1;">
                   <label for="memory_auto_summarize_count">
-                    <small>总结最近N层消息:</small>
+                    <small>保留最近多少层:</small>
                   </label>
                   <input id="memory_auto_summarize_count" 
                          type="number" 
                          class="text_pole" 
-                         min="5" 
+                         min="1" 
                          max="100" 
-                         value="10"
+                         value="6"
                          style="width: 100%;" />
                 </div>
               </div>
@@ -329,7 +329,7 @@
               </div>
               
               <div style="margin-top: 8px;">
-                <small style="color: var(--SmartThemeEmColor);">当AI回复后达到设定楼层时，自动总结指定范围的消息（不包含最新回复）</small>
+                <small style="color: var(--SmartThemeEmColor);">当达到设定楼层时，保留最近N层消息，总结其余所有内容（不包含最新回复）</small>
               </div>
             </div>
           </div>
@@ -461,6 +461,22 @@
             <small>自定义块分隔符</small>
           </label>
           <input id="vectors_enhanced_force_chunk_delimiter" class="text_pole" type="text" placeholder="（可选）" />
+        </div>
+
+        <!-- Query Settings -->
+        <div class="flex-container m-t-0-5">
+          <div class="flex1">
+            <label for="vectors_enhanced_query_messages" title="用于向量查询的最近消息数">
+              <small>查询消息数</small>
+            </label>
+            <input id="vectors_enhanced_query_messages" type="number" class="text_pole" min="1" max="10" value="3" />
+          </div>
+          <div class="flex1">
+            <label for="vectors_enhanced_max_results" title="向量查询返回的最大结果数">
+              <small>最大结果数</small>
+            </label>
+            <input id="vectors_enhanced_max_results" type="number" class="text_pole" min="1" max="50" value="10" />
+          </div>
         </div>
 
         <!-- Enable Vector Query -->

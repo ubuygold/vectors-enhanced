@@ -109,7 +109,7 @@ const settings = {
   ollama_keep: false,
 
   // General vectorization settings
-  chunk_size: 1000,
+  chunk_size: 768,
   overlap_percent: 0,
   score_threshold: 0.25,
   force_chunk_delimiter: '',

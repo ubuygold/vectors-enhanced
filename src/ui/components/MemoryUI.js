@@ -27,8 +27,8 @@ const defaultMemorySettings = {
     // prompts removed - using preset format
     autoSummarize: {
         enabled: false,
-        interval: 10,  // 每10层自动总结
-        messageCount: 10,  // 总结最近10层消息
+        interval: 20,  // 每20层自动总结
+        messageCount: 6,  // 保留最近6层消息
         lastSummarizedFloor: 0  // 上次总结的楼层
     },
     hideFloorsAfterSummary: false  // 总结后隐藏楼层
@@ -98,7 +98,14 @@ export class MemoryUI {
         });
         
         $('#memory_auto_summarize_interval, #memory_auto_summarize_count')
-            .off('change input').on('change input', () => {
+            .off('change input').on('change input', (e) => {
+                // 如果是保留数量输入框，确保最小值为1
+                if (e.target.id === 'memory_auto_summarize_count') {
+                    const value = parseInt(e.target.value) || 0;
+                    if (value < 1) {
+                        e.target.value = 1;
+                    }
+                }
                 this.updateAutoSummarizeStatus();
                 this.saveApiConfig();
             });
@@ -546,8 +553,8 @@ export class MemoryUI {
             // prompts removed - using preset format
             autoSummarize: {
                 enabled: $('#memory_auto_summarize_enabled').prop('checked'),
-                interval: parseInt($('#memory_auto_summarize_interval').val()) || 10,
-                messageCount: parseInt($('#memory_auto_summarize_count').val()) || 10,
+                interval: parseInt($('#memory_auto_summarize_interval').val()) || 20,
+                messageCount: Math.max(1, parseInt($('#memory_auto_summarize_count').val()) || 1),
                 lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0
             },
             hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked')
@@ -648,8 +655,8 @@ export class MemoryUI {
         // Auto-summarize settings
         if (config.autoSummarize) {
             $('#memory_auto_summarize_enabled').prop('checked', config.autoSummarize.enabled || false);
-            $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 10);
-            $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 10);
+            $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 20);
+            $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 6);
             $('#memory_auto_summarize_settings').toggle(config.autoSummarize.enabled || false);
             $('#memory_auto_summarize_status').toggle(config.autoSummarize.enabled || false);
             if (config.autoSummarize.enabled) {
@@ -993,7 +1000,7 @@ export class MemoryUI {
      * Update auto-summarize status display
      */
     updateAutoSummarizeStatus() {
-        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 10;
+        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
         const context = this.getContext ? this.getContext() : getContext();
         
         if (!context || !context.chat) {
@@ -1004,20 +1011,8 @@ export class MemoryUI {
         const currentFloor = context.chat.length - 1;
         const lastSummarized = this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0;
         
-        // 计算下一个触发楼层
-        let nextFloor;
-        if (lastSummarized === 0) {
-            // 如果从未总结过，下一个触发楼层就是第一个间隔
-            nextFloor = interval;
-        } else {
-            // 如果已经总结过，下一个触发楼层是上次总结楼层加上间隔
-            nextFloor = lastSummarized + interval;
-        }
-        
-        // 如果当前楼层已经超过了计算出的下次楼层，显示下一个间隔点
-        if (currentFloor >= nextFloor) {
-            nextFloor = Math.ceil((currentFloor + 1) / interval) * interval;
-        }
+        // 计算下一个触发楼层：简单地是上次总结位置 + 间隔
+        const nextFloor = lastSummarized + interval;
         
         $('#memory_next_auto_summarize_floor').text(`#${nextFloor}`);
     }
@@ -1046,29 +1041,31 @@ export class MemoryUI {
             }
             
             const currentFloor = context.chat.length - 1;
-            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 10;
-            const messageCount = parseInt($('#memory_auto_summarize_count').val()) || 10;
+            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+            const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
             const lastSummarized = this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0;
             
             console.log('[MemoryUI] 自动总结检查:', {
                 currentFloor,
                 interval,
-                messageCount,
+                keepCount,
                 lastSummarized,
                 enabled: this.settings?.memory?.autoSummarize?.enabled
             });
             
             // 检查是否达到触发条件
-            if (currentFloor < interval) {
-                console.log('[MemoryUI] 当前楼层小于间隔，不触发');
-                return;
-            }
-            if (currentFloor % interval !== 0) {
-                console.log('[MemoryUI] 当前楼层不是间隔的倍数，不触发');
-                return;
-            }
-            if (currentFloor <= lastSummarized) {
-                console.log('[MemoryUI] 当前楼层已经总结过，不触发');
+            // 计算从上次总结后经过的楼层数
+            const floorsSinceLastSummary = currentFloor - lastSummarized;
+            
+            // 必须达到间隔数量才触发
+            if (floorsSinceLastSummary < interval) {
+                console.log('[MemoryUI] 未达到间隔楼层，不触发', {
+                    currentFloor,
+                    lastSummarized,
+                    floorsSinceLastSummary,
+                    interval,
+                    needMore: interval - floorsSinceLastSummary
+                });
                 return;
             }
             
@@ -1082,7 +1079,7 @@ export class MemoryUI {
             console.log('[MemoryUI] 触发自动总结:', {
                 currentFloor,
                 interval,
-                messageCount,
+                keepCount,
                 lastSummarized
             });
             
@@ -1090,7 +1087,7 @@ export class MemoryUI {
             this.isAutoSummarizing = true;
             
             // 执行自动总结
-            await this.performAutoSummarize(currentFloor, messageCount);
+            await this.performAutoSummarize(currentFloor, keepCount);
             
         } catch (error) {
             console.error('[MemoryUI] 自动总结检查失败:', error);
@@ -1102,9 +1099,9 @@ export class MemoryUI {
     /**
      * Perform auto-summarization
      */
-    async performAutoSummarize(currentFloor, messageCount) {
+    async performAutoSummarize(currentFloor, keepCount) {
         try {
-            console.log('[MemoryUI] performAutoSummarize 开始执行', { currentFloor, messageCount });
+            console.log('[MemoryUI] performAutoSummarize 开始执行', { currentFloor, keepCount });
             this.toastr?.info('开始自动总结...');
             
             // 导入必要的函数和工具
@@ -1118,20 +1115,37 @@ export class MemoryUI {
             // 获取标签提取规则（如果有的话）
             const rules = settings.tag_extraction_rules || [];
             
-            // 收集最近N条AI消息（不包含最新的）
-            const aiMessages = [];
-            let aiMessageCount = 0;
+            // 确保保留数量至少为1
+            const actualKeepCount = Math.max(1, keepCount);
             
-            // 从当前楼层往前遍历，收集AI消息
-            for (let i = currentFloor - 1; i >= 0 && aiMessageCount < messageCount; i--) {
+            // 计算要总结的范围
+            // currentFloor是当前楼层（从0开始）
+            // actualKeepCount是要保留的层数
+            // 上次总结的位置
+            const lastSummarized = this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0;
+            
+            // 总结范围：从上次总结位置开始，到当前楼层-保留数量
+            const startIndex = lastSummarized;
+            const endIndex = currentFloor - actualKeepCount;
+            
+            if (endIndex <= startIndex) {
+                console.log('[MemoryUI] 消息数量不足，无需总结');
+                this.toastr?.warning('消息数量不足，无需总结');
+                return;
+            }
+            
+            // 收集要总结的AI消息
+            const aiMessages = [];
+            
+            // 从startIndex开始，到endIndex结束（包含），收集所有AI消息
+            for (let i = startIndex; i <= endIndex; i++) {
                 const msg = context.chat[i];
                 if (msg && !msg.is_user && !msg.is_system) {
                     // 这是AI消息
-                    aiMessages.unshift({  // unshift保持时间顺序
+                    aiMessages.push({
                         ...msg,
                         index: i
                     });
-                    aiMessageCount++;
                 }
             }
             
@@ -1167,12 +1181,8 @@ export class MemoryUI {
                 return `#${msg.index} [AI]: ${extractedText}`;
             }).join('\n\n');
             
-            // 获取楼层范围
-            const startIndex = aiMessages[0].index;
-            const endIndex = aiMessages[aiMessages.length - 1].index;
-            
             // 添加楼层信息头部
-            const headerInfo = `【自动总结：最近 ${aiMessages.length} 条AI消息，楼层 #${startIndex} 至 #${endIndex}】\n\n`;
+            const headerInfo = `【自动总结：楼层 #${startIndex} 至 #${endIndex}，共 ${aiMessages.length} 条AI消息】\n\n`;
             const contentWithHeader = headerInfo + chatTexts;
             
             // 调试：检查最终内容
@@ -1242,9 +1252,9 @@ export class MemoryUI {
                     this.toastr?.warning('自动总结可能失败：' + response.substring(0, 50) + '...');
                 }
                 
-                // 更新最后总结的楼层
+                // 更新最后总结的楼层为endIndex+1（下次从这里开始）
                 if (this.settings?.memory?.autoSummarize) {
-                    this.settings.memory.autoSummarize.lastSummarizedFloor = currentFloor;
+                    this.settings.memory.autoSummarize.lastSummarizedFloor = endIndex + 1;
                     await this.saveApiConfig();
                 }
                 
