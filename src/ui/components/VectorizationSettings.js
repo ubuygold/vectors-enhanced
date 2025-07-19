@@ -36,7 +36,6 @@ export class VectorizationSettings {
             'depth',
             'depth_role',
             'include_wi',
-            'auto_vectorize'
         ];
         this.contentTagFields = ['tag_chat', 'tag_wi', 'tag_file'];
 
@@ -99,7 +98,6 @@ export class VectorizationSettings {
         $('#vectors_enhanced_depth').on('input', (e) => this.handleFieldChange('depth', parseInt(e.target.value) || 0));
         $('#vectors_enhanced_depth_role').on('change', (e) => this.handleFieldChange('depth_role', parseInt(e.target.value) || 0));
         $('#vectors_enhanced_include_wi').on('change', (e) => this.handleFieldChange('include_wi', e.target.checked));
-        $('#vectors_enhanced_auto_vectorize').on('change', (e) => this.handleFieldChange('auto_vectorize', e.target.checked));
     }
 
     /**

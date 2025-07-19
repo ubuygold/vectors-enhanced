@@ -109,7 +109,6 @@ const settings = {
   ollama_keep: false,
 
   // General vectorization settings
-  auto_vectorize: true,
   chunk_size: 1000,
   overlap_percent: 0,
   score_threshold: 0.25,
@@ -1986,9 +1985,6 @@ async function synchronizeChat(batchSize = 5) {
     return -1;
   }
 
-  if (!settings.auto_vectorize) {
-    return -1;
-  }
 
   try {
     await waitUntilCondition(() => !syncBlocked && !is_send_press, 1000);
@@ -2504,9 +2500,6 @@ function throwIfSourceInvalid() {
 
 // Event handlers
 const onChatEvent = debounce(async () => {
-  if (settings.auto_vectorize) {
-    await moduleWorker.update();
-  }
   // Update UI lists when chat changes
   await updateFileList();
   updateChatSettings();

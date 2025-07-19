@@ -27,8 +27,8 @@ const defaultMemorySettings = {
     // prompts removed - using preset format
     autoSummarize: {
         enabled: false,
-        interval: 50,  // 每50层自动总结
-        messageCount: 30,  // 总结最近30层消息
+        interval: 10,  // 每10层自动总结
+        messageCount: 10,  // 总结最近10层消息
         lastSummarizedFloor: 0  // 上次总结的楼层
     },
     hideFloorsAfterSummary: false  // 总结后隐藏楼层
@@ -543,8 +543,8 @@ export class MemoryUI {
             // prompts removed - using preset format
             autoSummarize: {
                 enabled: $('#memory_auto_summarize_enabled').prop('checked'),
-                interval: parseInt($('#memory_auto_summarize_interval').val()) || 50,
-                messageCount: parseInt($('#memory_auto_summarize_count').val()) || 30,
+                interval: parseInt($('#memory_auto_summarize_interval').val()) || 10,
+                messageCount: parseInt($('#memory_auto_summarize_count').val()) || 10,
                 lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0
             },
             hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked')
@@ -645,8 +645,8 @@ export class MemoryUI {
         // Auto-summarize settings
         if (config.autoSummarize) {
             $('#memory_auto_summarize_enabled').prop('checked', config.autoSummarize.enabled || false);
-            $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 50);
-            $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 30);
+            $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 10);
+            $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 10);
             $('#memory_auto_summarize_settings').toggle(config.autoSummarize.enabled || false);
             $('#memory_auto_summarize_status').toggle(config.autoSummarize.enabled || false);
             if (config.autoSummarize.enabled) {
@@ -990,7 +990,7 @@ export class MemoryUI {
      * Update auto-summarize status display
      */
     updateAutoSummarizeStatus() {
-        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 50;
+        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 10;
         const context = this.getContext ? this.getContext() : getContext();
         
         if (!context || !context.chat) {
@@ -1043,8 +1043,8 @@ export class MemoryUI {
             }
             
             const currentFloor = context.chat.length - 1;
-            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 50;
-            const messageCount = parseInt($('#memory_auto_summarize_count').val()) || 30;
+            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 10;
+            const messageCount = parseInt($('#memory_auto_summarize_count').val()) || 10;
             const lastSummarized = this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0;
             
             console.log('[MemoryUI] 自动总结检查:', {

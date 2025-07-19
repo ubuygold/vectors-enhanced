@@ -120,13 +120,6 @@ export class SettingsManager {
         toggleSettings(this.settings);
       });
 
-    // 自动向量化
-    $('#vectors_enhanced_auto_vectorize')
-      .prop('checked', this.settings.auto_vectorize)
-      .on('input', () => {
-        this.settings.auto_vectorize = $('#vectors_enhanced_auto_vectorize').prop('checked');
-        this.updateAndSave();
-      });
 
     // 块大小
     $('#vectors_enhanced_chunk_size')

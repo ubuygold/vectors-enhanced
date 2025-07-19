@@ -167,7 +167,6 @@ export class DataCleaner {
       // 重置主开关和其他设置
       settings.master_enabled = true;
       settings.enabled = true;
-      settings.auto_vectorize = true;
       
       // 保存设置
       Object.assign(this.api.extension_settings.vectors_enhanced, settings);
@@ -176,7 +175,6 @@ export class DataCleaner {
       // 更新主开关UI
       this.api.jQuery('#vectors_enhanced_master_enabled').prop('checked', true);
       this.api.jQuery('#vectors_enhanced_enabled').prop('checked', true);
-      this.api.jQuery('#vectors_enhanced_auto_vectorize').prop('checked', true);
       
       console.log('=== 重置完成 ===');
       
