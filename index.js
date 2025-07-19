@@ -1221,6 +1221,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         settings: contentSettings,
         abortSignal: vectorizationAbortController.signal,
         source: 'chat_vectorization',
+        taskType: taskType, // Pass taskType for summary vectorization detection
         vectorizationSettings: {
           source: settings.source,
           chunk_size: settings.chunk_size,
@@ -1249,7 +1250,8 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
             ...contentBlock.metadata,
             type: contentBlock.type,
             collectionId: collectionId,
-            source: 'pipeline_extraction'
+            source: 'pipeline_extraction',
+            taskType: taskType // Pass taskType to metadata for vectorization processor
           }
         };
 
@@ -1270,10 +1272,11 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         });
 
         // Dispatch through the text dispatcher
+        // Pass content and metadata separately - the dispatcher expects content as first param
         const dispatchResult = await dispatcher.dispatch(
-          dispatchInput,
+          dispatchInput.content,
           'vectorization',
-          contentSettings,
+          dispatchInput.metadata,  // This becomes the config parameter in dispatcher
           processingContext
         );
 

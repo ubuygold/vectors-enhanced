@@ -465,7 +465,7 @@ export class MemoryService {
                     entryName = `总结${nextNumber}`;
                 }
                 newEntry.comment = entryName;
-                newEntry.content = outputContent;  // 使用AI的回复内容
+                newEntry.content = `<history_story>${outputContent}</history_story>`;  // 使用AI的回复内容，添加history_story标签
                 newEntry.key = [`${entryName}`];  // 设置关键词为条目名称
                 newEntry.addMemo = true;  // 显示备注
                 newEntry.constant = true; // 非常驻

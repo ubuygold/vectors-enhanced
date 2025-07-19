@@ -249,6 +249,9 @@ export class MemoryUI {
 
             this.showLoading();
             
+            // 显示总结开始提示
+            this.toastr?.info(`开始总结楼层 #${startIndex} 至 #${endIndex} 的内容...`);
+            
             // 临时存储楼层信息
             this._tempFloorRange = floorRange;
             

@@ -85,6 +85,15 @@ export class VectorizationProcessor extends ITextProcessor {
             const settings = context.settings || {};
             const vectorizationSettings = context.vectorizationSettings || {};
             
+            // Log metadata to track taskType flow
+            logger.log('VectorizationProcessor received metadata:', {
+                taskType: metadata.taskType,
+                source: metadata.source,
+                type: metadata.type,
+                collectionId: metadata.collectionId,
+                allMetadataKeys: Object.keys(metadata)
+            });
+            
             // Determine vectorization source
             const source = vectorizationSettings.source || metadata.source || settings.source || 'transformers';
             
@@ -238,6 +247,23 @@ export class VectorizationProcessor extends ITextProcessor {
         const chunkSize = vectorizationSettings.chunk_size || 1000;
         const overlapPercent = vectorizationSettings.overlap_percent || 10;
         
+        // Log metadata at the start of prepareVectorizationChunks
+        logger.log('prepareVectorizationChunks received metadata:', {
+            taskType: metadata.taskType,
+            source: metadata.source,
+            type: metadata.type,
+            allKeys: Object.keys(metadata)
+        });
+        
+        // Check if this is summary vectorization mode
+        if (metadata.taskType === 'summary_vectorization' && 
+            typeof content === 'string' && 
+            content.includes('</history_story>')) {
+            logger.log('Using history_story tag-based chunking for summary vectorization');
+            logger.log(`Content preview: ${content.substring(0, 200)}...`);
+            return this.splitByHistoryStoryTags(content, metadata, chunkSize, overlapPercent);
+        }
+        
         let chunks = [];
         
         // Handle different content types
@@ -251,14 +277,27 @@ export class VectorizationProcessor extends ITextProcessor {
                 let itemText = '';
                 let itemMetadata = { ...metadata };
                 
+                // Log the initial itemMetadata (should include taskType from parent metadata)
+                logger.log(`Array item ${i} - initial itemMetadata:`, {
+                    taskType: itemMetadata.taskType,
+                    source: itemMetadata.source,
+                    allKeys: Object.keys(itemMetadata)
+                });
+                
                 // Extract text and metadata from each item
                 if (typeof item === 'string') {
                     itemText = item;
                 } else if (item && typeof item === 'object') {
                     itemText = item.text || item.content || String(item);
-                    // Preserve original item metadata
+                    // Preserve original item metadata but don't override critical fields
                     if (item.metadata) {
+                        logger.log(`Array item ${i} has its own metadata, merging...`);
+                        // Keep taskType from parent metadata if it exists
+                        const preservedTaskType = itemMetadata.taskType;
                         itemMetadata = { ...itemMetadata, ...item.metadata };
+                        if (preservedTaskType) {
+                            itemMetadata.taskType = preservedTaskType;
+                        }
                     }
                     if (item.id) itemMetadata.originalId = item.id;
                     if (item.type) itemMetadata.originalType = item.type;
@@ -267,10 +306,40 @@ export class VectorizationProcessor extends ITextProcessor {
                     itemText = String(item);
                 }
                 
+                // Log the final itemMetadata after merging
+                logger.log(`Array item ${i} - final itemMetadata:`, {
+                    taskType: itemMetadata.taskType,
+                    source: itemMetadata.source,
+                    originalType: itemMetadata.originalType,
+                    allKeys: Object.keys(itemMetadata)
+                });
+                
                 // Skip empty items
                 if (!itemText.trim()) {
                     logger.log(`Skipping empty item at index ${i}`);
                     continue;
+                }
+                
+                // Debug: Log item metadata for summary vectorization
+                if (itemMetadata.taskType === 'summary_vectorization') {
+                    logger.log(`[DEBUG] Summary vectorization item ${i}:`, {
+                        taskType: itemMetadata.taskType,
+                        hasHistoryStoryTag: itemText.includes('</history_story>'),
+                        textLength: itemText.length,
+                        textPreview: itemText.substring(0, 300)
+                    });
+                }
+                
+                // Check if this is summary vectorization mode with history_story tags
+                if (itemMetadata.taskType === 'summary_vectorization' && 
+                    itemText.includes('</history_story>')) {
+                    logger.log(`Using history_story tag-based chunking for array item ${i}`);
+                    logger.log(`Item preview: ${itemText.substring(0, 200)}...`);
+                    const tagChunks = this.splitByHistoryStoryTags(itemText, itemMetadata, chunkSize, overlapPercent);
+                    chunks.push(...tagChunks);
+                    continue;
+                } else if (itemMetadata.taskType === 'summary_vectorization') {
+                    logger.warn(`[WARNING] Summary vectorization item ${i} does not contain history_story tags!`);
                 }
                 
                 // For large items, split into chunks; for small items, keep as single chunk
@@ -495,5 +564,80 @@ export class VectorizationProcessor extends ITextProcessor {
             available: this.adapter !== null,
             config: this.config
         };
+    }
+    
+    /**
+     * Split content by <history_story> tags for summary vectorization
+     * @param {string} content - The content containing history_story tags
+     * @param {Object} metadata - Metadata for chunks
+     * @param {number} maxChunkSize - Maximum size for secondary chunking (3000 chars)
+     * @param {number} overlapPercent - Overlap percentage for secondary chunking
+     * @returns {Array} Array of chunks
+     * @private
+     */
+    splitByHistoryStoryTags(content, metadata, maxChunkSize, overlapPercent) {
+        const chunks = [];
+        const regex = /<history_story>(.*?)<\/history_story>/gs;
+        const matches = [...content.matchAll(regex)];
+        
+        if (matches.length === 0) {
+            logger.warn('No history_story tags found in content, falling back to normal chunking');
+            return this.splitTextIntoChunks(content, maxChunkSize, overlapPercent).map((chunkText, index) => ({
+                text: chunkText,
+                metadata: {
+                    ...metadata,
+                    chunk_index: index,
+                    chunk_total: 1,
+                    is_chunked: false
+                }
+            }));
+        }
+        
+        logger.log(`Found ${matches.length} history_story tags`);
+        
+        matches.forEach((match, tagIndex) => {
+            const tagContent = match[1].trim();
+            
+            // If content exceeds 3000 characters, perform secondary chunking
+            if (tagContent.length > 3000) {
+                logger.log(`History story tag ${tagIndex} exceeds 3000 chars (${tagContent.length}), applying secondary chunking`);
+                
+                const secondaryChunks = this.splitTextIntoChunks(tagContent, maxChunkSize, overlapPercent);
+                
+                secondaryChunks.forEach((chunkText, chunkIndex) => {
+                    chunks.push({
+                        text: chunkText,
+                        metadata: {
+                            ...metadata,
+                            history_story_index: tagIndex,
+                            history_story_total: matches.length,
+                            chunk_index: chunkIndex,
+                            chunk_total: secondaryChunks.length,
+                            is_chunked: true,
+                            chunk_type: 'history_story',
+                            original_length: tagContent.length
+                        }
+                    });
+                });
+            } else {
+                // Keep as single chunk
+                chunks.push({
+                    text: tagContent,
+                    metadata: {
+                        ...metadata,
+                        history_story_index: tagIndex,
+                        history_story_total: matches.length,
+                        chunk_index: 0,
+                        chunk_total: 1,
+                        is_chunked: false,
+                        chunk_type: 'history_story',
+                        original_length: tagContent.length
+                    }
+                });
+            }
+        });
+        
+        logger.log(`Split ${matches.length} history_story tags into ${chunks.length} chunks`);
+        return chunks;
     }
 }
