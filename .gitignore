@@ -27,3 +27,8 @@ Thumbs.db
 
 # Claude Code settings
 .claude/
+
+# Project context folders
+SuperAgent/
+.kilocode/
+SuperAgent/Context
