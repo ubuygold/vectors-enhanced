@@ -12,6 +12,7 @@ import {
   substituteParams,
   substituteParamsExtended,
   generateRaw,
+  saveChatConditional,
 } from '../../../../script.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource, getFileAttachment } from '../../../chats.js';
 import { debounce_timeout } from '../../../constants.js';
@@ -2821,6 +2822,7 @@ jQuery(async () => {
     scanAndSuggestTags,
     getContext,
     generateRaw,
+    saveChatConditional,  // 添加saveChatConditional
     toastr,
     oai_settings,
     getRequestHeaders,

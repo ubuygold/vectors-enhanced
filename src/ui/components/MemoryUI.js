@@ -25,6 +25,13 @@ const defaultMemorySettings = {
         model: ''
     },
     // prompts removed - using preset format
+    autoSummarize: {
+        enabled: false,
+        interval: 50,  // 每50层自动总结
+        messageCount: 30,  // 总结最近30层消息
+        lastSummarizedFloor: 0  // 上次总结的楼层
+    },
+    hideFloorsAfterSummary: false  // 总结后隐藏楼层
 };
 
 export class MemoryUI {
@@ -39,10 +46,12 @@ export class MemoryUI {
         this.generateRaw = dependencies.generateRaw; // 添加generateRaw API
         this.eventSource = dependencies.eventSource; // 添加eventSource
         this.event_types = dependencies.event_types; // 添加event_types
+        this.saveChatConditional = dependencies.saveChatConditional; // 添加saveChatConditional
         this.initialized = false;
 
         // UI state
         this.isProcessing = false;
+        this.isAutoSummarizing = false;  // 防止自动总结并发执行
     }
 
     async init() {
@@ -53,6 +62,9 @@ export class MemoryUI {
         await this.loadApiConfig();
         this.bindEventListeners();
         this.subscribeToEvents();
+        
+        // 初始化聊天楼层监控
+        this.initializeChatFloorMonitor();
     }
 
     bindEventListeners() {
@@ -68,11 +80,28 @@ export class MemoryUI {
         // Prompt buttons removed - using preset format
 
         // Save config on input changes (包括API密钥)
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length')
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_hide_floors_after_summary')
             .off('change input').on('change input', () => this.saveApiConfig());
 
         // Vectorize summary button handler
         $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
+        
+        // Auto-summarize settings
+        $('#memory_auto_summarize_enabled').off('change').on('change', (e) => {
+            const enabled = e.target.checked;
+            $('#memory_auto_summarize_settings').toggle(enabled);
+            $('#memory_auto_summarize_status').toggle(enabled);
+            if (enabled) {
+                this.updateAutoSummarizeStatus();
+            }
+            this.saveApiConfig();
+        });
+        
+        $('#memory_auto_summarize_interval, #memory_auto_summarize_count')
+            .off('change input').on('change input', () => {
+                this.updateAutoSummarizeStatus();
+                this.saveApiConfig();
+            });
 
         // 不在这里初始化API源显示，因为loadApiConfig已经处理了
     }
@@ -86,11 +115,34 @@ export class MemoryUI {
         });
 
         this.eventBus.on('memory:message-complete', async (data) => {
-            this.displayResponse(data.response);
+            const response = data.response || '';
+            
+            // 检查响应是否有效
+            if (!response || response.trim().length < 2) {
+                console.error('[MemoryUI] AI返回空内容');
+                this.toastr?.error('AI返回了空内容，请检查API设置');
+                this.displayResponse('');
+                this.hideLoading();
+                return;
+            }
+            
+            // 检查是否包含错误信息（短响应中包含错误关键词）
+            const errorKeywords = ['error', 'Error', 'ERROR', '错误', '失败', 'failed', 'Failed'];
+            const lowerResponse = response.toLowerCase();
+            const isError = errorKeywords.some(keyword => 
+                lowerResponse.includes(keyword.toLowerCase()) && response.length < 100
+            );
+            
+            if (isError) {
+                console.warn('[MemoryUI] AI可能返回了错误:', response);
+                this.toastr?.warning('AI响应可能包含错误：' + response.substring(0, 50) + '...');
+            }
+            
+            this.displayResponse(response);
             this.hideLoading();
             
-            // 总是自动生成世界书
-            if (data.response) {
+            // 只有有效响应才自动生成世界书
+            if (response && response.trim().length >= 2) {
                 // 延迟一下确保UI已更新
                 setTimeout(() => {
                     this.createWorldBook();
@@ -209,6 +261,9 @@ export class MemoryUI {
                 
                 if (result.success) {
                     this.toastr?.success(`已总结楼层 #${startIndex} 至 #${endIndex} 的内容`);
+                    
+                    // 检查是否需要隐藏楼层
+                    await this.hideFloorsIfEnabled(startIndex, endIndex, false);
                 }
             } catch (error) {
                 console.error('[MemoryUI] 总结失败:', error);
@@ -486,6 +541,13 @@ export class MemoryUI {
                 model: $('#memory_google_openai_model').val() || ''
             },
             // prompts removed - using preset format
+            autoSummarize: {
+                enabled: $('#memory_auto_summarize_enabled').prop('checked'),
+                interval: parseInt($('#memory_auto_summarize_interval').val()) || 50,
+                messageCount: parseInt($('#memory_auto_summarize_count').val()) || 30,
+                lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0
+            },
+            hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked')
         };
         
         this.settings.memory = memoryConfig;
@@ -579,6 +641,21 @@ export class MemoryUI {
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
         $('#memory_openai_model').val(config.openai_compatible?.model || '');
         $('#memory_google_openai_model').val(config.google_openai?.model || '');
+        
+        // Auto-summarize settings
+        if (config.autoSummarize) {
+            $('#memory_auto_summarize_enabled').prop('checked', config.autoSummarize.enabled || false);
+            $('#memory_auto_summarize_interval').val(config.autoSummarize.interval || 50);
+            $('#memory_auto_summarize_count').val(config.autoSummarize.messageCount || 30);
+            $('#memory_auto_summarize_settings').toggle(config.autoSummarize.enabled || false);
+            $('#memory_auto_summarize_status').toggle(config.autoSummarize.enabled || false);
+            if (config.autoSummarize.enabled) {
+                this.updateAutoSummarizeStatus();
+            }
+        }
+        
+        // Hide floors setting
+        $('#memory_hide_floors_after_summary').prop('checked', config.hideFloorsAfterSummary || false);
         
         // Prompts loading removed - using preset format
 
@@ -812,6 +889,478 @@ export class MemoryUI {
         }
     }
 
+    /**
+     * Initialize chat floor monitor
+     */
+    initializeChatFloorMonitor() {
+        // 立即更新一次
+        this.updateChatFloorCount();
+        
+        // 监听SillyTavern的消息事件
+        if (this.eventSource && this.event_types) {
+            // 监听消息发送事件
+            this.eventSource.on(this.event_types.MESSAGE_SENT, () => {
+                setTimeout(() => this.updateChatFloorCount(), 100);
+            });
+            
+            // 监听消息接收事件
+            this.eventSource.on(this.event_types.MESSAGE_RECEIVED, () => {
+                setTimeout(() => {
+                    this.updateChatFloorCount();
+                    this.checkAutoSummarize();  // 检查是否需要自动总结
+                }, 100);
+            });
+            
+            // 监听消息删除事件
+            this.eventSource.on(this.event_types.MESSAGE_DELETED, () => {
+                setTimeout(() => this.updateChatFloorCount(), 100);
+            });
+            
+            // 监听消息编辑事件
+            this.eventSource.on(this.event_types.MESSAGE_EDITED, () => {
+                setTimeout(() => this.updateChatFloorCount(), 100);
+            });
+            
+            // 监听聊天切换事件
+            this.eventSource.on(this.event_types.CHAT_CHANGED, () => {
+                setTimeout(() => {
+                    this.updateChatFloorCount();
+                    this.updateAutoSummarizeStatus();
+                }, 100);
+            });
+            
+            // 监听聊天加载事件
+            this.eventSource.on(this.event_types.CHAT_LOADED, () => {
+                setTimeout(() => {
+                    this.updateChatFloorCount();
+                    this.updateAutoSummarizeStatus();
+                }, 100);
+            });
+        }
+    }
+    
+    /**
+     * Update chat floor count display
+     */
+    updateChatFloorCount() {
+        try {
+            const context = this.getContext ? this.getContext() : getContext();
+            const floorElement = $('#memory_chat_floor_count');
+            
+            if (!context || !context.chat) {
+                floorElement.text('无聊天');
+                return;
+            }
+            
+            const chat = context.chat;
+            const totalMessages = chat.length;
+            
+            // 计算实际可见的消息数（排除系统消息）
+            const visibleMessages = chat.filter(msg => !msg.is_system).length;
+            
+            // 获取最新消息的楼层号（基于索引）
+            const latestFloor = totalMessages > 0 ? totalMessages - 1 : 0;
+            
+            // 显示格式：楼层 #N (共M条)
+            if (visibleMessages === totalMessages) {
+                floorElement.text(`楼层 #${latestFloor} (共${totalMessages}条)`);
+            } else {
+                floorElement.text(`楼层 #${latestFloor} (${visibleMessages}/${totalMessages}条)`);
+            }
+            
+            // 添加颜色提示：如果消息数量较多
+            if (totalMessages > 100) {
+                floorElement.css('color', 'var(--warning)');
+                floorElement.attr('title', '消息数量较多，考虑总结部分内容以提高性能');
+            } else if (totalMessages > 50) {
+                floorElement.css('color', 'var(--SmartThemeQuoteColor)');
+                floorElement.attr('title', '消息数量适中');
+            } else {
+                floorElement.css('color', 'var(--SmartThemeEmColor)');
+                floorElement.attr('title', '当前聊天楼层信息');
+            }
+            
+        } catch (error) {
+            console.error('[MemoryUI] 更新聊天楼层失败:', error);
+            $('#memory_chat_floor_count').text('错误');
+        }
+    }
+
+    /**
+     * Update auto-summarize status display
+     */
+    updateAutoSummarizeStatus() {
+        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 50;
+        const context = this.getContext ? this.getContext() : getContext();
+        
+        if (!context || !context.chat) {
+            $('#memory_next_auto_summarize_floor').text('-');
+            return;
+        }
+        
+        const currentFloor = context.chat.length - 1;
+        const lastSummarized = this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0;
+        
+        // 计算下一个触发楼层
+        let nextFloor;
+        if (lastSummarized === 0) {
+            // 如果从未总结过，下一个触发楼层就是第一个间隔
+            nextFloor = interval;
+        } else {
+            // 如果已经总结过，下一个触发楼层是上次总结楼层加上间隔
+            nextFloor = lastSummarized + interval;
+        }
+        
+        // 如果当前楼层已经超过了计算出的下次楼层，显示下一个间隔点
+        if (currentFloor >= nextFloor) {
+            nextFloor = Math.ceil((currentFloor + 1) / interval) * interval;
+        }
+        
+        $('#memory_next_auto_summarize_floor').text(`#${nextFloor}`);
+    }
+    
+    /**
+     * Check if auto-summarize should be triggered
+     */
+    async checkAutoSummarize() {
+        try {
+            // 检查是否已有自动总结在进行中
+            if (this.isAutoSummarizing) {
+                console.log('[MemoryUI] 自动总结已在进行中，跳过本次触发');
+                return;
+            }
+            
+            // 检查是否启用自动总结
+            if (!this.settings?.memory?.autoSummarize?.enabled) {
+                console.log('[MemoryUI] 自动总结未启用');
+                return;
+            }
+            
+            const context = this.getContext ? this.getContext() : getContext();
+            if (!context || !context.chat || context.chat.length < 2) {
+                console.log('[MemoryUI] 聊天上下文不可用或消息太少');
+                return;
+            }
+            
+            const currentFloor = context.chat.length - 1;
+            const interval = parseInt($('#memory_auto_summarize_interval').val()) || 50;
+            const messageCount = parseInt($('#memory_auto_summarize_count').val()) || 30;
+            const lastSummarized = this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0;
+            
+            console.log('[MemoryUI] 自动总结检查:', {
+                currentFloor,
+                interval,
+                messageCount,
+                lastSummarized,
+                enabled: this.settings?.memory?.autoSummarize?.enabled
+            });
+            
+            // 检查是否达到触发条件
+            if (currentFloor < interval) {
+                console.log('[MemoryUI] 当前楼层小于间隔，不触发');
+                return;
+            }
+            if (currentFloor % interval !== 0) {
+                console.log('[MemoryUI] 当前楼层不是间隔的倍数，不触发');
+                return;
+            }
+            if (currentFloor <= lastSummarized) {
+                console.log('[MemoryUI] 当前楼层已经总结过，不触发');
+                return;
+            }
+            
+            // 检查最新消息是否为AI回复
+            const latestMessage = context.chat[currentFloor];
+            if (!latestMessage || latestMessage.is_user) {
+                console.log('[MemoryUI] 最新消息不是AI回复，不触发');
+                return;
+            }
+            
+            console.log('[MemoryUI] 触发自动总结:', {
+                currentFloor,
+                interval,
+                messageCount,
+                lastSummarized
+            });
+            
+            // 设置标志，防止并发执行
+            this.isAutoSummarizing = true;
+            
+            // 执行自动总结
+            await this.performAutoSummarize(currentFloor, messageCount);
+            
+        } catch (error) {
+            console.error('[MemoryUI] 自动总结检查失败:', error);
+            // 如果检查过程出错，也要清除标志
+            this.isAutoSummarizing = false;
+        }
+    }
+    
+    /**
+     * Perform auto-summarization
+     */
+    async performAutoSummarize(currentFloor, messageCount) {
+        try {
+            console.log('[MemoryUI] performAutoSummarize 开始执行', { currentFloor, messageCount });
+            this.toastr?.info('开始自动总结...');
+            
+            // 导入必要的函数和工具
+            const { extension_settings, getContext } = await import('../../../../../../extensions.js');
+            const { getMessages } = await import('../../utils/chatUtils.js');
+            const { extractTagContent } = await import('../../utils/tagExtractor.js');
+            
+            const settings = extension_settings.vectors_enhanced;
+            const context = getContext();
+            
+            // 获取标签提取规则（如果有的话）
+            const rules = settings.tag_extraction_rules || [];
+            
+            // 收集最近N条AI消息（不包含最新的）
+            const aiMessages = [];
+            let aiMessageCount = 0;
+            
+            // 从当前楼层往前遍历，收集AI消息
+            for (let i = currentFloor - 1; i >= 0 && aiMessageCount < messageCount; i--) {
+                const msg = context.chat[i];
+                if (msg && !msg.is_user && !msg.is_system) {
+                    // 这是AI消息
+                    aiMessages.unshift({  // unshift保持时间顺序
+                        ...msg,
+                        index: i
+                    });
+                    aiMessageCount++;
+                }
+            }
+            
+            console.log('[MemoryUI] 收集到的AI消息数量:', aiMessages.length);
+            
+            if (aiMessages.length === 0) {
+                console.log('[MemoryUI] 没有找到AI消息');
+                this.toastr?.warning('没有找到足够的AI消息进行总结');
+                return;
+            }
+            
+            // 调试：显示收集到的消息
+            console.log('[MemoryUI] 收集到的AI消息详情:', aiMessages.map(msg => ({
+                index: msg.index,
+                hasText: !!msg.text,
+                hasMes: !!msg.mes,
+                textLength: (msg.text || '').length,
+                mesLength: (msg.mes || '').length
+            })));
+            
+            // 处理并格式化AI消息
+            const chatTexts = aiMessages.map(msg => {
+                // 获取消息文本（SillyTavern使用mes属性）
+                const messageText = msg.mes || msg.text || '';
+                
+                if (!messageText) {
+                    console.warn(`[MemoryUI] 楼层 #${msg.index} 的AI消息为空`);
+                    return `#${msg.index} [AI]: （空消息）`;
+                }
+                
+                // 对AI消息应用标签提取规则
+                const extractedText = extractTagContent(messageText, rules);
+                return `#${msg.index} [AI]: ${extractedText}`;
+            }).join('\n\n');
+            
+            // 获取楼层范围
+            const startIndex = aiMessages[0].index;
+            const endIndex = aiMessages[aiMessages.length - 1].index;
+            
+            // 添加楼层信息头部
+            const headerInfo = `【自动总结：最近 ${aiMessages.length} 条AI消息，楼层 #${startIndex} 至 #${endIndex}】\n\n`;
+            const contentWithHeader = headerInfo + chatTexts;
+            
+            // 调试：检查最终内容
+            console.log('[MemoryUI] 准备发送的内容长度:', contentWithHeader.length);
+            console.log('[MemoryUI] 内容预览:', contentWithHeader.substring(0, 200) + '...');
+            
+            // 获取API配置
+            const apiSource = $('#memory_api_source').val();
+            const apiConfig = this.getApiConfig();
+            const summaryLength = $('#memory_summary_length').val() || 'normal';
+            
+            // 临时存储楼层信息
+            this._tempFloorRange = { 
+                start: startIndex, 
+                end: endIndex, 
+                count: aiMessages.length,
+                isAutoSummarize: true,
+                isAIOnly: true  // 标记这是仅AI消息的总结
+            };
+            
+            console.log('[MemoryUI] 准备调用memoryService.sendMessage', {
+                contentLength: contentWithHeader.length,
+                apiSource,
+                apiConfig,
+                summaryLength,
+                hasApiKey: !!apiConfig.apiKey,
+                apiUrl: apiConfig.url || 'N/A'
+            });
+            
+            // 检查API配置
+            if (!apiConfig.apiKey && apiSource !== 'main_api') {
+                console.error('[MemoryUI] API密钥未设置');
+                this.toastr?.error('请先配置API密钥');
+                return;
+            }
+            
+            // 执行总结
+            console.log('[MemoryUI] 调用memoryService.sendMessage前');
+            const result = await this.memoryService.sendMessage(contentWithHeader, {
+                apiSource: apiSource,
+                apiConfig: apiConfig,
+                summaryLength: summaryLength
+            });
+            console.log('[MemoryUI] memoryService.sendMessage返回:', result);
+            
+            if (result && result.success) {
+                // 检查响应内容是否有效
+                const response = result.response || '';
+                
+                // 检查是否为空或太短
+                if (!response || response.trim().length < 2) {
+                    console.error('[MemoryUI] 自动总结返回空内容');
+                    this.toastr?.error('自动总结失败：AI返回了空内容');
+                    this.hideLoading();
+                    return;
+                }
+                
+                // 检查是否包含错误标记（常见的错误响应）
+                const errorKeywords = ['error', 'Error', 'ERROR', '错误', '失败', 'failed', 'Failed'];
+                const lowerResponse = response.toLowerCase();
+                const isError = errorKeywords.some(keyword => 
+                    lowerResponse.includes(keyword.toLowerCase()) && response.length < 100
+                );
+                
+                if (isError) {
+                    console.error('[MemoryUI] 自动总结可能返回了错误:', response);
+                    this.toastr?.warning('自动总结可能失败：' + response.substring(0, 50) + '...');
+                }
+                
+                // 更新最后总结的楼层
+                if (this.settings?.memory?.autoSummarize) {
+                    this.settings.memory.autoSummarize.lastSummarizedFloor = currentFloor;
+                    await this.saveApiConfig();
+                }
+                
+                this.toastr?.success(`自动总结完成：楼层 #${startIndex} 至 #${endIndex}`);
+                this.updateAutoSummarizeStatus();
+                
+                // 检查是否需要隐藏楼层
+                await this.hideFloorsIfEnabled(startIndex, endIndex, true);
+            } else {
+                // 处理失败情况
+                console.error('[MemoryUI] 自动总结返回失败:', result);
+                this.toastr?.error('自动总结失败：' + (result?.error || '未知错误'));
+                this.hideLoading();
+            }
+            
+        } catch (error) {
+            console.error('[MemoryUI] 自动总结失败:', error);
+            console.error('[MemoryUI] 错误堆栈:', error.stack);
+            this.toastr?.error('自动总结失败: ' + error.message);
+            
+            // 如果失败了，也要显示加载完成
+            this.hideLoading();
+        } finally {
+            // 无论成功还是失败，都要清除标志
+            this.isAutoSummarizing = false;
+            console.log('[MemoryUI] 自动总结完成，清除并发标志');
+        }
+    }
+
+    /**
+     * Hide floors if enabled in settings
+     * @param {number} startIndex - Start index of AI messages
+     * @param {number} endIndex - End index of AI messages
+     * @param {boolean} isAutoSummarize - Whether this is from auto-summarize
+     */
+    async hideFloorsIfEnabled(startIndex, endIndex, isAutoSummarize) {
+        try {
+            // 检查是否启用了隐藏楼层功能
+            const hideEnabled = $('#memory_hide_floors_after_summary').prop('checked');
+            if (!hideEnabled) {
+                console.log('[MemoryUI] 隐藏楼层功能未启用');
+                return;
+            }
+            
+            // 使用注入的依赖
+            const context = this.getContext();
+            
+            if (!context || !context.chat) {
+                console.error('[MemoryUI] 无法获取聊天上下文');
+                return;
+            }
+            
+            // 找出需要隐藏的消息范围
+            // 需要包含startIndex和endIndex之间的所有用户消息
+            let hideCount = 0;
+            const messagesToHide = [];
+            
+            // 遍历聊天记录，找出需要隐藏的消息
+            for (let i = 0; i < context.chat.length; i++) {
+                const msg = context.chat[i];
+                
+                // 如果是AI消息且在总结范围内
+                if (!msg.is_user && i >= startIndex && i <= endIndex) {
+                    messagesToHide.push(i);
+                }
+                
+                // 如果是用户消息且在总结范围内（包括边界）
+                // 例如：总结了5-10楼的AI消息，也要隐藏4-10之间的用户消息
+                if (msg.is_user && i >= Math.max(0, startIndex - 1) && i <= endIndex) {
+                    messagesToHide.push(i);
+                }
+            }
+            
+            console.log('[MemoryUI] 准备隐藏的消息索引:', messagesToHide);
+            
+            // 批量隐藏消息
+            for (const index of messagesToHide) {
+                context.chat[index].is_system = true;
+                hideCount++;
+            }
+            
+            if (hideCount > 0) {
+                // 保存聊天记录
+                if (this.saveChatConditional) {
+                    await this.saveChatConditional();
+                } else {
+                    console.error('[MemoryUI] saveChatConditional not available');
+                }
+                
+                // 触发UI更新
+                const eventSource = this.eventSource;
+                const event_types = this.event_types;
+                if (eventSource && event_types) {
+                    eventSource.emit(event_types.CHAT_CHANGED);
+                }
+                
+                // 重新加载当前聊天以立即显示隐藏标志
+                if (context.reloadCurrentChat && typeof context.reloadCurrentChat === 'function') {
+                    await context.reloadCurrentChat();
+                }
+                
+                // 更新隐藏消息信息显示
+                // 注意：这里可能需要在将来添加MessageUI的依赖注入
+                if (window.MessageUI && typeof window.MessageUI.updateHiddenMessagesInfo === 'function') {
+                    window.MessageUI.updateHiddenMessagesInfo();
+                } else {
+                    console.log('[MemoryUI] MessageUI.updateHiddenMessagesInfo not available');
+                }
+                
+                this.toastr?.info(`已隐藏 ${hideCount} 条消息`);
+                console.log(`[MemoryUI] 成功隐藏 ${hideCount} 条消息`);
+            }
+            
+        } catch (error) {
+            console.error('[MemoryUI] 隐藏楼层失败:', error);
+            this.toastr?.error('隐藏楼层失败: ' + error.message);
+        }
+    }
+
     destroy() {
         // Unbind event listeners
         $('#memory_summarize_btn').off('click');
@@ -826,6 +1375,16 @@ export class MemoryUI {
             this.eventBus.off('memory:message-complete');
             this.eventBus.off('memory:message-error');
             this.eventBus.off('memory:history-updated');
+        }
+        
+        // Unsubscribe from SillyTavern events
+        if (this.eventSource && this.event_types) {
+            this.eventSource.off(this.event_types.MESSAGE_SENT);
+            this.eventSource.off(this.event_types.MESSAGE_RECEIVED);
+            this.eventSource.off(this.event_types.MESSAGE_DELETED);
+            this.eventSource.off(this.event_types.MESSAGE_EDITED);
+            this.eventSource.off(this.event_types.CHAT_CHANGED);
+            this.eventSource.off(this.event_types.CHAT_LOADED);
         }
 
         this.initialized = false;

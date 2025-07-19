@@ -720,10 +720,14 @@ export class SettingsManager {
       substituteParamsExtended: this.dependencies.substituteParamsExtended, // 传入模板替换API
       generateRaw: this.dependencies.generateRaw, // 传入generateRaw API
       eventSource: this.dependencies.eventSource || window.eventSource, // 传入eventSource
-      event_types: this.dependencies.event_types || window.event_types // 传入event_types
+      event_types: this.dependencies.event_types || window.event_types, // 传入event_types
+      saveChatConditional: this.dependencies.saveChatConditional // 传入saveChatConditional
     });
     
     await this.memoryUI.init();
+    
+    // 暴露到全局作用域以便测试
+    window.vectorsMemoryUI = this.memoryUI;
   }
   
   /**

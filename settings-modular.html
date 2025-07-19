@@ -434,6 +434,22 @@
             </small>
           </div>
           
+          <!-- Chat Floor Monitor -->
+          <div class="chat-floor-monitor" style="margin-top: 10px; padding: 10px; background-color: var(--black30a); border-radius: 6px; border: 1px solid var(--SmartThemeBorderColor); box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: bold; color: var(--SmartThemeBodyColor);">
+                <i class="fa-solid fa-layer-group" style="margin-right: 6px;"></i>当前聊天楼层
+              </span>
+              <span id="memory_chat_floor_count" style="font-size: 1.2em; font-weight: 600; color: var(--SmartThemeEmColor); padding: 4px 8px; background-color: var(--black50a); border-radius: 4px; transition: all 0.3s ease;">
+                正在加载...
+              </span>
+            </div>
+            <div style="margin-top: 6px; font-size: 0.85em; color: var(--SmartThemeQuoteColor);">
+              <i class="fa-solid fa-info-circle" style="margin-right: 4px;"></i>
+              <span>实时监控当前聊天的消息数量，帮助您了解何时需要总结内容</span>
+            </div>
+          </div>
+          
           <!-- API Selection (moved to top) -->
           <div class="memory-api-section" style="margin-top: 10px;">
             <label for="memory_api_source">
@@ -511,6 +527,72 @@
             </select>
           </div>
           
+          <!-- Auto-Summarize Settings -->
+          <div class="memory-auto-summarize-section" style="margin-top: 15px; padding: 10px; background-color: var(--black30a); border-radius: 6px; border: 1px solid var(--SmartThemeBorderColor);">
+            <label class="checkbox_label" for="memory_auto_summarize_enabled" title="启用自动总结功能">
+              <input id="memory_auto_summarize_enabled" type="checkbox" />
+              <span style="font-weight: bold;">
+                <i class="fa-solid fa-magic"></i> 启用自动总结
+              </span>
+            </label>
+            
+            <div id="memory_auto_summarize_settings" style="margin-left: 1.5rem; margin-top: 10px; display: none;">
+              <div class="flex-container" style="gap: 10px; align-items: center;">
+                <div style="flex: 1;">
+                  <label for="memory_auto_summarize_interval">
+                    <small>每隔多少层自动总结:</small>
+                  </label>
+                  <input id="memory_auto_summarize_interval" 
+                         type="number" 
+                         class="text_pole" 
+                         min="10" 
+                         max="200" 
+                         value="50"
+                         style="width: 100%;" />
+                </div>
+                <div style="flex: 1;">
+                  <label for="memory_auto_summarize_count">
+                    <small>总结最近N层消息:</small>
+                  </label>
+                  <input id="memory_auto_summarize_count" 
+                         type="number" 
+                         class="text_pole" 
+                         min="5" 
+                         max="100" 
+                         value="30"
+                         style="width: 100%;" />
+                </div>
+              </div>
+              
+              <div style="margin-top: 8px; font-size: 0.85em; color: var(--SmartThemeQuoteColor);">
+                <i class="fa-solid fa-info-circle"></i>
+                <span>当AI回复后达到设定楼层时，自动总结指定范围的消息（不包含最新回复）</span>
+              </div>
+              
+              <!-- Auto-Summarize Status -->
+              <div id="memory_auto_summarize_status" style="margin-top: 10px; padding: 8px; background-color: var(--black50a); border-radius: 4px; display: none;">
+                <span style="font-size: 0.9em;">
+                  <i class="fa-solid fa-clock"></i>
+                  下次自动总结楼层: <span id="memory_next_auto_summarize_floor" style="font-weight: bold; color: var(--SmartThemeEmColor);">-</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          
+          <!-- Hide Floors After Summary -->
+          <div style="margin-top: 15px; margin-bottom: 10px;">
+            <label class="checkbox_label" for="memory_hide_floors_after_summary" title="总结成功后自动隐藏被总结的楼层">
+              <input id="memory_hide_floors_after_summary" type="checkbox" />
+              <span>
+                <i class="fa-solid fa-eye-slash"></i> 总结时隐藏楼层
+              </span>
+            </label>
+            <div style="margin-left: 1.5rem; margin-top: 5px; font-size: 0.85em; color: var(--SmartThemeQuoteColor);">
+              <i class="fa-solid fa-info-circle"></i>
+              <span>总结成功后自动隐藏被总结的楼层（包括范围内的用户消息）</span>
+            </div>
+          </div>
           
           <!-- Vectorize Summary Button -->
           <button id="memory_vectorize_summary" 
