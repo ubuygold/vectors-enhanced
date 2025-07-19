@@ -4,7 +4,8 @@
 Vectors Enhanced 是 SillyTavern 的向量化扩展插件，提语义搜索、智能记忆管理和内容处理功能。
 
 discord社区链接：https://ptb.discord.com/channels/1134557553011998840/1390957251023343636
-详细使用教程：https://docs.google.com/document/d/1Gc-xWEKApKtfhzxwuG9XeBEio8zah8yurpPQzWGvqo4/edit?usp=sharing
+
+详细使用教程：https://docs.google.com/document/d/1Gc-xWEKApKtfhzxwuG9XeBEio8zah8yurpPQzWGvqo4/
 
 
 ### 1.  多引擎向量化系统
