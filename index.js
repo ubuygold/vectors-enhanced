@@ -2981,6 +2981,12 @@ jQuery(async () => {
         content: content
       });
       
+      const chatId = getCurrentChatId();
+      if (!chatId || chatId === 'null' || chatId === 'undefined') {
+        toastr.error('未选择聊天');
+        return;
+      }
+      
       // 保存当前设置的完整备份
       const originalSettings = JSON.parse(JSON.stringify(settings));
       const originalSelectedContent = JSON.parse(JSON.stringify(settings.selected_content));
@@ -3016,16 +3022,97 @@ jQuery(async () => {
       // 获取要向量化的内容
       const items = await getVectorizableContent(settings.selected_content);
       
+      // 过滤出有效的项目（非空）
+      const validItems = items.filter(item => item.text && item.text.trim() !== '');
+      
+      if (validItems.length === 0) {
+        toastr.warning('世界书条目内容为空或被过滤');
+        // 恢复原始设置
+        settings.selected_content = originalSelectedContent;
+        saveSettingsDebounced();
+        return;
+      }
+      
+      // 获取已处理的项目标识符
+      const processedIdentifiers = getProcessedItemIdentifiers(chatId);
+      
+      // 过滤出新项目（未被向量化的）
+      const newItems = validItems.filter(item => {
+        switch (item.type) {
+          case 'chat': return !processedIdentifiers.chat.has(item.metadata.index);
+          case 'file': return !processedIdentifiers.file.has(item.metadata.url);
+          case 'world_info': return !processedIdentifiers.world_info.has(item.metadata.uid);
+          default: return true;
+        }
+      });
+      
       // 生成自定义任务名称
       const entryNames = content.map(entry => entry.comment || `UID:${entry.uid}`).join('、');
       const customTaskName = `${entryNames} (总结向量化)`;
       
+      // 检查是否有已处理的项目
+      const hasProcessedItems = newItems.length < validItems.length;
+      let itemsToProcess = newItems;
+      let isIncremental = hasProcessedItems;
+      
+      if (newItems.length === 0) {
+        // 所有项目都已被向量化
+        const processedCount = validItems.length;
+        const confirm = await callGenericPopup(
+          `<div>
+            <p>世界书 "${worldName}" 的所有选定条目（${processedCount}条）均已被向量化。</p>
+            <p>是否要强制重新向量化这些内容？</p>
+          </div>`,
+          POPUP_TYPE.CONFIRM,
+          { okButton: '是', cancelButton: '否' }
+        );
+        
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
+          // 用户选择不重新向量化，恢复设置并返回
+          settings.selected_content = originalSelectedContent;
+          saveSettingsDebounced();
+          return;
+        }
+        
+        // 用户选择重新向量化
+        itemsToProcess = validItems;
+        isIncremental = false;
+      } else if (hasProcessedItems) {
+        // 部分项目已被向量化
+        const newCount = newItems.length;
+        const processedCount = validItems.length - newCount;
+        
+        const confirm = await callGenericPopup(
+          `<div>
+            <p><strong>世界书 "${worldName}" 的部分条目已被向量化：</strong></p>
+            <div style="text-align: left; margin: 10px 0;">
+              <p>已处理：${processedCount} 条</p>
+              <p>新增内容：${newCount} 条</p>
+            </div>
+            <p>是否只进行增量向量化（只处理新增内容）？</p>
+          </div>`,
+          POPUP_TYPE.CONFIRM,
+          { okButton: '是，只处理新增', cancelButton: '取消' }
+        );
+        
+        if (confirm !== POPUP_RESULT.AFFIRMATIVE) {
+          // 用户取消，恢复设置并返回
+          settings.selected_content = originalSelectedContent;
+          saveSettingsDebounced();
+          return;
+        }
+        
+        // 用户选择增量向量化
+        itemsToProcess = newItems;
+        isIncremental = true;
+      }
+      
       // 使用自定义任务名进行向量化
       await performVectorization(
         settings.selected_content, 
-        getCurrentChatId(), 
-        false, 
-        items,
+        chatId, 
+        isIncremental, 
+        itemsToProcess,
         { 
           taskType: 'summary_vectorization',
           customTaskName: customTaskName
