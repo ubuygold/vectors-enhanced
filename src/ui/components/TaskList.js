@@ -191,19 +191,11 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
  * @param {Object} task - The task to preview
  */
 async function previewTaskContent(task) {
-  // 如果是外挂任务，尝试解析它以获取源内容
+  // 如果是外挂任务，显示源聊天信息而不是预览内容
   if (task.type === 'external') {
-    const resolver = new TaskReferenceResolver(settings.vector_tasks);
-    const resolved = resolver.resolve(task);
-
-    if (!resolved.valid) {
-      let message = `无法预览外挂任务 "${task.name}"。\n原因: ${resolved.reason || '未知错误'}`;
-      await callGenericPopup(message, POPUP_TYPE.TEXT, '', { okButton: '确定' });
-      return;
-    }
-
-    // 使用解析后的任务进行预览
-    task = resolved.task;
+    const message = `任务名称：${task.name}\n\n源聊天ID：${task.sourceChat || '未知'}`;
+    await callGenericPopup(message, POPUP_TYPE.TEXT, '', { okButton: '确定' });
+    return;
   }
 
   if (!task.actualProcessedItems) {
