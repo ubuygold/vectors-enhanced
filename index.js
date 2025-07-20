@@ -115,7 +115,7 @@ const settings = {
   overlap_percent: 0,
   score_threshold: 0.25,
   force_chunk_delimiter: '',
-  lightweight_storage: false, // 大内容轻量化存储模式
+  // lightweight_storage: 已移除，所有文本都存储在向量数据库中
 
   // Query settings
   enabled: true, // 是否启用向量查询
@@ -1165,7 +1165,7 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       if (fileItems.length > 0 && contentSettings.files?.enabled) {
         console.log(`Pipeline: Prepared ${fileItems.length} file items for processing`);
         extractedContent.push({
-          type: 'files',
+          type: 'file',
           content: fileItems, // 保持数组格式！不合并！
           metadata: {
             extractorType: 'PreExtracted',
@@ -1405,27 +1405,18 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         version: '2.0' // Mark as pipeline version
       };
 
-      // Add text content to task (similar to original implementation)
-      if (settings.lightweight_storage && allProcessedChunks.length > 100) {
-        // Large content mode
-        console.debug(`Vectors: Large content detected (${allProcessedChunks.length} chunks), using lightweight storage`);
-        task.lightweight = true;
-      } else {
-        // Normal mode: save text content to task
-        task.textContent = allProcessedChunks.map(chunk => ({
-          hash: chunk.hash,
-          text: chunk.text,
-          metadata: chunk.metadata
-        }));
-      }
+      // 不再保存 textContent 到任务中
+      // 所有文本内容都从向量数据库获取
+      console.debug(`Vectors: Task created with ${allProcessedChunks.length} chunks. Text stored in vector database only.`);
 
       // Add task to list
       addVectorTask(chatId, task);
 
-      // Update cache
+      // Update cache (只缓存哈希值，不缓存文本)
       cachedVectors.set(collectionId, {
         timestamp: Date.now(),
-        items: allProcessedChunks, // Use allProcessedChunks from pipeline processing
+        hashes: allProcessedChunks.map(chunk => chunk.hash),
+        itemCount: allProcessedChunks.length,
         settings: JSON.parse(JSON.stringify(settings)),
       });
 
@@ -2156,8 +2147,37 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
         // 根据API返回的结构处理结果
         if (results) {
-          // 如果API返回了items数组（包含text）
-          if (results.items && Array.isArray(results.items)) {
+          // 优先使用 metadata 中的文本（向量数据库应该包含）
+          if (results.metadata && Array.isArray(results.metadata)) {
+            console.debug(`Vectors: Using text from metadata for ${collectionId}`);
+            // 添加调试日志查看metadata结构
+            if (results.metadata.length > 0) {
+              console.debug(`Vectors: First metadata item structure:`, {
+                hasText: !!results.metadata[0].text,
+                hasType: !!results.metadata[0].type,
+                hasScore: !!results.metadata[0].score,
+                keys: Object.keys(results.metadata[0])
+              });
+            }
+            results.metadata.forEach((meta, index) => {
+              if (meta.text) {
+                allResults.push({
+                  text: meta.text,
+                  score: meta.score || 0,
+                  metadata: {
+                    ...meta,
+                    taskName: task.name,
+                    taskId: task.taskId,
+                  },
+                });
+              } else {
+                console.warn(`Vectors: Missing text in metadata for item ${index} in ${collectionId}`);
+              }
+            });
+          }
+          // 兼容旧版本：如果API返回了items数组（包含text）
+          else if (results.items && Array.isArray(results.items)) {
+            console.debug(`Vectors: Using items format for ${collectionId}`);
             results.items.forEach(item => {
               if (item.text) {
                 allResults.push({
@@ -2172,81 +2192,33 @@ async function rearrangeChat(chat, contextSize, abort, type) {
               }
             });
           }
-          // 如果API只返回了hashes和metadata，从任务保存的文本内容中获取
-          else if (results.hashes && results.metadata) {
-            console.debug(`Vectors: API returned hashes only, retrieving text from task data`);
-
-            // 首先尝试从缓存获取（性能最优）
-            const cachedData = cachedVectors.get(collectionId);
-            if (cachedData && cachedData.items) {
-              console.debug(`Vectors: Using cached data for ${collectionId}`);
-              results.hashes.forEach((hash, index) => {
-                const cachedItem = cachedData.items.find(item => item.hash === hash);
-                if (cachedItem && cachedItem.text) {
-                  allResults.push({
-                    text: cachedItem.text,
-                    score: results.metadata[index]?.score || 0,
-                    metadata: {
-                      ...cachedItem.metadata,
-                      ...(results.metadata[index] || {}),
-                      taskName: task.name,
-                      taskId: task.taskId,
-                    },
-                  });
-                }
-              });
-            }
-            // 缓存不可用，尝试其他方法获取文本
-            else {
-              // 如果任务有保存的文本内容，优先使用
-              if (task.textContent && Array.isArray(task.textContent)) {
-                console.debug(`Vectors: Using task saved text content for ${collectionId}`);
-                results.hashes.forEach((hash, index) => {
-                  const textItem = task.textContent.find(item => item.hash === hash);
-                  if (textItem && textItem.text) {
-                    allResults.push({
-                      text: textItem.text,
-                      score: results.metadata[index]?.score || 0,
-                      metadata: {
-                        ...textItem.metadata,
-                        ...(results.metadata[index] || {}),
-                        taskName: task.name,
-                        taskId: task.taskId,
-                      },
-                    });
-                  }
+          // 向后兼容：只有在上述方法都失败时，才尝试从任务中获取
+          else if (results.hashes && task.textContent && Array.isArray(task.textContent)) {
+            console.debug(`Vectors: Fallback to task textContent for ${collectionId} (legacy support)`);
+            results.hashes.forEach((hash, index) => {
+              const textItem = task.textContent.find(item => item.hash === hash);
+              if (textItem && textItem.text) {
+                allResults.push({
+                  text: textItem.text,
+                  score: results.metadata?.[index]?.score || 0,
+                  metadata: {
+                    ...textItem.metadata,
+                    ...(results.metadata?.[index] || {}),
+                    taskName: task.name,
+                    taskId: task.taskId,
+                  },
                 });
               }
-              // 对于轻量化任务或没有保存文本的任务，从文件读取
-              else {
-                console.debug(`Vectors: Attempting to retrieve text directly from vector files for ${collectionId}`);
-                try {
-                  const vectorTexts = await storageAdapter.getVectorTexts(collectionId, results.hashes);
-                  console.debug(`Vectors: Retrieved ${vectorTexts.length} texts from files`);
-
-                  if (vectorTexts && vectorTexts.length > 0) {
-                    vectorTexts.forEach((item, index) => {
-                      if (item.text) {
-                        allResults.push({
-                          text: item.text,
-                          score: results.metadata[index]?.score || 0,
-                          metadata: {
-                            ...item.metadata,
-                            ...(results.metadata[index] || {}),
-                            taskName: task.name,
-                            taskId: task.taskId,
-                          },
-                        });
-                      }
-                    });
-                  } else {
-                    console.error(`Vectors: Failed to retrieve text content from files for ${collectionId}`);
-                  }
-                } catch (retrieveError) {
-                  console.error(`Vectors: Error retrieving texts from files for ${collectionId}:`, retrieveError);
-                }
-              }
-            }
+            });
+          }
+          // 如果所有方法都失败了，记录错误
+          else {
+            console.error(`Vectors: Unable to retrieve text content for ${collectionId}. Results structure:`, {
+              hasMetadata: !!results.metadata,
+              hasItems: !!results.items,
+              hasHashes: !!results.hashes,
+              hasTextContent: !!task.textContent
+            });
           }
         }
       } catch (error) {
@@ -2390,12 +2362,25 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         formattedParts.push(`<${tag}>\n${fileTexts}\n</${tag}>`);
       }
 
+      // Process unknown type (fallback for items without type metadata)
+      if (groupedResults.unknown && groupedResults.unknown.length > 0) {
+        console.debug('Vectors: Processing unknown type results as fallback');
+        const unknownTexts = groupedResults.unknown
+          .map(m => m.text)
+          .filter(onlyUnique)
+          .join('\n\n');
+
+        // 使用通用标签或根据任务名称推断
+        const tag = 'context'; // 使用通用的context标签
+        formattedParts.push(`<${tag}>\n${unknownTexts}\n</${tag}>`);
+      }
+
       // Join all parts
       const relevantTexts = formattedParts.join('\n\n');
 
       console.debug(`Vectors: Formatted ${formattedParts.length} parts, total length: ${relevantTexts.length}`);
 
-      if (relevantTexts) {
+      if (relevantTexts && relevantTexts.trim()) {
         insertedText = substituteParamsExtended(settings.template, { text: relevantTexts });
         console.debug(`Vectors: Final injected text length: ${insertedText.length}`);
         totalChars = insertedText.length;
@@ -2410,6 +2395,8 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         );
       } else {
         console.debug('Vectors: No relevant texts found after formatting');
+        // 清空之前可能设置的内容
+        setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi, settings.depth_role);
       }
     }
 
@@ -2426,13 +2413,30 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
       const finalCount = topResults.length;    // 最终注入的数量
 
+      // 检查是否真的注入了内容
+      const actuallyInjected = insertedText && insertedText.trim().length > 0;
+      
       let message;
       if (settings.rerank_enabled && finalCount > 0) {
         // 如果启用了重排，显示重排后的数量
-        message = `查询到 ${allResults.length} 个块，重排后注入 ${finalCount} 个块。`;
+        message = `查询到 ${allResults.length} 个块，重排后`;
+        if (actuallyInjected) {
+          message += `注入 ${finalCount} 个块。`;
+        } else {
+          message += `尝试注入 ${finalCount} 个块，但文本获取失败。`;
+        }
       } else {
         // 如果没有启用重排，allResults 已经被限制为 max_results
-        message = `查询到 ${allResults.length} 个块` + (finalCount > 0 ? '，已注入。' : '。');
+        message = `查询到 ${allResults.length} 个块`;
+        if (finalCount > 0) {
+          if (actuallyInjected) {
+            message += '，已注入。';
+          } else {
+            message += '，但文本获取失败，未能注入。';
+          }
+        } else {
+          message += '。';
+        }
       }
 
       // 详细模式：显示来源分布
