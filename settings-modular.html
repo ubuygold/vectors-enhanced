@@ -272,16 +272,17 @@
           
           <!-- Prompts Section (collapsible) -->
           
-          <!-- Summary Length Selection -->
-          <div class="memory-summary-length" style="margin-top: 10px;">
-            <label for="memory_summary_length">
-              <small>总结长度:</small>
+          <!-- Summary Format -->
+          <div class="memory-summary-format" style="margin-top: 10px;">
+            <label for="memory_summary_format">
+              <small>总结格式模板:</small>
+              <small style="opacity: 0.7; margin-left: 5px;">(支持变量: {{content}} 为待总结内容)</small>
             </label>
-            <select id="memory_summary_length" class="text_pole" style="width: 100%;">
-              <option value="short">短总结 (3句话, 100字)</option>
-              <option value="normal" selected>正常总结 (5句话, 200字)</option>
-              <option value="long">长总结 (8句话, 400字)</option>
-            </select>
+            <textarea id="memory_summary_format" 
+                      class="text_pole" 
+                      rows="10"
+                      style="width: 100%; font-family: monospace; font-size: 12px;"
+                      placeholder="输入自定义的总结格式..."></textarea>
           </div>
           
           <!-- Auto-Summarize Settings -->

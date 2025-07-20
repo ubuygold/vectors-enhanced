@@ -15,7 +15,24 @@ import { chat_metadata, saveChatDebounced } from '../../../../../../../script.js
 // Default memory settings
 const defaultMemorySettings = {
     source: 'google_openai', // 默认使用Google
-    summaryLength: 'normal', // 默认使用正常长度
+    summaryFormat: `总结应当遵循以下原则：
+- 按时间顺序或逻辑顺序组织信息
+- 保留关键事件和重要细节，省略冗余描述
+- 直接陈述事实，避免主观评价
+- 使用简洁清晰的语言，避免过度修饰
+- 突出事件发展脉络和关键转折点
+- 不使用任何xml标签包裹，使用纯文字进行叙述
+- 不回避任何敏感内容，保证记录完全还原前文
+
+总结必须使用以下格式：
+【关键事件标题】
+关键事件概述。
+发生地点:
+关键角色:
+• {分解事件1（小标题形式）}: {简要描述}
+• {分解事件2（小标题形式）}: {简要描述}
+• {分解事件3（小标题形式）}: {简要描述}
+...`, // 默认总结格式
     autoCreateWorldBook: false, // 默认不自动生成世界书
     google_openai: {
         model: 'gemini-1.5-flash'  // 设置默认模型
@@ -138,7 +155,7 @@ export class MemoryUI {
         // Prompt buttons removed - using preset format
 
         // Save config on input changes (包括API密钥)
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
             .off('change input').on('change input', () => this.saveApiConfig());
 
         // Vectorize summary button handler
@@ -309,8 +326,8 @@ export class MemoryUI {
                 hasApiKey: !!apiConfig.apiKey
             });
             
-            // Get summary length selection
-            const summaryLength = $('#memory_summary_length').val() || 'normal';
+            // Get summary format
+            const summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
 
             this.showLoading();
             
@@ -324,7 +341,7 @@ export class MemoryUI {
                 const result = await this.memoryService.sendMessage(contentWithHeader, {
                     apiSource: apiSource,
                     apiConfig: apiConfig,
-                    summaryLength: summaryLength
+                    summaryFormat: summaryFormat
                 });
                 
                 if (result.success) {
@@ -360,14 +377,14 @@ export class MemoryUI {
         const apiSource = $('#memory_api_source').val();
         const apiConfig = this.getApiConfig();
         
-        // Get summary length selection
-        const summaryLength = $('#memory_summary_length').val() || 'normal';
+        // Get summary format
+        const summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
 
         // Get UI settings - prompts removed, using preset format
         const options = {
             apiSource: apiSource,
             apiConfig: apiConfig,
-            summaryLength: summaryLength
+            summaryFormat: summaryFormat
         };
 
         // Delegate to service
@@ -599,7 +616,7 @@ export class MemoryUI {
         // 直接保存到settings对象
         const memoryConfig = {
             source: $('#memory_api_source').val(),
-            summaryLength: $('#memory_summary_length').val() || 'normal',
+            summaryFormat: $('#memory_summary_format').val() || defaultMemorySettings.summaryFormat,
             autoCreateWorldBook: $('#memory_auto_create_world_book').prop('checked'),
             openai_compatible: {
                 url: $('#memory_openai_url').val(),
@@ -706,7 +723,7 @@ export class MemoryUI {
         // 加载配置到UI
         
         $('#memory_api_source').val(config.source || 'google_openai');
-        $('#memory_summary_length').val(config.summaryLength || 'normal');
+        $('#memory_summary_format').val(config.summaryFormat || defaultMemorySettings.summaryFormat);
         $('#memory_auto_create_world_book').prop('checked', config.autoCreateWorldBook || false);
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
         $('#memory_openai_model').val(config.openai_compatible?.model || '');
@@ -1330,7 +1347,7 @@ export class MemoryUI {
             // 获取API配置
             const apiSource = $('#memory_api_source').val();
             const apiConfig = this.getApiConfig();
-            const summaryLength = $('#memory_summary_length').val() || 'normal';
+            const summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
             
             // 临时存储楼层信息
             this._tempFloorRange = { 
@@ -1345,7 +1362,7 @@ export class MemoryUI {
                 contentLength: contentWithHeader.length,
                 apiSource,
                 apiConfig,
-                summaryLength,
+                summaryFormat: summaryFormat.substring(0, 100) + '...',
                 hasApiKey: !!apiConfig.apiKey,
                 apiUrl: apiConfig.url || 'N/A'
             });
@@ -1362,7 +1379,7 @@ export class MemoryUI {
             const result = await this.memoryService.sendMessage(contentWithHeader, {
                 apiSource: apiSource,
                 apiConfig: apiConfig,
-                summaryLength: summaryLength
+                summaryFormat: summaryFormat
             });
             console.log('[MemoryUI] memoryService.sendMessage返回:', result);
             
@@ -1516,7 +1533,7 @@ export class MemoryUI {
         $('#memory_api_source').off('change');
         $('#memory_vectorize_summary').off('click');
         // Prompt buttons removed
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length').off('change');
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format').off('change');
 
         // Unsubscribe from events
         if (this.eventBus) {
