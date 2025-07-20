@@ -31,7 +31,8 @@ const defaultMemorySettings = {
         messageCount: 6,  // 保留最近6层消息
         lastSummarizedFloor: 0  // 上次总结的楼层
     },
-    hideFloorsAfterSummary: false  // 总结后隐藏楼层
+    hideFloorsAfterSummary: false,  // 总结后隐藏楼层
+    disableWorldInfoAfterVectorize: false  // 向量化后禁用世界书条目
 };
 
 export class MemoryUI {
@@ -137,7 +138,7 @@ export class MemoryUI {
         // Prompt buttons removed - using preset format
 
         // Save config on input changes (包括API密钥)
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_hide_floors_after_summary')
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_length, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
             .off('change input').on('change input', () => this.saveApiConfig());
 
         // Vectorize summary button handler
@@ -615,7 +616,8 @@ export class MemoryUI {
                 // 不再保存 lastSummarizedFloor 到全局设置，它现在存储在聊天元数据中
                 lastSummarizedFloor: this.settings?.memory?.autoSummarize?.lastSummarizedFloor || 0
             },
-            hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked')
+            hideFloorsAfterSummary: $('#memory_hide_floors_after_summary').prop('checked'),
+            disableWorldInfoAfterVectorize: $('#memory_disable_world_info_after_vectorize').prop('checked')
         };
         
         this.settings.memory = memoryConfig;
@@ -724,6 +726,9 @@ export class MemoryUI {
         
         // Hide floors setting
         $('#memory_hide_floors_after_summary').prop('checked', config.hideFloorsAfterSummary || false);
+        
+        // Disable world info after vectorize setting
+        $('#memory_disable_world_info_after_vectorize').prop('checked', config.disableWorldInfoAfterVectorize || false);
         
         // Prompts loading removed - using preset format
 

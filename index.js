@@ -36,7 +36,7 @@ import {
   onlyUnique,
   waitUntilCondition,
 } from '../../../utils.js';
-import { getSortedEntries } from '../../../world-info.js';
+import { getSortedEntries, saveWorldInfo, loadWorldInfo } from '../../../world-info.js';
 import { splitTextIntoChunks as splitTextIntoChunksUtil } from './src/utils/textChunking.js';
 import { shouldSkipContent } from './src/utils/contentFilter.js';
 import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlFormatTag } from './src/utils/tagExtractor.js';
@@ -1706,6 +1706,48 @@ function formatMessageRanges(messageItems) {
 }
 
 /**
+ * Disables all entries in a world info book
+ * @param {string} worldName - Name of the world info book
+ * @param {Array} entries - Array of world info entries to disable
+ * @returns {Promise<void>}
+ */
+async function disableWorldInfoEntries(worldName, entries) {
+    try {
+        console.log('[Vectors] 开始禁用世界书条目:', worldName);
+        
+        // 加载世界书数据
+        const worldData = await loadWorldInfo(worldName);
+        if (!worldData || !worldData.entries) {
+            console.error('[Vectors] 无法加载世界书数据:', worldName);
+            return;
+        }
+        
+        let disabledCount = 0;
+        
+        // 禁用所有条目
+        for (const entry of entries) {
+            if (worldData.entries[entry.uid]) {
+                worldData.entries[entry.uid].disable = true;
+                disabledCount++;
+                console.log(`[Vectors] 禁用条目 UID: ${entry.uid}, comment: ${entry.comment}`);
+            }
+        }
+        
+        if (disabledCount > 0) {
+            // 使用立即保存模式确保数据被写入
+            await saveWorldInfo(worldName, worldData, true);
+            console.log(`[Vectors] 成功禁用 ${disabledCount} 个世界书条目`);
+            toastr.success(`已禁用 ${disabledCount} 个世界书条目`, '世界书更新');
+        } else {
+            console.log('[Vectors] 没有需要禁用的条目');
+        }
+    } catch (error) {
+        console.error('[Vectors] 禁用世界书条目失败:', error);
+        toastr.error('禁用世界书条目失败: ' + error.message);
+    }
+}
+
+/**
  * Vectorizes selected content
  * @returns {Promise<void>}
  */
@@ -3112,7 +3154,7 @@ jQuery(async () => {
       }
       
       // 使用自定义任务名进行向量化
-      await performVectorization(
+      const result = await performVectorization(
         settings.selected_content, 
         chatId, 
         isIncremental, 
@@ -3126,6 +3168,12 @@ jQuery(async () => {
       // 恢复原始设置
       settings.selected_content = originalSelectedContent;
       saveSettingsDebounced();
+      
+      // 如果向量化成功，且启用了禁用世界书条目的选项
+      if (result?.success && extension_settings?.vectors_enhanced?.memory?.disableWorldInfoAfterVectorize) {
+        console.log('[Vectors] 准备禁用世界书条目...');
+        await disableWorldInfoEntries(worldName, content);
+      }
       
     } catch (error) {
       console.error('[Vectors] 向量化总结失败:', error);
