@@ -1,6 +1,6 @@
 /**
  * ContentSelectionSettings Component - Manages Chat/File/WorldInfo selection panels
- * 
+ *
  * Handles:
  * - Chat message selection (range, types, hidden messages)
  * - File selection and management
@@ -14,7 +14,7 @@ export class ContentSelectionSettings {
         this.settings = dependencies.settings;
         this.configManager = dependencies.configManager;
         this.onSettingsChange = dependencies.onSettingsChange || (() => {});
-        
+
         // Component management functions (injected dependencies)
         this.updateFileList = dependencies.updateFileList;
         this.updateWorldInfoList = dependencies.updateWorldInfoList;
@@ -24,7 +24,7 @@ export class ContentSelectionSettings {
         this.scanAndSuggestTags = dependencies.scanAndSuggestTags;
         this.clearTagSuggestions = dependencies.clearTagSuggestions;
         this.toggleMessageRangeVisibility = dependencies.toggleMessageRangeVisibility;
-        
+
         // Content type configurations
         this.contentTypes = {
             chat: {
@@ -43,7 +43,7 @@ export class ContentSelectionSettings {
                 settingsKey: 'selected_content.world_info.enabled'
             }
         };
-        
+
         this.initialized = false;
     }
 
@@ -74,16 +74,21 @@ export class ContentSelectionSettings {
     bindEventListeners() {
         // Content type enable/disable toggles
         this.bindContentTypeListeners();
-        
+
         // Chat-specific settings
         this.bindChatSettingsListeners();
-        
+
         // File and World Info refresh buttons
         this.bindRefreshButtonListeners();
-        
+
         // Tag extraction and content filtering
         this.bindTagAndFilterListeners();
-        
+
+        // Chapter splitting regex
+        $('#vectors_enhanced_chapter_regex').on('input', (e) => {
+           this.handleChapterRegexChange(e.target.value);
+       });
+
         console.log('ContentSelectionSettings: Event listeners bound');
     }
 
@@ -280,6 +285,17 @@ export class ContentSelectionSettings {
         this.onSettingsChange('content_blacklist', value);
     }
 
+   /**
+    * Handle chapter regex changes
+    */
+   handleChapterRegexChange(value) {
+       console.log('ContentSelectionSettings: Chapter regex updated');
+
+       this.settings.chapter_regex = value;
+       this.saveSettings();
+       this.onSettingsChange('chapter_regex', value);
+   }
+
     /**
      * Handle files refresh
      */
@@ -318,7 +334,7 @@ export class ContentSelectionSettings {
      */
     handleExcludeCoT() {
         console.log('ContentSelectionSettings: Adding CoT exclusion rule...');
-        
+
         // Add a predefined regex rule to exclude HTML comment-style CoT
         const cotRule = {
             type: 'regex',
@@ -348,7 +364,7 @@ export class ContentSelectionSettings {
     updateContentTypeVisibility(type, enabled) {
         const config = this.contentTypes[type];
         const settingsDiv = $(`#${config.settingsId}`);
-        
+
         if (enabled) {
             settingsDiv.show();
         } else {
@@ -411,6 +427,9 @@ export class ContentSelectionSettings {
         // Load content blacklist
         $('#vectors_enhanced_content_blacklist').val(this.settings.content_blacklist || '');
 
+       // Load chapter regex
+       $('#vectors_enhanced_chapter_regex').val(this.settings.chapter_regex || '');
+
         console.log('ContentSelectionSettings: Settings loaded');
     }
 
@@ -465,7 +484,7 @@ export class ContentSelectionSettings {
      */
     async refreshAllContent() {
         console.log('ContentSelectionSettings: Refreshing all content...');
-        
+
         Object.keys(this.contentTypes).forEach(type => {
             const keyPath = this.contentTypes[type].settingsKey.split('.');
             const enabled = this.getNestedProperty(this.settings, keyPath);
@@ -480,7 +499,7 @@ export class ContentSelectionSettings {
      */
     getContentSelectionStatus() {
         const status = {};
-        
+
         Object.entries(this.contentTypes).forEach(([type, config]) => {
             const keyPath = config.settingsKey.split('.');
             status[type] = {
@@ -523,6 +542,7 @@ export class ContentSelectionSettings {
 
         // Remove other listeners
         $('#vectors_enhanced_content_blacklist').off('input');
+        $('#vectors_enhanced_chapter_regex').off('input');
 
         this.initialized = false;
         console.log('ContentSelectionSettings: Destroyed');
