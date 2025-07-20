@@ -82,12 +82,49 @@ export async function updateFileList() {
   const chatFiles = allFiles.filter(file => chatFileUrls.has(file.url) && !dataBankUrls.has(file.url));
 
   if (dataBankFiles.length > 0) {
-    fileList.append('<div class="file-group-header">数据库文件</div>');
+    // Check if all databank files are selected
+    const allDataBankSelected = dataBankFiles.every(file => 
+      settings.selected_content.files.selected.includes(file.url)
+    );
+    
+    const groupHeader = $(`
+      <div class="file-group-header flex-container alignItemsCenter">
+        <label class="checkbox_label flex-container alignItemsCenter" style="margin: 0;">
+          <input type="checkbox" class="file-group-select-all" data-group="databank" ${allDataBankSelected ? 'checked' : ''} />
+          <span>数据库文件</span>
+        </label>
+      </div>
+    `);
+    
+    // Handle select all for databank files
+    groupHeader.find('.file-group-select-all').on('change', function() {
+      const isChecked = this.checked;
+      dataBankFiles.forEach(file => {
+        if (isChecked) {
+          if (!settings.selected_content.files.selected.includes(file.url)) {
+            settings.selected_content.files.selected.push(file.url);
+          }
+        } else {
+          settings.selected_content.files.selected = settings.selected_content.files.selected.filter(
+            url => url !== file.url
+          );
+        }
+      });
+      
+      // Update individual checkboxes
+      fileList.find(`input[type="checkbox"][data-group="databank"]:not(.file-group-select-all)`).prop('checked', isChecked);
+      
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    });
+    
+    fileList.append(groupHeader);
+    
     dataBankFiles.forEach(file => {
       const isChecked = settings.selected_content.files.selected.includes(file.url);
       const checkbox = $(`
                 <label class="checkbox_label flex-container alignItemsCenter" title="${file.name}">
-                    <input type="checkbox" value="${file.url}" ${isChecked ? 'checked' : ''} />
+                    <input type="checkbox" value="${file.url}" data-group="databank" ${isChecked ? 'checked' : ''} />
                     <span class="flex1 text-overflow-ellipsis">${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>
                 </label>
             `);
@@ -102,6 +139,13 @@ export async function updateFileList() {
             url => url !== file.url,
           );
         }
+        
+        // Update select all checkbox
+        const allChecked = dataBankFiles.every(f => 
+          settings.selected_content.files.selected.includes(f.url)
+        );
+        fileList.find('.file-group-select-all[data-group="databank"]').prop('checked', allChecked);
+        
         Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
       });
@@ -112,12 +156,50 @@ export async function updateFileList() {
 
   if (chatFiles.length > 0) {
     if (dataBankFiles.length > 0) fileList.append('<hr class="m-t-0-5 m-b-0-5">');
-    fileList.append('<div class="file-group-header">聊天附件</div>');
+    
+    // Check if all chat files are selected
+    const allChatSelected = chatFiles.every(file => 
+      settings.selected_content.files.selected.includes(file.url)
+    );
+    
+    const groupHeader = $(`
+      <div class="file-group-header flex-container alignItemsCenter">
+        <label class="checkbox_label flex-container alignItemsCenter" style="margin: 0;">
+          <input type="checkbox" class="file-group-select-all" data-group="chat" ${allChatSelected ? 'checked' : ''} />
+          <span>聊天附件</span>
+        </label>
+      </div>
+    `);
+    
+    // Handle select all for chat files
+    groupHeader.find('.file-group-select-all').on('change', function() {
+      const isChecked = this.checked;
+      chatFiles.forEach(file => {
+        if (isChecked) {
+          if (!settings.selected_content.files.selected.includes(file.url)) {
+            settings.selected_content.files.selected.push(file.url);
+          }
+        } else {
+          settings.selected_content.files.selected = settings.selected_content.files.selected.filter(
+            url => url !== file.url
+          );
+        }
+      });
+      
+      // Update individual checkboxes
+      fileList.find(`input[type="checkbox"][data-group="chat"]:not(.file-group-select-all)`).prop('checked', isChecked);
+      
+      Object.assign(extension_settings.vectors_enhanced, settings);
+      saveSettingsDebounced();
+    });
+    
+    fileList.append(groupHeader);
+    
     chatFiles.forEach(file => {
       const isChecked = settings.selected_content.files.selected.includes(file.url);
       const checkbox = $(`
                 <label class="checkbox_label flex-container alignItemsCenter" title="${file.name}">
-                    <input type="checkbox" value="${file.url}" ${isChecked ? 'checked' : ''} />
+                    <input type="checkbox" value="${file.url}" data-group="chat" ${isChecked ? 'checked' : ''} />
                     <span class="flex1 text-overflow-ellipsis">${file.name} (${(file.size / 1024).toFixed(1)} KB)</span>
                 </label>
             `);
@@ -132,6 +214,13 @@ export async function updateFileList() {
             url => url !== file.url,
           );
         }
+        
+        // Update select all checkbox
+        const allChecked = chatFiles.every(f => 
+          settings.selected_content.files.selected.includes(f.url)
+        );
+        fileList.find('.file-group-select-all[data-group="chat"]').prop('checked', allChecked);
+        
         Object.assign(extension_settings.vectors_enhanced, settings);
         saveSettingsDebounced();
       });

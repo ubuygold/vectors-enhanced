@@ -148,6 +148,23 @@
   margin-bottom: 0.5rem;
 }
 
+/* File group header with select all */
+.file-group-header {
+  font-weight: bold;
+  color: var(--SmartThemeQuoteColor);
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+.file-group-header .checkbox_label {
+  font-weight: bold;
+}
+
+.file-group-select-all {
+  margin-right: 0.5rem;
+}
+
 .wi-list {
   max-height: 200px;
   overflow-y: auto;
