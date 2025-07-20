@@ -13,6 +13,8 @@ import {
   substituteParamsExtended,
   generateRaw,
   saveChatConditional,
+  chat_metadata,
+  saveChatDebounced,
 } from '../../../../script.js';
 import { getDataBankAttachments, getDataBankAttachmentsForSource, getFileAttachment } from '../../../chats.js';
 import { debounce_timeout } from '../../../constants.js';
@@ -2819,6 +2821,8 @@ jQuery(async () => {
     getContext,
     generateRaw,
     saveChatConditional,  // 添加saveChatConditional
+    chat_metadata,  // 添加chat_metadata
+    saveChatDebounced,  // 添加saveChatDebounced
     toastr,
     oai_settings,
     getRequestHeaders,

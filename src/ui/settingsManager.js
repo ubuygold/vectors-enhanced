@@ -714,7 +714,9 @@ export class SettingsManager {
       generateRaw: this.dependencies.generateRaw, // 传入generateRaw API
       eventSource: this.dependencies.eventSource || window.eventSource, // 传入eventSource
       event_types: this.dependencies.event_types || window.event_types, // 传入event_types
-      saveChatConditional: this.dependencies.saveChatConditional // 传入saveChatConditional
+      saveChatConditional: this.dependencies.saveChatConditional, // 传入saveChatConditional
+      chat_metadata: this.dependencies.chat_metadata, // 传入chat_metadata
+      saveChatDebounced: this.dependencies.saveChatDebounced // 传入saveChatDebounced
     });
     
     await this.memoryUI.init();
