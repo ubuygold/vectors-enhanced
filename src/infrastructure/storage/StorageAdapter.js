@@ -154,9 +154,9 @@ export class StorageAdapter {
                 body: JSON.stringify({
                     ...this.getVectorsRequestBody(),
                     collectionId: collectionId,
-                    searchText: "dummy_search_for_metadata_retrieval",
-                    topK: 9999, // 获取所有项目
-                    threshold: 0.0, // 接受所有相似度
+                    searchText: "", // 使用空字符串而不是虚假搜索词
+                    topK: 999999, // 增加到足够大的值
+                    threshold: -1.0, // 使用负值确保接受所有结果
                     includeText: true,
                 }),
             });
@@ -173,11 +173,14 @@ export class StorageAdapter {
             if (result.metadata && Array.isArray(result.metadata)) {
                 for (const metadata of result.metadata) {
                     if (hashes.includes(metadata.hash)) {
-                        texts.push({
-                            hash: metadata.hash,
-                            text: metadata.text || '',
-                            metadata: metadata
-                        });
+                        // 只添加有实际文本内容的项目
+                        if (metadata.text && metadata.text.trim()) {
+                            texts.push({
+                                hash: metadata.hash,
+                                text: metadata.text,
+                                metadata: metadata
+                            });
+                        }
                     }
                 }
             }

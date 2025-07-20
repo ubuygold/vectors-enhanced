@@ -4,8 +4,7 @@
 Vectors Enhanced 是 SillyTavern 的向量化扩展插件，提语义搜索、智能记忆管理和内容处理功能。
 
 discord社区链接：https://ptb.discord.com/channels/1134557553011998840/1390957251023343636
-
-详细使用教程：https://docs.google.com/document/d/1Gc-xWEKApKtfhzxwuG9XeBEio8zah8yurpPQzWGvqo4/
+详细使用教程：https://docs.google.com/document/d/1Gc-xWEKApKtfhzxwuG9XeBEio8zah8yurpPQzWGvqo4/edit?usp=sharing
 
 
 ### 1.  多引擎向量化系统
@@ -45,7 +44,7 @@ discord社区链接：https://ptb.discord.com/channels/1134557553011998840/13909
   - 可调节的注入深度和优先级
 - **标签触发**：支持复杂的包含/排除/正则表达式规则
 
-### 5.  高级标签提取
+### 5. 🏷️ 高级标签提取
 - **直观UI设计**：无需编写复杂命令，通过图形界面配置规则
 - **三种规则类型**：
   - 包含规则：提取匹配标签的内容
@@ -53,7 +52,7 @@ discord社区链接：https://ptb.discord.com/channels/1134557553011998840/13909
   - 正则表达式：高级模式匹配和提取
 - **智能处理流程**：固定的"先排除，后提取"顺序，确保结果一致性
 
-##  技术架构
+## 🏗️ 技术架构
 
 ### 分层设计
 ```
@@ -93,7 +92,7 @@ UI层 (UI Layer)
 - **延迟加载**：外挂任务仅在需要时解析
 - **事件防抖**：高频操作优化，提升UI响应性
 
-##  安装与设置
+## 📦 安装与设置
 
 ### 前置要求
 - SillyTavern 最新版本
@@ -115,7 +114,7 @@ UI层 (UI Layer)
    - 在扩展设置中选择您要使用的向量化源
    - 配置必要的API密钥或服务地址
 
-##  快速开始
+## 🚀 快速开始
 
 ### 1. 向量化聊天记录
 1. 打开任意聊天界面
@@ -138,7 +137,7 @@ UI层 (UI Layer)
 3. 选择要引用的源聊天和任务
 4. 确认添加，任务会自动同步
 
-##  使用教程
+## 📋 使用教程
 
 ### 标签提取功能
 查看 [标签提取示例.md](标签提取示例.md) 了解详细的标签规则配置方法。

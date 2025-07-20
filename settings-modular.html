@@ -272,16 +272,17 @@
           
           <!-- Prompts Section (collapsible) -->
           
-          <!-- Summary Length Selection -->
-          <div class="memory-summary-length" style="margin-top: 10px;">
-            <label for="memory_summary_length">
-              <small>总结长度:</small>
+          <!-- Summary Format -->
+          <div class="memory-summary-format" style="margin-top: 10px;">
+            <label for="memory_summary_format">
+              <small>总结格式模板:</small>
+              <small style="opacity: 0.7; margin-left: 5px;">(支持变量: {{content}} 为待总结内容)</small>
             </label>
-            <select id="memory_summary_length" class="text_pole" style="width: 100%;">
-              <option value="short">短总结 (3句话, 100字)</option>
-              <option value="normal" selected>正常总结 (5句话, 200字)</option>
-              <option value="long">长总结 (8句话, 400字)</option>
-            </select>
+            <textarea id="memory_summary_format" 
+                      class="text_pole" 
+                      rows="10"
+                      style="width: 100%; font-family: monospace; font-size: 12px;"
+                      placeholder="输入自定义的总结格式..."></textarea>
           </div>
           
           <!-- Auto-Summarize Settings -->
@@ -345,6 +346,19 @@
             </label>
             <div style="margin-left: 1.5rem; margin-top: 5px;">
               <small style="color: var(--SmartThemeEmColor);">总结成功后自动隐藏被总结的楼层（包括范围内的用户消息）</small>
+            </div>
+          </div>
+          
+          <!-- Disable World Info After Vectorization -->
+          <div style="margin-bottom: 10px;">
+            <label class="checkbox_label" for="memory_disable_world_info_after_vectorize" title="向量化成功后自动禁用世界书的所有条目">
+              <input id="memory_disable_world_info_after_vectorize" type="checkbox" />
+              <span>
+                <i class="fa-solid fa-ban"></i> 向量化后禁用世界书条目
+              </span>
+            </label>
+            <div style="margin-left: 1.5rem; margin-top: 5px;">
+              <small style="color: var(--SmartThemeEmColor);">向量化成功后自动禁用该世界书的所有条目</small>
             </div>
           </div>
           
@@ -645,13 +659,13 @@
             <i class="fa-solid fa-download"></i>
             <span>导出</span>
           </button>
-          <button id="vectors_enhanced_vectorize" class="menu_button menu_button_icon">
-            <i class="fa-solid fa-vector-square"></i>
-            <span>向量化</span>
-          </button>
           <button id="memory_summarize_btn" class="menu_button menu_button_icon" title="总结选中的聊天内容并生成世界书">
             <i class="fa-solid fa-brain"></i>
             <span>总结</span>
+          </button>
+          <button id="vectors_enhanced_vectorize" class="menu_button menu_button_icon">
+            <i class="fa-solid fa-vector-square"></i>
+            <span>向量化</span>
           </button>
           <button id="vectors_enhanced_abort" class="menu_button menu_button_icon vectors-btn-hidden" title="中断向量化">
             <i class="fa-solid fa-stop"></i>
