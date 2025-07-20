@@ -1186,17 +1186,21 @@ export class MemoryUI {
             });
             
             // 检查是否达到触发条件
-            // 计算从上次总结后经过的楼层数
-            const floorsSinceLastSummary = currentFloor - lastSummarized;
+            // 使用与提示显示相同的逻辑：
+            // 如果从未总结过（lastSummarized = 0），基于当前楼层计算
+            // 否则基于上次总结位置计算
+            const baseFloor = lastSummarized === 0 ? currentFloor : lastSummarized;
+            const nextTriggerFloor = baseFloor + interval;
             
-            // 必须达到间隔数量才触发
-            if (floorsSinceLastSummary < interval) {
-                console.log('[MemoryUI] 未达到间隔楼层，不触发', {
+            // 当前楼层必须达到或超过下次触发楼层才触发
+            if (currentFloor < nextTriggerFloor) {
+                console.log('[MemoryUI] 未达到触发楼层，不触发', {
                     currentFloor,
                     lastSummarized,
-                    floorsSinceLastSummary,
+                    baseFloor,
+                    nextTriggerFloor,
                     interval,
-                    needMore: interval - floorsSinceLastSummary
+                    needMore: nextTriggerFloor - currentFloor
                 });
                 return;
             }
@@ -1212,7 +1216,9 @@ export class MemoryUI {
                 currentFloor,
                 interval,
                 keepCount,
-                lastSummarized
+                lastSummarized,
+                baseFloor,
+                nextTriggerFloor
             });
             
             // 设置标志，防止并发执行
