@@ -7,7 +7,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "RaphllA",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "homePage": "https://github.com/RaphllA/vectors-enhanced",
-  "description": "请阅读对应文件。"
+  "description": "修复自动总结。"
 }
