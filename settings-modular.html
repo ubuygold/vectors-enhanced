@@ -324,9 +324,16 @@
               
               <!-- Auto-Summarize Status -->
               <div id="memory_auto_summarize_status" style="margin-top: 8px; display: none;">
-                <small style="color: var(--SmartThemeEmColor);">
-                  下次自动总结楼层: <span id="memory_next_auto_summarize_floor">-</span>
-                </small>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <small style="color: var(--SmartThemeEmColor);">
+                    下次自动总结楼层: <span id="memory_next_auto_summarize_floor">-</span>
+                  </small>
+                  <button id="memory_reset_auto_summarize" class="menu_button" 
+                          style="padding: 2px 8px; font-size: 12px; width: fit-content;"
+                          title="重置自动总结基准点为当前楼层">
+                    <i class="fa fa-refresh"></i> 重置
+                  </button>
+                </div>
               </div>
               
               <div style="margin-top: 8px;">
