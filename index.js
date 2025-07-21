@@ -347,14 +347,36 @@ async function renameVectorTask(chatId, taskId, currentName) {
     }
   );
 
-  if (newName && newName.trim() && newName.trim() !== task.name) {
+  if (newName && newName.trim() && newName.trim() !== currentName) {
     const taskIndex = tasks.findIndex(t => t.taskId === taskId);
 
     if (taskIndex !== -1) {
+      console.log('[Vectors] Renaming task:', {
+        chatId,
+        taskId,
+        oldName: currentName,
+        newName: newName.trim(),
+        taskIndex,
+        task: tasks[taskIndex]
+      });
+      
       tasks[taskIndex].name = newName.trim();
+      tasks[taskIndex].isCustomName = true; // 标记为用户自定义名称
       settings.vector_tasks[chatId] = tasks;
+      
+      // 确保 extension_settings.vectors_enhanced 存在
+      if (!extension_settings.vectors_enhanced) {
+        extension_settings.vectors_enhanced = {};
+      }
+      
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
+
+      console.log('[Vectors] After rename:', {
+        taskName: tasks[taskIndex].name,
+        settingsTaskName: settings.vector_tasks[chatId][taskIndex].name,
+        extensionSettingsTaskName: extension_settings.vectors_enhanced?.vector_tasks?.[chatId]?.[taskIndex]?.name
+      });
 
       // Refresh the task list UI
       await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);

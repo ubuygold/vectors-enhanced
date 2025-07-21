@@ -67,9 +67,9 @@ export async function updateTaskList(getChatTasks, renameVectorTask, removeVecto
   tasks.forEach((task, index) => {
     const taskDiv = $('<div class="vector-enhanced-task-item"></div>');
 
-    // Generate smart task name if actualProcessedItems is available
+    // Generate smart task name if actualProcessedItems is available and no custom name
     let displayName = task.name;
-    if (task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
+    if (!task.isCustomName && task.actualProcessedItems && (task.actualProcessedItems.chat || task.actualProcessedItems.files || task.actualProcessedItems.world_info)) {
       // Construct items for name generation
       const items = [];
 
