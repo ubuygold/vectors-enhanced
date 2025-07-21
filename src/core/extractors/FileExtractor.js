@@ -14,69 +14,119 @@ export class FileExtractor {
      * @returns {Promise<object>} A promise that resolves to extraction result with content and metadata.
      */
     async extract(source, config = {}) {
-        // Handle different input formats
+        const { chapterRegex } = config;
         let fileItems = [];
-        
+
         if (Array.isArray(source)) {
-            // Pipeline mode: array of file items
             fileItems = source.map(item => ({
                 path: item.metadata?.url || item.metadata?.path || item.url || item.text,
                 name: item.metadata?.name || item.name || 'unknown',
                 text: item.text || null
             }));
         } else if (source && source.filePaths) {
-            // Original mode: source object with filePaths
             fileItems = source.filePaths.map(path => ({
                 path: path,
                 name: path.split('/').pop(),
-                text: null // Will be fetched
+                text: null
             }));
         } else {
             throw new Error('Invalid source format: expected array of items or object with filePaths');
         }
-        
-        console.log(`FileExtractor: Processing ${filePaths.length} files`);
-        
-        const contentPromises = filePaths.map(async (filePath) => {
+
+        console.log(`FileExtractor: Processing ${fileItems.length} files`);
+
+        const contentPromises = fileItems.map(async (item) => {
             try {
-                const text = await getFileAttachment(filePath);
+                const text = item.text ?? await getFileAttachment(item.path);
                 if (text) {
                     return new Content(
-                        filePath, // Use file path as a unique ID
+                        item.path,
                         'file',
                         text,
                         {
-                            fileName: filePath.split('/').pop(),
-                            path: filePath,
+                            fileName: item.name,
+                            path: item.path,
                         }
                     );
                 }
             } catch (error) {
-                console.error(`[Vectors Enhanced] Error reading file ${filePath}:`, error);
+                console.error(`[Vectors Enhanced] Error reading file ${item.path}:`, error);
             }
             return null;
         });
 
-        const contents = await Promise.all(contentPromises);
-        const validContents = contents.filter(content => content !== null);
-        
-        // Return in pipeline format
-        const joinedContent = validContents.map(content => content.text).join('\n\n');
-        
-        console.log(`FileExtractor: Extracted ${validContents.length} files, content length: ${joinedContent.length}`);
-        console.log('FileExtractor: Content preview:', joinedContent.substring(0, 200) + '...');
-        
-        return {
-            content: joinedContent,
-            metadata: {
-                extractorType: 'FileExtractor',
-                fileCount: validContents.length,
-                files: validContents.map(content => ({
-                    id: content.id,
-                    fileName: content.metadata.fileName,
-                    path: content.metadata.path
-                }))
+        const contents = (await Promise.all(contentPromises)).filter(Boolean);
+
+        if (chapterRegex) {
+            try {
+                const regex = new RegExp(chapterRegex, 'gm');
+                const chunks = [];
+                let sequenceId = 0;
+
+                for (const content of contents) {
+                    const text = content.text;
+                    const matches = [...text.matchAll(regex)];
+
+                    if (matches.length > 0) {
+                        // Handle text before the first chapter
+                        if (matches[0].index > 0) {
+                            const preChapterText = text.substring(0, matches[0].index);
+                            if (preChapterText.trim()) {
+                                chunks.push({
+                                    text: preChapterText,
+                                    metadata: { ...content.metadata, sequence_id: sequenceId++ }
+                                });
+                            }
+                        }
+
+                        // Handle each chapter
+                        for (let i = 0; i < matches.length; i++) {
+                            const match = matches[i];
+                            const chapterTitle = match[0].trim();
+                            const startIndex = match.index;
+                            const endIndex = (i + 1 < matches.length) ? matches[i + 1].index : text.length;
+
+                            const chapterText = text.substring(startIndex, endIndex);
+                            if (chapterText.trim()) {
+                                chunks.push({
+                                    text: chapterText,
+                                    metadata: {
+                                        ...content.metadata,
+                                        chapter: chapterTitle,
+                                        sequence_id: sequenceId++,
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        // Fallback if no chapters found
+                        chunks.push({
+                            text: content.text,
+                            metadata: { ...content.metadata, sequence_id: sequenceId++ }
+                        });
+                    }
+                }
+
+                if (chunks.some(c => c.metadata.chapter)) {
+                    console.log(`FileExtractor: Split content into ${chunks.length} chunks based on chapter regex.`);
+                    return chunks;
+                }
+            } catch (error) {
+                console.warn(`[Vectors Enhanced] Invalid chapter regex "${chapterRegex}". Falling back to default behavior.`, error);
             }
-        };
+        }
+
+        // Fallback: no regex, invalid regex, or no matches
+        let sequenceId = 0;
+        const result = contents.map(content => ({
+            text: content.text,
+            metadata: {
+                ...content.metadata,
+                sequence_id: sequenceId++,
+            }
+        }));
+
+        console.log(`FileExtractor: Extracted ${result.length} file contents without chapter splitting.`);
+        return result;
     }
 }

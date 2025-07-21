@@ -11,8 +11,8 @@ import { updateTaskList } from './components/TaskList.js';
 import { MessageUI } from './components/MessageUI.js';
 import { MemoryUI } from './components/MemoryUI.js';
 import { MemoryService } from '../core/memory/MemoryService.js';
-import { 
-  updateMasterSwitchState, 
+import {
+  updateMasterSwitchState,
   updateContentSelection,
   toggleSettings
 } from './domUtils.js';
@@ -69,13 +69,13 @@ export class SettingsManager {
 
     // 初始化其他设置
     this.initializeMiscellaneousSettings();
-    
+
     // 初始化外挂任务UI
     await this.initializeExternalTaskUI();
-    
+
     // 初始化实验性设置
     this.initializeExperimentalSettings();
-    
+
     // 初始化记忆管理UI
     await this.initializeMemoryUI();
 
@@ -84,7 +84,7 @@ export class SettingsManager {
 
     // 绑定其他事件
     this.bindOtherEvents();
-    
+
     // 清除标签建议（防止空的"发现的标签"框显示）
     clearTagSuggestions();
   }
@@ -212,13 +212,13 @@ export class SettingsManager {
       .prop('checked', this.settings.rerank_enabled)
       .on('input', () => {
         this.settings.rerank_enabled = $('#vectors_enhanced_rerank_enabled').prop('checked');
-        
+
         // 如果 Rerank 被启用，确保向量查询也被启用
         if (this.settings.rerank_enabled) {
           $('#vectors_enhanced_enabled').prop('checked', true);
           this.settings.enabled = true;
         }
-        
+
         this.updateAndSave();
       });
 
@@ -310,7 +310,7 @@ export class SettingsManager {
         this.settings.detailed_notification = $('#vectors_enhanced_detailed_notification').prop('checked');
         this.updateAndSave();
       });
-      
+
     // 初始化详细选项的显示状态
     $('#vectors_enhanced_notification_details').toggle(this.settings.show_query_notification);
   }
@@ -531,21 +531,21 @@ export class SettingsManager {
   initializeUIState() {
     // 切换设置显示
     toggleSettings(this.settings);
-    
+
     // 更新内容选择
     updateContentSelection(this.settings);
-    
+
     // 更新聊天设置
     updateChatSettings();
-    
+
     // 初始化通知详细选项的显示状态
     $('#vectors_enhanced_notification_details').toggle(this.settings.show_query_notification);
-    
+
     // 隐藏进度条和重置按钮状态
     $('#vectors_enhanced_progress').hide();
     $('#vectors_enhanced_vectorize').show();
     $('#vectors_enhanced_abort').hide();
-    
+
     // 重置进度条样式
     $('#vectors_enhanced_progress .progress-bar-inner').css('width', '0%');
     $('#vectors_enhanced_progress .progress-text').text('准备中...');
@@ -555,10 +555,10 @@ export class SettingsManager {
    * 绑定其他事件
    */
   bindOtherEvents() {
-    const { 
-      toggleMessageRangeVisibility, 
-      showTagExamples, 
-      scanAndSuggestTags 
+    const {
+      toggleMessageRangeVisibility,
+      showTagExamples,
+      scanAndSuggestTags
     } = this.dependencies;
 
     // 隐藏消息管理按钮
@@ -645,7 +645,7 @@ export class SettingsManager {
     this.deepMerge(extension_settings.vectors_enhanced, this.settings);
     saveSettingsDebounced();
   }
-  
+
   /**
    * 深度合并工具函数
    */
@@ -692,14 +692,14 @@ export class SettingsManager {
    */
   async initializeMemoryUI() {
     const { getContext, toastr } = this.dependencies;
-    
+
     // 创建记忆服务
     this.memoryService = new MemoryService({
       getContext,
       eventBus,
       getRequestHeaders: this.dependencies.getRequestHeaders
     });
-    
+
     // 创建并初始化MemoryUI组件
     this.memoryUI = new MemoryUI({
       memoryService: this.memoryService,
@@ -718,13 +718,13 @@ export class SettingsManager {
       chat_metadata: this.dependencies.chat_metadata, // 传入chat_metadata
       saveChatDebounced: this.dependencies.saveChatDebounced // 传入saveChatDebounced
     });
-    
+
     await this.memoryUI.init();
-    
+
     // 暴露到全局作用域以便测试
     window.vectorsMemoryUI = this.memoryUI;
   }
-  
+
   /**
    * 初始化实验性设置
    */
@@ -735,15 +735,15 @@ export class SettingsManager {
       .on('change', () => {
         this.settings.use_pipeline = $('#vectors_enhanced_use_pipeline').prop('checked');
         this.updateAndSave();
-        
+
         // Log the state change
         console.log(`Vectors Enhanced: Pipeline mode ${this.settings.use_pipeline ? 'enabled' : 'disabled'}`);
-        
+
         // Show notification
-        const message = this.settings.use_pipeline 
-          ? '已启用文本处理管道 (实验性功能)' 
+        const message = this.settings.use_pipeline
+          ? '已启用文本处理管道 (实验性功能)'
           : '已禁用文本处理管道，使用传统实现';
-        
+
         // toastr is available globally in SillyTavern
         if (typeof toastr !== 'undefined') {
           toastr.info(message);
@@ -761,21 +761,21 @@ export class SettingsManager {
       // 动态导入ExternalTaskUI - 使用完整路径解决模块加载问题
       const modulePath = '/scripts/extensions/third-party/vectors-enhanced/src/ui/components/ExternalTaskUI.js';
       const { ExternalTaskUI } = await import(modulePath);
-      
+
       // 创建并初始化外挂任务UI
       const externalTaskUI = new ExternalTaskUI();
-      
+
       // 使用 null 作为 taskManager（已移除）
       // 传入 null、settings 和 dependencies 对象
       await externalTaskUI.init(null, this.settings, this.dependencies);
-        
+
         // 监听聊天切换事件以更新外挂任务列表
         if (window.eventSource) {
           window.eventSource.on('chatLoaded', async (chatId) => {
             await externalTaskUI.updateChatContext(chatId);
           });
         }
-        
+
         // 初始更新
         try {
           const currentChatId = window.getContext?.()?.chatId;
@@ -785,10 +785,10 @@ export class SettingsManager {
         } catch (error) {
           console.warn('Failed to get current chat context:', error);
         }
-        
+
         // 保存引用以便后续使用
         this.externalTaskUI = externalTaskUI;
-        
+
         console.log('External Task UI initialized successfully (legacy mode)');
     } catch (error) {
       console.error('Failed to initialize External Task UI:', error);
