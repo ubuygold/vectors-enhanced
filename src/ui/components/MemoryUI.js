@@ -679,6 +679,7 @@ export class MemoryUI {
         // 保存OpenAI Compatible API Key
         const openaiKey = $('#memory_openai_api_key').val();
         if (openaiKey) {
+            // 1. 尝试保存到secrets API（为兼容已设置allowKeysExposure的用户）
             try {
                 await fetch('/api/secrets/write', {
                     method: 'POST',
@@ -689,13 +690,21 @@ export class MemoryUI {
                     })
                 });
             } catch (error) {
-                console.error('保存OpenAI API Key失败:', error);
+                console.error('保存OpenAI API Key到secrets失败:', error);
+            }
+
+            // 2. 同时保存到localStorage作为备用
+            try {
+                localStorage.setItem('vectors_enhanced_memory_openai_api_key', openaiKey);
+            } catch (error) {
+                console.error('保存OpenAI API Key到localStorage失败:', error);
             }
         }
 
         // 保存Google转OpenAI API Key
         const googleOpenAIKey = $('#memory_google_openai_api_key').val();
         if (googleOpenAIKey) {
+            // 1. 尝试保存到secrets API
             try {
                 await fetch('/api/secrets/write', {
                     method: 'POST',
@@ -706,7 +715,14 @@ export class MemoryUI {
                     })
                 });
             } catch (error) {
-                console.error('保存Google转OpenAI API Key失败:', error);
+                console.error('保存Google转OpenAI API Key到secrets失败:', error);
+            }
+
+            // 2. 同时保存到localStorage作为备用
+            try {
+                localStorage.setItem('vectors_enhanced_memory_google_openai_api_key', googleOpenAIKey);
+            } catch (error) {
+                console.error('保存Google转OpenAI API Key到localStorage失败:', error);
             }
         }
     }
@@ -774,9 +790,11 @@ export class MemoryUI {
      */
     async loadApiKeys() {
         const headers = this.memoryService.getRequestHeaders ? this.memoryService.getRequestHeaders() : {};
+        let openaiKeyLoaded = false;
+        let googleKeyLoaded = false;
 
+        // 1. 首先尝试从secrets API加载（为已设置allowKeysExposure的用户）
         try {
-            // 读取密钥状态
             const response = await fetch('/api/secrets/view', {
                 method: 'POST',
                 headers: headers
@@ -785,22 +803,47 @@ export class MemoryUI {
             if (response.ok) {
                 const secrets = await response.json();
 
-
                 // 加载OpenAI API Key
                 if (secrets.memory_openai_api_key) {
                     $('#memory_openai_api_key').val(secrets.memory_openai_api_key);
+                    openaiKeyLoaded = true;
+                    console.log('[MemoryUI] 从secrets加载了OpenAI API Key');
                 }
 
                 // 加载Google转OpenAI API Key
                 if (secrets.memory_google_openai_api_key) {
                     $('#memory_google_openai_api_key').val(secrets.memory_google_openai_api_key);
-                    console.log('[MemoryUI] 已加载Google API Key');
-                } else {
-                    console.log('[MemoryUI] 未找到保存的Google API Key');
+                    googleKeyLoaded = true;
+                    console.log('[MemoryUI] 从secrets加载了Google API Key');
+                }
+            } else if (response.status === 403) {
+                console.log('[MemoryUI] 无法从secrets加载API密钥（需要设置allowKeysExposure: true），将尝试从localStorage加载');
+            }
+        } catch (error) {
+            console.error('从secrets加载API密钥失败:', error);
+        }
+
+        // 2. 如果从secrets加载失败，尝试从localStorage加载
+        try {
+            // 加载OpenAI API Key
+            if (!openaiKeyLoaded) {
+                const localOpenAIKey = localStorage.getItem('vectors_enhanced_memory_openai_api_key');
+                if (localOpenAIKey) {
+                    $('#memory_openai_api_key').val(localOpenAIKey);
+                    console.log('[MemoryUI] 从localStorage加载了OpenAI API Key');
+                }
+            }
+
+            // 加载Google转OpenAI API Key
+            if (!googleKeyLoaded) {
+                const localGoogleKey = localStorage.getItem('vectors_enhanced_memory_google_openai_api_key');
+                if (localGoogleKey) {
+                    $('#memory_google_openai_api_key').val(localGoogleKey);
+                    console.log('[MemoryUI] 从localStorage加载了Google API Key');
                 }
             }
         } catch (error) {
-            console.error('加载API密钥失败:', error);
+            console.error('从localStorage加载API密钥失败:', error);
         }
     }
 
