@@ -167,6 +167,14 @@ export class MemoryUI {
             $('#memory_auto_summarize_settings').toggle(enabled);
             $('#memory_auto_summarize_status').toggle(enabled);
             if (enabled) {
+                // 初始化lastSummarizedFloor，确保有固定的基准点
+                const lastSummarized = this.getFromChatMetadata('lastSummarizedFloor');
+                if (!lastSummarized || lastSummarized === 0) {
+                    const context = this.getContext ? this.getContext() : getContext();
+                    const currentFloor = context?.chat?.length - 1 || 0;
+                    console.log('[MemoryUI] 初始化lastSummarizedFloor为当前楼层:', currentFloor);
+                    this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+                }
                 this.updateAutoSummarizeStatus();
             }
             this.saveApiConfig();
@@ -184,6 +192,11 @@ export class MemoryUI {
                 this.updateAutoSummarizeStatus();
                 this.saveApiConfig();
             });
+        
+        // Reset auto-summarize button handler
+        $('#memory_reset_auto_summarize').off('click').on('click', () => {
+            this.resetAutoSummarize();
+        });
 
         // 不在这里初始化API源显示，因为loadApiConfig已经处理了
     }
@@ -313,7 +326,7 @@ export class MemoryUI {
             }).join('\n\n');
             
             // 添加楼层信息头部
-            const headerInfo = `【楼层 #${startIndex} 至 #${endIndex}，共 ${messages.length} 条消息】\n\n`;
+            const headerInfo = `【楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${messages.length} 条消息】\n\n`;
             const contentWithHeader = headerInfo + chatTexts;
             
             // Get API configuration
@@ -332,7 +345,7 @@ export class MemoryUI {
             this.showLoading();
             
             // 显示总结开始提示
-            this.toastr?.info(`开始总结楼层 #${startIndex} 至 #${endIndex} 的内容...`);
+            this.toastr?.info(`开始总结楼层 #${startIndex + 1} 至 #${endIndex + 1} 的内容...`);
             
             // 临时存储楼层信息
             this._tempFloorRange = floorRange;
@@ -345,7 +358,7 @@ export class MemoryUI {
                 });
                 
                 if (result.success) {
-                    this.toastr?.success(`已总结楼层 #${startIndex} 至 #${endIndex} 的内容`);
+                    this.toastr?.success(`已总结楼层 #${startIndex + 1} 至 #${endIndex + 1} 的内容`);
                     
                     // 检查是否需要隐藏楼层
                     await this.hideFloorsIfEnabled(startIndex, endIndex, false);
@@ -859,7 +872,7 @@ export class MemoryUI {
             }).join('\n\n');
             
             // 添加楼层信息头部
-            const headerInfo = `【注入内容：楼层 #${startIndex} 至 #${endIndex}，共 ${messages.length} 条消息】\n\n`;
+            const headerInfo = `【注入内容：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${messages.length} 条消息】\n\n`;
             const contentWithHeader = headerInfo + chatTexts;
             
             // 注入到输入框
@@ -880,7 +893,7 @@ export class MemoryUI {
             inputElement.data('injected-range', { start: startIndex, end: endIndex, count: messages.length });
             
             // 显示更详细的提示
-            this.toastr?.info(`已注入楼层 #${startIndex} 至 #${endIndex} 的 ${messages.length} 条聊天记录`);
+            this.toastr?.info(`已注入楼层 #${startIndex + 1} 至 #${endIndex + 1} 的 ${messages.length} 条聊天记录`);
             
         } catch (error) {
             console.error('[MemoryUI] 注入内容失败:', error);
@@ -1100,9 +1113,9 @@ export class MemoryUI {
             
             // 显示格式：楼层 #N (共M条)
             if (visibleMessages === totalMessages) {
-                floorElement.text(`楼层 #${latestFloor} (共${totalMessages}条)`);
+                floorElement.text(`楼层 #${latestFloor + 1} (共${totalMessages}条)`);
             } else {
-                floorElement.text(`楼层 #${latestFloor} (${visibleMessages}/${totalMessages}条)`);
+                floorElement.text(`楼层 #${latestFloor + 1} (${visibleMessages}/${totalMessages}条)`);
             }
             
             // 添加颜色提示：如果消息数量较多
@@ -1142,27 +1155,56 @@ export class MemoryUI {
         const lastSummarizedFromMeta = this.getFromChatMetadata('lastSummarizedFloor');
         
         // 如果元数据中没有值（说明从未总结过），使用0作为起始点
-        // 不再使用全局设置的值，因为那是其他聊天的数据
         const lastSummarized = lastSummarizedFromMeta ?? 0;
         
-        // 计算下一个触发楼层
-        // 如果从未总结过（lastSummarized = 0），基于当前楼层计算
-        // 否则基于上次总结位置计算
-        const baseFloor = lastSummarized === 0 ? currentFloor : lastSummarized;
-        const nextFloor = baseFloor + interval;
+        // 兼容性处理：如果lastSummarized为0，初始化为当前楼层
+        if (lastSummarized === 0 && this.settings?.memory?.autoSummarize?.enabled) {
+            console.log('[MemoryUI] updateAutoSummarizeStatus: 检测到lastSummarized为0，初始化为当前楼层', currentFloor);
+            this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+            const nextFloor = currentFloor + interval;
+            $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
+            return;
+        }
+        
+        // 简化后的计算逻辑：直接基于lastSummarized计算
+        const nextFloor = lastSummarized + interval;
         
         console.log('[MemoryUI] updateAutoSummarizeStatus:', {
             chatId,
             currentFloor,
             interval,
             lastSummarized,
-            baseFloor,
             nextFloor,
-            fromMetadata: this.getFromChatMetadata('lastSummarizedFloor'),
-            fromGlobal: this.settings?.memory?.autoSummarize?.lastSummarizedFloor
+            fromMetadata: this.getFromChatMetadata('lastSummarizedFloor')
         });
         
-        $('#memory_next_auto_summarize_floor').text(`#${nextFloor}`);
+        $('#memory_next_auto_summarize_floor').text(`#${nextFloor + 1}`);
+    }
+    
+    /**
+     * Reset auto-summarize base floor to current floor
+     */
+    resetAutoSummarize() {
+        const context = this.getContext ? this.getContext() : getContext();
+        
+        if (!context || !context.chat) {
+            this.toastr?.warning('无法重置：聊天上下文不可用');
+            return;
+        }
+        
+        const currentFloor = context.chat.length - 1;
+        
+        // 保存当前楼层作为新的基准点
+        console.log('[MemoryUI] 重置自动总结基准点为当前楼层:', currentFloor);
+        this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+        
+        // 更新UI显示
+        this.updateAutoSummarizeStatus();
+        
+        // 显示成功提示
+        const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
+        const nextFloor = currentFloor + interval;
+        this.toastr?.success(`已重置！下次将在楼层 #${nextFloor + 1} 触发总结`);
     }
     
     /**
@@ -1192,7 +1234,17 @@ export class MemoryUI {
             const interval = parseInt($('#memory_auto_summarize_interval').val()) || 20;
             const keepCount = parseInt($('#memory_auto_summarize_count').val()) || 6;
             // 从聊天元数据获取lastSummarizedFloor，默认为0
-            const lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
+            let lastSummarized = this.getFromChatMetadata('lastSummarizedFloor') ?? 0;
+            
+            // 兼容性处理：如果lastSummarized为0，说明是旧版本用户或新用户
+            // 初始化为当前楼层，避免立即触发
+            if (lastSummarized === 0) {
+                console.log('[MemoryUI] 检测到lastSummarized为0，初始化为当前楼层:', currentFloor);
+                this.saveToChatMetadata('lastSummarizedFloor', currentFloor);
+                lastSummarized = currentFloor;
+                // 初始化后本次不触发，等待下次检查
+                return;
+            }
             
             console.log('[MemoryUI] 自动总结检查:', {
                 currentFloor,
@@ -1202,19 +1254,14 @@ export class MemoryUI {
                 enabled: this.settings?.memory?.autoSummarize?.enabled
             });
             
-            // 检查是否达到触发条件
-            // 使用与提示显示相同的逻辑：
-            // 如果从未总结过（lastSummarized = 0），基于当前楼层计算
-            // 否则基于上次总结位置计算
-            const baseFloor = lastSummarized === 0 ? currentFloor : lastSummarized;
-            const nextTriggerFloor = baseFloor + interval;
+            // 简化后的触发条件：直接基于lastSummarized计算
+            const nextTriggerFloor = lastSummarized + interval;
             
             // 当前楼层必须达到或超过下次触发楼层才触发
             if (currentFloor < nextTriggerFloor) {
                 console.log('[MemoryUI] 未达到触发楼层，不触发', {
                     currentFloor,
                     lastSummarized,
-                    baseFloor,
                     nextTriggerFloor,
                     interval,
                     needMore: nextTriggerFloor - currentFloor
@@ -1234,7 +1281,6 @@ export class MemoryUI {
                 interval,
                 keepCount,
                 lastSummarized,
-                baseFloor,
                 nextTriggerFloor
             });
             
@@ -1327,17 +1373,17 @@ export class MemoryUI {
                 const messageText = msg.mes || msg.text || '';
                 
                 if (!messageText) {
-                    console.warn(`[MemoryUI] 楼层 #${msg.index} 的AI消息为空`);
-                    return `#${msg.index} [AI]: （空消息）`;
+                    console.warn(`[MemoryUI] 楼层 #${msg.index + 1} 的AI消息为空`);
+                    return `#${msg.index + 1} [AI]: （空消息）`;
                 }
                 
                 // 对AI消息应用标签提取规则
                 const extractedText = extractTagContent(messageText, rules);
-                return `#${msg.index} [AI]: ${extractedText}`;
+                return `#${msg.index + 1} [AI]: ${extractedText}`;
             }).join('\n\n');
             
             // 添加楼层信息头部
-            const headerInfo = `【自动总结：楼层 #${startIndex} 至 #${endIndex}，共 ${aiMessages.length} 条AI消息】\n\n`;
+            const headerInfo = `【自动总结：楼层 #${startIndex + 1} 至 #${endIndex + 1}，共 ${aiMessages.length} 条AI消息】\n\n`;
             const contentWithHeader = headerInfo + chatTexts;
             
             // 调试：检查最终内容
@@ -1411,7 +1457,7 @@ export class MemoryUI {
                 // 保存到聊天元数据而不是全局设置
                 this.saveToChatMetadata('lastSummarizedFloor', endIndex + 1);
                 
-                this.toastr?.success(`自动总结完成：楼层 #${startIndex} 至 #${endIndex}`);
+                this.toastr?.success(`自动总结完成：楼层 #${startIndex + 1} 至 #${endIndex + 1}`);
                 this.updateAutoSummarizeStatus();
                 
                 // 检查是否需要隐藏楼层
