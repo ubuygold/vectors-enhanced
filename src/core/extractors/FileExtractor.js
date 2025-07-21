@@ -65,40 +65,41 @@ export class FileExtractor {
 
                 for (const content of contents) {
                     const text = content.text;
-                    let lastIndex = 0;
-                    let match;
-                    const chapters = [];
+                    const matches = [...text.matchAll(regex)];
 
-                    while ((match = regex.exec(text)) !== null) {
-                        if (match.index > lastIndex) {
-                            chapters.push({ text: text.substring(lastIndex, match.index) });
-                        }
-                        chapters.push({ text: text.substring(match.index, regex.lastIndex), chapter: match[0].trim() });
-                        lastIndex = regex.lastIndex;
-                    }
-
-                    if (lastIndex < text.length) {
-                        chapters.push({ text: text.substring(lastIndex) });
-                    }
-
-                    let currentChapter = null;
-                    if (chapters.length > 1) { // Found chapters
-                        for (const part of chapters) {
-                            if (part.chapter) {
-                                currentChapter = part.chapter;
-                            }
-                            if (part.text.trim()) {
+                    if (matches.length > 0) {
+                        // Handle text before the first chapter
+                        if (matches[0].index > 0) {
+                            const preChapterText = text.substring(0, matches[0].index);
+                            if (preChapterText.trim()) {
                                 chunks.push({
-                                    text: part.text,
+                                    text: preChapterText,
+                                    metadata: { ...content.metadata, sequence_id: sequenceId++ }
+                                });
+                            }
+                        }
+
+                        // Handle each chapter
+                        for (let i = 0; i < matches.length; i++) {
+                            const match = matches[i];
+                            const chapterTitle = match[0].trim();
+                            const startIndex = match.index;
+                            const endIndex = (i + 1 < matches.length) ? matches[i + 1].index : text.length;
+
+                            const chapterText = text.substring(startIndex, endIndex);
+                            if (chapterText.trim()) {
+                                chunks.push({
+                                    text: chapterText,
                                     metadata: {
                                         ...content.metadata,
-                                        ...(currentChapter && { chapter: currentChapter }),
+                                        chapter: chapterTitle,
                                         sequence_id: sequenceId++,
                                     }
                                 });
                             }
                         }
-                    } else { // No chapters found, treat as single block
+                    } else {
+                        // Fallback if no chapters found
                         chunks.push({
                             text: content.text,
                             metadata: { ...content.metadata, sequence_id: sequenceId++ }
