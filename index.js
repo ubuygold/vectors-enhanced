@@ -546,7 +546,7 @@ async function getVectorizableContent(contentSettings = null) {
                 extractedText = msg.text;
             } else {
                 // 其他楼层：应用标签提取规则
-                extractedText = extractTagContent(msg.text, rules);
+                extractedText = extractTagContent(msg.text, rules, settings.content_blacklist || []);
             }
 
             // 对于预览，text 和 rawText 都应该是标签提取后的结果

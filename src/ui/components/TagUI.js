@@ -145,8 +145,8 @@ async function showTagExamples() {
         codeBlocks.push(`<pre style="background: var(--SmartThemeBlurTintColor); padding: 1.2rem; margin: 1.5rem 0; border-radius: 6px; overflow-x: auto; border: 1px solid var(--SmartThemeEmColor); white-space: pre;"><code style="font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 0.9em; line-height: 1.4;">${escapeHtml(cleanCode)}</code></pre>`);
         return placeholder;
       })
-      // 处理行内代码
-      .replace(/`([^`]+)`/g, (match, code) => {
+      // 处理行内代码 - 匹配反引号之间的任何内容（包括特殊字符）
+      .replace(/`([^`]*)`/g, (match, code) => {
         return `<code style="background: var(--SmartThemeBlurTintColor); padding: 0.3rem 0.5rem; border-radius: 4px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 0.9em; border: 1px solid var(--SmartThemeQuoteColor);">${escapeHtml(code)}</code>`;
       })
       // 处理标题

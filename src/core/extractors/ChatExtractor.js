@@ -37,7 +37,7 @@ export class ChatExtractor {
                 if (item.metadata?.index === 0 || item.metadata?.is_user === true) {
                     extractedText = item.text;
                 } else {
-                    extractedText = extractTagContent(item.text, rules);
+                    extractedText = extractTagContent(item.text, rules, settings.content_blacklist || []);
                 }
                 
                 items.push({

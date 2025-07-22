@@ -141,7 +141,7 @@ export const MessageUI = {
           if (absoluteIndex === 0 || msg.is_user === true) {
             extractedText = msg.mes;
           } else {
-            extractedText = extractTagContent(msg.mes, rules);
+            extractedText = extractTagContent(msg.mes, rules, settings.content_blacklist || []);
           }
 
           rawTextMap.set(absoluteIndex, extractedText);

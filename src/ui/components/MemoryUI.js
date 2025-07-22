@@ -318,7 +318,7 @@ export class MemoryUI {
                     extractedText = msg.text;
                 } else {
                     // 其他楼层：应用标签提取规则
-                    extractedText = extractTagContent(msg.text, rules);
+                    extractedText = extractTagContent(msg.text, rules, this.settings.content_blacklist || []);
                 }
                 
                 const msgType = msg.is_user ? '用户' : 'AI';
@@ -907,7 +907,7 @@ export class MemoryUI {
                     extractedText = msg.text;
                 } else {
                     // 其他楼层：应用标签提取规则
-                    extractedText = extractTagContent(msg.text, rules);
+                    extractedText = extractTagContent(msg.text, rules, this.settings.content_blacklist || []);
                 }
                 
                 const msgType = msg.is_user ? '用户' : 'AI';
@@ -1421,7 +1421,7 @@ export class MemoryUI {
                 }
                 
                 // 对AI消息应用标签提取规则
-                const extractedText = extractTagContent(messageText, rules);
+                const extractedText = extractTagContent(messageText, rules, this.settings.content_blacklist || []);
                 return `#${msg.index + 1} [AI]: ${extractedText}`;
             }).join('\n\n');
             
