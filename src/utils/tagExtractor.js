@@ -4,9 +4,10 @@ import { escapeRegex, shouldSkipContent } from './contentFilter.js';
  * Extracts and filters content from text based on a set of rules.
  * @param {string} text The input text to process.
  * @param {Array<object>} rules An array of rules for inclusion and exclusion.
+ * @param {Array<string>} blacklist An array of blacklist keywords to filter out content.
  * @returns {string} The processed content.
  */
-export function extractTagContent(text, rules) {
+export function extractTagContent(text, rules, blacklist = []) {
     if (!rules || rules.length === 0) {
         return text;
     }
@@ -14,7 +15,6 @@ export function extractTagContent(text, rules) {
     const blockExcludeRules = rules.filter(rule => rule.type === 'exclude' && rule.enabled);
     const includeRules = rules.filter(rule => (rule.type === 'include' || rule.type === 'regex_include') && rule.enabled);
     const cleanupRules = rules.filter(rule => rule.type === 'regex_exclude' && rule.enabled);
-    const blacklist = []; // settings.content_blacklist is handled in the caller now
 
     let workingText = text;
 

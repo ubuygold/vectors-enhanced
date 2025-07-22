@@ -634,6 +634,49 @@ export class SettingsManager {
       renderTagRulesUI();
       toastr.success('已添加规则：排除HTML注释');
     });
+
+    // 掉格式兼容按钮
+    $('#vectors_enhanced_format_fix').on('click', async () => {
+      if (!this.settings.selected_content.chat.tag_rules) {
+        this.settings.selected_content.chat.tag_rules = [];
+      }
+
+      // 弹出输入框询问标签名称
+      const { callGenericPopup, POPUP_TYPE } = this.dependencies;
+      const tagName = await callGenericPopup(
+        '请输入要保留的标签名称（如 content）：',
+        POPUP_TYPE.INPUT,
+        'content',
+        {
+          okButton: '确认',
+          cancelButton: '取消',
+        }
+      );
+
+      if (!tagName || !tagName.trim()) {
+        return;
+      }
+
+      const formatFixRule = {
+        type: 'regex_exclude',
+        value: `^[\\s\\S]*?<${tagName.trim()}>`,
+        enabled: true,
+      };
+
+      const alreadyExists = this.settings.selected_content.chat.tag_rules.some(
+        rule => rule.type === formatFixRule.type && rule.value === formatFixRule.value
+      );
+
+      if (alreadyExists) {
+        toastr.info(`已存在删除 <${tagName}> 之前内容的规则。`);
+        return;
+      }
+
+      this.settings.selected_content.chat.tag_rules.push(formatFixRule);
+      this.updateAndSave();
+      renderTagRulesUI();
+      toastr.success(`已添加规则：删除 <${tagName}> 标签之前的所有内容`);
+    });
   }
 
   /**

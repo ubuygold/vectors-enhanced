@@ -32,3 +32,8 @@ Thumbs.db
 SuperAgent/
 .kilocode/
 SuperAgent/Context
+
+# SillyTavern specific files
+sillytavernREADME.md
+
+
