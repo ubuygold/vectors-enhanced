@@ -347,36 +347,14 @@ async function renameVectorTask(chatId, taskId, currentName) {
     }
   );
 
-  if (newName && newName.trim() && newName.trim() !== currentName) {
+  if (newName && newName.trim() && newName.trim() !== task.name) {
     const taskIndex = tasks.findIndex(t => t.taskId === taskId);
 
     if (taskIndex !== -1) {
-      console.log('[Vectors] Renaming task:', {
-        chatId,
-        taskId,
-        oldName: currentName,
-        newName: newName.trim(),
-        taskIndex,
-        task: tasks[taskIndex]
-      });
-      
       tasks[taskIndex].name = newName.trim();
-      tasks[taskIndex].isCustomName = true; // 标记为用户自定义名称
       settings.vector_tasks[chatId] = tasks;
-      
-      // 确保 extension_settings.vectors_enhanced 存在
-      if (!extension_settings.vectors_enhanced) {
-        extension_settings.vectors_enhanced = {};
-      }
-      
       Object.assign(extension_settings.vectors_enhanced, settings);
       saveSettingsDebounced();
-
-      console.log('[Vectors] After rename:', {
-        taskName: tasks[taskIndex].name,
-        settingsTaskName: settings.vector_tasks[chatId][taskIndex].name,
-        extensionSettingsTaskName: extension_settings.vectors_enhanced?.vector_tasks?.[chatId]?.[taskIndex]?.name
-      });
 
       // Refresh the task list UI
       await updateTaskList(getChatTasks, renameVectorTask, removeVectorTask);
@@ -2136,7 +2114,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
     // Query vectors based on recent messages
     const queryMessages = Math.min(settings.query_messages || 3, chat.length);
-    const queryText = chat
+    let queryText = chat // Changed to let
       .slice(-queryMessages)
       .map(x => x.mes)
       .join('\n');
@@ -2144,6 +2122,11 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       logTimingAndReturn('查询文本为空');
       return;
     }
+
+    // ADD THIS BLOCK TO FORMAT THE QUERY WITH AN INSTRUCTION
+    const taskDescription = '找出看似与主线无关实则埋设伏笔的日常描写';
+    queryText = `Instruct: ${taskDescription}\nQuery: ${queryText}`;
+    // END OF ADDED BLOCK
 
     // Get all enabled tasks for this chat
     const allTasks = getChatTasks(chatId);
@@ -2266,24 +2249,48 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     if (settings.rerank_enabled && allResults.length > 0) {
         console.debug('Vectors: Reranking enabled. Starting rerank process...');
         try {
-            const documentsToRerank = allResults.map(x => ({
-                text: x.text,
-                index: x.original_index
-            }));
+        const indexedResults = allResults.map((res, index) => ({
+            ...res,
+            original_index: index
+        }));
+        const documentsToRerank = indexedResults.map(x => x.text);
 
-            const rerankResponse = await fetch(settings.rerank_url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${settings.rerank_apiKey}`
-                },
-                body: JSON.stringify({
-                    query: queryText,
-                    documents: documentsToRerank.map(x => x.text),
-                    model: settings.rerank_model,
-                    "top_n": settings.rerank_top_n,
-                })
-            });
+		// 1. 构新的 "query" 字段
+		const formattedQuery = `<|im_start|>system
+		Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>
+<|im_start|>user
+<Instruct>: Given a web search query, retrieve relevant passages that answer the query
+
+<Query>: ${queryText}
+
+<Document>: `;
+
+// 2. 为每个文档添加指定的后缀
+const formattedDocuments = documentsToRerank.map(doc =>
+    `${doc}<|im_end|>
+<|im_start|>assistant
+<think>
+
+</think>
+
+`
+);
+
+const rerankResponse = await fetch(settings.rerank_url, {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.rerank_apiKey}`
+    },
+    body: JSON.stringify({
+        query: formattedQuery,
+        documents: formattedDocuments,
+        model: settings.rerank_model,
+        "top_n": settings.rerank_top_n,
+		"instruct": "执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n 3. 同质化文档仅保留最相关的一条，其余降权至后50%位置",
+// 加入了指令兼容，待测试
+    })
+});
 
             if (!rerankResponse.ok) {
                 throw new Error(`Rerank API failed: ${rerankResponse.statusText}`);
@@ -2294,20 +2301,20 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
             // Combine scores and sort
             const alpha = settings.rerank_hybrid_alpha;
-            allResults = allResults.map(result => {
-                const rerankedResult = rerankedData.results.find(r => r.index === result.original_index);
-                const relevanceScore = rerankedResult ? rerankedResult.relevance_score : 0;
+        allResults = indexedResults.map(result => {
+            const rerankedResult = rerankedData.results.find(r => r.index === result.original_index);
+            const relevanceScore = rerankedResult ? rerankedResult.relevance_score : 0;
 
-                // Calculate hybrid score
-                const hybridScore = relevanceScore * alpha + result.score * (1 - alpha);
+            // 计算混合分数
+            const alpha = settings.rerank_hybrid_alpha;
+            const hybridScore = relevanceScore * alpha + result.score * (1 - alpha);
 
-                return {
-                    ...result,
-                    hybrid_score: hybridScore,
-                    rerank_score: relevanceScore,
-                };
-            });
-
+            return {
+                ...result,
+                hybrid_score: hybridScore,
+                rerank_score: relevanceScore,
+            };
+        });
             // Sort by the new hybrid score
             allResults.sort((a, b) => (b.hybrid_score || 0) - (a.hybrid_score || 0));
             console.debug('Vectors: Results after reranking and hybrid scoring:', allResults.slice(0, 10));
