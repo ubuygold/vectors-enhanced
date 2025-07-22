@@ -7,7 +7,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "RaphllA",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "homePage": "https://github.com/RaphllA/vectors-enhanced",
-  "description": "V1.0.3 -修复了总结API Key无法保存的问题；修复了重命名功能 失效的问题"
+  "description": "  - 修复了 rerank 功能的 undefined index 问题- 添加了掉格式兼容按钮和相关功能- 更新了标签提取示例文档，添加了场景6（小CoT示例）"
 }
