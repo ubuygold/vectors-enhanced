@@ -122,6 +122,15 @@
                 <i class="fa-solid fa-comment-slash"></i>
                 <span>排除小CoT</span>
               </button>
+              <button id="vectors_enhanced_format_fix" class="menu_button menu_button_icon" title="快速添加一条正则规则，用于修复掉格式问题（删除指定标签之前的所有内容）">
+                <i class="fa-solid fa-wrench"></i>
+                <span>掉格式兼容</span>
+              </button>
+            </div>
+            <div class="flex-container">
+              <small class="text-muted" style="opacity: 0.7; font-size: 0.85em; margin-top: 5px;">
+                注意：按钮用法请查看标签示例！
+              </small>
             </div>
 
             <!-- Tag Suggestions -->
@@ -198,12 +207,12 @@
       <details>
         <summary><strong>总结设置</strong></summary>
         <div style="padding: 10px;">
-          
+
           <!-- Chat Floor Monitor (Hidden) -->
           <div class="chat-floor-monitor" style="display: none;">
             <span id="memory_chat_floor_count">正在加载...</span>
           </div>
-          
+
           <!-- API Configuration Section -->
           <details style="margin-top: 10px;">
             <summary><strong>API配置</strong></summary>
@@ -215,76 +224,76 @@
                 <option value="openai_compatible">OpenAI兼容格式</option>
                 <option value="google_openai" selected>Google</option>
               </select>
-              
+
               <!-- OpenAI Compatible Settings -->
               <div id="memory_openai_settings" style="margin-top: 10px; display: none;">
                 <label for="memory_openai_url">
                   <small>API端点URL:</small>
                 </label>
-                <input id="memory_openai_url" 
-                       type="text" 
-                       class="text_pole" 
-                       placeholder="https://api.openai.com/v1" 
+                <input id="memory_openai_url"
+                       type="text"
+                       class="text_pole"
+                       placeholder="https://api.openai.com/v1"
                        style="width: 100%;" />
-                
+
                 <label for="memory_openai_api_key" style="margin-top: 5px;">
                   <small>API Key:</small>
                 </label>
-                <input id="memory_openai_api_key" 
-                       type="password" 
-                       class="text_pole" 
-                       placeholder="sk-..." 
+                <input id="memory_openai_api_key"
+                       type="password"
+                       class="text_pole"
+                       placeholder="sk-..."
                        style="width: 100%;" />
-                
+
                 <label for="memory_openai_model" style="margin-top: 5px;">
                   <small>模型名称:</small>
                 </label>
-                <input id="memory_openai_model" 
-                       type="text" 
-                       class="text_pole" 
-                       placeholder="例如: gpt-3.5-turbo, gpt-4, claude-3-sonnet, deepseek-chat" 
+                <input id="memory_openai_model"
+                       type="text"
+                       class="text_pole"
+                       placeholder="例如: gpt-3.5-turbo, gpt-4, claude-3-sonnet, deepseek-chat"
                        style="width: 100%;" />
               </div>
-              
+
               <!-- Google to OpenAI Settings -->
               <div id="memory_google_openai_settings" style="margin-top: 10px; display: none;">
                 <label for="memory_google_openai_api_key">
                   <small>Google API Key:</small>
                 </label>
-                <input id="memory_google_openai_api_key" 
-                       type="password" 
-                       class="text_pole" 
-                       placeholder="输入你的Google API Key" 
+                <input id="memory_google_openai_api_key"
+                       type="password"
+                       class="text_pole"
+                       placeholder="输入你的Google API Key"
                        style="width: 100%;" />
-                
+
                 <label for="memory_google_openai_model" style="margin-top: 5px;">
                   <small>模型名称:</small>
                 </label>
-                <input id="memory_google_openai_model" 
-                       type="text" 
-                       class="text_pole" 
-                       placeholder="例如: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash" 
+                <input id="memory_google_openai_model"
+                       type="text"
+                       class="text_pole"
+                       placeholder="例如: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash"
                        style="width: 100%;" />
               </div>
             </div>
           </details>
-          
-          
+
+
           <!-- Prompts Section (collapsible) -->
-          
+
           <!-- Summary Format -->
           <div class="memory-summary-format" style="margin-top: 10px;">
             <label for="memory_summary_format">
               <small>总结格式模板:</small>
               <small style="opacity: 0.7; margin-left: 5px;">(支持变量: {{content}} 为待总结内容)</small>
             </label>
-            <textarea id="memory_summary_format" 
-                      class="text_pole" 
+            <textarea id="memory_summary_format"
+                      class="text_pole"
                       rows="10"
                       style="width: 100%; font-family: monospace; font-size: 12px;"
                       placeholder="输入自定义的总结格式..."></textarea>
           </div>
-          
+
           <!-- Auto-Summarize Settings -->
           <div class="memory-auto-summarize-section" style="margin-top: 15px;">
             <label class="checkbox_label" for="memory_auto_summarize_enabled" title="启用自动总结功能">
@@ -293,18 +302,18 @@
                 <i class="fa-solid fa-magic"></i> 启用自动总结
               </span>
             </label>
-            
+
             <div id="memory_auto_summarize_settings" style="margin-left: 1.5rem; margin-top: 10px; display: none;">
               <div class="flex-container" style="gap: 10px; align-items: center;">
                 <div style="flex: 1;">
                   <label for="memory_auto_summarize_interval">
                     <small>每隔多少层自动总结:</small>
                   </label>
-                  <input id="memory_auto_summarize_interval" 
-                         type="number" 
-                         class="text_pole" 
-                         min="1" 
-                         max="200" 
+                  <input id="memory_auto_summarize_interval"
+                         type="number"
+                         class="text_pole"
+                         min="1"
+                         max="200"
                          value="20"
                          style="width: 100%;" />
                 </div>
@@ -312,37 +321,37 @@
                   <label for="memory_auto_summarize_count">
                     <small>保留最近多少层:</small>
                   </label>
-                  <input id="memory_auto_summarize_count" 
-                         type="number" 
-                         class="text_pole" 
-                         min="1" 
-                         max="100" 
+                  <input id="memory_auto_summarize_count"
+                         type="number"
+                         class="text_pole"
+                         min="1"
+                         max="100"
                          value="6"
                          style="width: 100%;" />
                 </div>
               </div>
-              
+
               <!-- Auto-Summarize Status -->
               <div id="memory_auto_summarize_status" style="margin-top: 8px; display: none;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                   <small style="color: var(--SmartThemeEmColor);">
                     下次自动总结楼层: <span id="memory_next_auto_summarize_floor">-</span>
                   </small>
-                  <button id="memory_reset_auto_summarize" class="menu_button" 
+                  <button id="memory_reset_auto_summarize" class="menu_button"
                           style="padding: 2px 8px; font-size: 12px; width: fit-content;"
                           title="重置自动总结基准点为当前楼层">
                     <i class="fa fa-refresh"></i> 重置
                   </button>
                 </div>
               </div>
-              
+
               <div style="margin-top: 8px;">
                 <small style="color: var(--SmartThemeEmColor);">当达到设定楼层时，保留最近N层消息，总结其余所有内容（不包含最新回复）</small>
               </div>
             </div>
           </div>
-          
-          
+
+
           <!-- Hide Floors After Summary -->
           <div style="margin-top: 15px; margin-bottom: 10px;">
             <label class="checkbox_label" for="memory_hide_floors_after_summary" title="总结成功后自动隐藏被总结的楼层">
@@ -355,7 +364,7 @@
               <small style="color: var(--SmartThemeEmColor);">总结成功后自动隐藏被总结的楼层（包括范围内的用户消息）</small>
             </div>
           </div>
-          
+
           <!-- Disable World Info After Vectorization -->
           <div style="margin-bottom: 10px;">
             <label class="checkbox_label" for="memory_disable_world_info_after_vectorize" title="向量化成功后自动禁用世界书的所有条目">
@@ -368,31 +377,31 @@
               <small style="color: var(--SmartThemeEmColor);">向量化成功后自动禁用该世界书的所有条目</small>
             </div>
           </div>
-          
+
           <!-- Vectorize Summary Button -->
-          <button id="memory_vectorize_summary" 
-                  class="menu_button menu_button_icon" 
+          <button id="memory_vectorize_summary"
+                  class="menu_button menu_button_icon"
                   title="向量化当前聊天的总结内容"
                   style="width: 100%;">
             <i class="fa-solid fa-vector-square"></i>
             <span>向量化总结</span>
           </button>
-          
+
           <!-- Output Area -->
           <div class="memory-output-section" style="margin-top: 15px;">
             <label for="memory_output">
               <small>AI回复:</small>
             </label>
-            <textarea id="memory_output" 
-                     class="text_pole" 
-                     rows="6" 
-                     readonly 
+            <textarea id="memory_output"
+                     class="text_pole"
+                     rows="6"
+                     readonly
                      placeholder="AI的回复将显示在这里..."
                      style="width: 100%; resize: vertical; background-color: var(--black30a);"></textarea>
           </div>
-          
+
           <!-- Loading Indicator -->
-          <div id="memory_loading" 
+          <div id="memory_loading"
                style="display: none; text-align: center; margin-top: 10px;">
             <i class="fa-solid fa-spinner fa-spin"></i>
             <span style="margin-left: 5px;">正在处理...</span>

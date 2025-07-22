@@ -2266,9 +2266,16 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     if (settings.rerank_enabled && allResults.length > 0) {
         console.debug('Vectors: Reranking enabled. Starting rerank process...');
         try {
-            const documentsToRerank = allResults.map(x => ({
+            // 确保每个结果都有索引
+            const indexedResults = allResults.map((result, index) => ({
+                ...result,
+                _rerank_index: index  // 使用内部属性名，避免冲突
+            }));
+            
+            // 准备文档，同时发送索引（兼容需要的 API）
+            const documentsToRerank = indexedResults.map((x, index) => ({
                 text: x.text,
-                index: x.original_index
+                index: index  // 使用实际索引，而不是 undefined
             }));
 
             const rerankResponse = await fetch(settings.rerank_url, {
@@ -2292,31 +2299,76 @@ async function rearrangeChat(chat, contextSize, abort, type) {
             const rerankedData = await rerankResponse.json();
             console.debug('Vectors: Rerank API response:', rerankedData);
 
-            // Combine scores and sort
+            // 智能处理不同的响应格式
             const alpha = settings.rerank_hybrid_alpha;
-            allResults = allResults.map(result => {
-                const rerankedResult = rerankedData.results.find(r => r.index === result.original_index);
-                const relevanceScore = rerankedResult ? rerankedResult.relevance_score : 0;
-
-                // Calculate hybrid score
-                const hybridScore = relevanceScore * alpha + result.score * (1 - alpha);
-
-                return {
-                    ...result,
-                    hybrid_score: hybridScore,
-                    rerank_score: relevanceScore,
-                };
-            });
-
-            // Sort by the new hybrid score
-            allResults.sort((a, b) => (b.hybrid_score || 0) - (a.hybrid_score || 0));
-            console.debug('Vectors: Results after reranking and hybrid scoring:', allResults.slice(0, 10));
+            
+            // 检查响应格式并自适应
+            if (rerankedData.results && Array.isArray(rerankedData.results)) {
+                allResults = indexedResults.map((result, arrayIndex) => {
+                    let relevanceScore = 0;
+                    
+                    // 尝试多种匹配方式
+                    const rerankedResult = 
+                        // 方式1：通过 index 字段匹配
+                        rerankedData.results.find(r => r.index === result._rerank_index) ||
+                        // 方式2：通过数组位置匹配（如果 API 按顺序返回）
+                        rerankedData.results[arrayIndex] ||
+                        // 方式3：如果结果数组长度匹配，使用对应位置
+                        (rerankedData.results.length === indexedResults.length ? rerankedData.results[arrayIndex] : null);
+                    
+                    if (rerankedResult && typeof rerankedResult.relevance_score === 'number') {
+                        relevanceScore = rerankedResult.relevance_score;
+                    } else if (rerankedResult && typeof rerankedResult.score === 'number') {
+                        // 兼容可能使用 'score' 而不是 'relevance_score' 的 API
+                        relevanceScore = rerankedResult.score;
+                    }
+                    
+                    // 计算混合分数
+                    const hybridScore = relevanceScore * alpha + result.score * (1 - alpha);
+                    
+                    // 移除临时索引属性
+                    const { _rerank_index, ...cleanResult } = result;
+                    
+                    return {
+                        ...cleanResult,
+                        hybrid_score: hybridScore,
+                        rerank_score: relevanceScore,
+                        _rerank_success: relevanceScore > 0  // 标记是否成功获取 rerank 分数
+                    };
+                });
+                
+                // 按混合分数排序
+                allResults.sort((a, b) => (b.hybrid_score || 0) - (a.hybrid_score || 0));
+                
+                // 统计成功率（用于调试）
+                const successCount = allResults.filter(r => r._rerank_success).length;
+                console.debug(`Vectors: Rerank completed. ${successCount}/${allResults.length} items successfully reranked`);
+                
+                // 如果成功率太低，可能是 API 格式问题
+                if (successCount === 0 && allResults.length > 0) {
+                    console.warn('Vectors: No items were successfully reranked. API response format may be incompatible.');
+                    // 但仍然保留混合分数排序（即使 rerank 分数都是 0）
+                }
+                
+            } else {
+                // 响应格式完全不符合预期
+                throw new Error('Unexpected rerank API response format');
+            }
 
          } catch (error) {
              console.error('Vectors: Reranking failed. Falling back to original similarity search.', error);
-            toastr.error('Rerank失败，使用原始搜索结果。');
-            // If rerank fails, sort by original score
-            allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+             
+             // 确保完全恢复原始状态
+             allResults = allResults.map((result, index) => {
+                 // 清理所有可能添加的属性
+                 const { hybrid_score, rerank_score, _rerank_index, _rerank_success, ...originalResult } = result;
+                 return originalResult;
+             });
+             
+             // 按原始分数排序
+             allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
+             
+             toastr.error('Rerank失败，使用原始搜索结果。');
         }
     } else {
         // If reranking is not enabled, sort by original score
@@ -2909,7 +2961,9 @@ jQuery(async () => {
     oai_settings,
     getRequestHeaders,
     eventSource,  // 添加eventSource
-    event_types   // 添加event_types
+    event_types,   // 添加event_types
+    callGenericPopup,  // 添加callGenericPopup
+    POPUP_TYPE    // 添加POPUP_TYPE
   });
 
   // TaskManager removed - using legacy format only
