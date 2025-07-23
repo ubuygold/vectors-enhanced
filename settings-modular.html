@@ -534,6 +534,31 @@
           <details class="m-t-1">
             <summary><strong>注入设置</strong></summary>
             <div style="margin-top: 10px;">
+            <!-- Template Presets -->
+            <div class="flex-container flexFlowColumn">
+              <label for="vectors_enhanced_template_preset">模板预设</label>
+              <div class="flex-container" style="gap: 5px;">
+                <select id="vectors_enhanced_template_preset" class="text_pole" style="flex: 1;">
+                  <option value="">自定义模板...</option>
+                  <optgroup label="默认预设">
+                    <option value="style" title="用于导入小说时参考文风">文风参考</option>
+                    <option value="setting" title="用于参考世界观设定">设定参考</option>
+                    <option value="character" title="用于参考人物设定">人设参考</option>
+                    <option value="plot" title="用于体验小说剧情">剧情体验</option>
+                    <option value="context" title="强调是新添加的记录">上下文记录</option>
+                  </optgroup>
+                  <optgroup label="自定义预设" id="vectors_enhanced_custom_presets_group" style="display: none;">
+                  </optgroup>
+                </select>
+                <button id="vectors_enhanced_save_preset" class="menu_button menu_button_icon" title="保存当前模板为预设">
+                  <i class="fa fa-save"></i>
+                </button>
+                <button id="vectors_enhanced_delete_preset" class="menu_button menu_button_icon" title="删除当前预设" style="display: none;">
+                  <i class="fa fa-trash"></i>
+                </button>
+              </div>
+            </div>
+
             <div class="flex-container flexFlowColumn">
               <label for="vectors_enhanced_template">注入模板</label>
               <textarea id="vectors_enhanced_template" class="text_pole textarea_compact" rows="3" placeholder="使用 {{text}} 指定检索内容的位置"></textarea>

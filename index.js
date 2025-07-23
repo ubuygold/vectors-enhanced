@@ -139,6 +139,44 @@ const settings = {
   depth: 2,
   depth_role: extension_prompt_roles.SYSTEM,
   include_wi: false,
+  
+  // Template presets
+  template_presets: {
+    default: [
+      {
+        id: 'style',
+        name: '文风参考',
+        template: '<writing_style>请参考以下文风和写作风格：\n{{text}}</writing_style>',
+        description: '用于导入小说时参考文风'
+      },
+      {
+        id: 'setting',
+        name: '设定参考',
+        template: '<world_setting>以下是世界观和设定信息：\n{{text}}</world_setting>',
+        description: '用于参考世界观设定'
+      },
+      {
+        id: 'character',
+        name: '人设参考',
+        template: '<character_info>以下是相关角色的人物设定：\n{{text}}</character_info>',
+        description: '用于参考人物设定'
+      },
+      {
+        id: 'plot',
+        name: '剧情体验',
+        template: '<story_plot>以下是相关的剧情内容，请参考但不要直接照搬：\n{{text}}</story_plot>',
+        description: '用于体验小说剧情'
+      },
+      {
+        id: 'context',
+        name: '上下文记录',
+        template: '<new_context>注意：以下是新添加的重要上下文记录：\n{{text}}</new_context>',
+        description: '强调是新添加的记录'
+      }
+    ],
+    custom: []
+  },
+  active_preset_id: null,
 
   // Content tags
   content_tags: {

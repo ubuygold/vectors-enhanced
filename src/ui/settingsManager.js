@@ -468,12 +468,18 @@ export class SettingsManager {
    * 初始化注入设置
    */
   initializeInjectionSettings() {
+    // 初始化模板预设
+    this.initializeTemplatePresets();
+    
     // 模板
     $('#vectors_enhanced_template')
       .val(this.settings.template)
       .on('input', () => {
         this.settings.template = String($('#vectors_enhanced_template').val());
         this.updateAndSave();
+        // 如果用户手动修改了模板，清除当前预设选择
+        $('#vectors_enhanced_template_preset').val('');
+        this.settings.active_preset_id = null;
       });
 
     // 深度
@@ -506,6 +512,246 @@ export class SettingsManager {
         this.settings.include_wi = $('#vectors_enhanced_include_wi').prop('checked');
         this.updateAndSave();
       });
+  }
+
+  /**
+   * 初始化模板预设功能
+   */
+  initializeTemplatePresets() {
+    // 确保设置中有预设数据
+    if (!this.settings.template_presets) {
+      this.settings.template_presets = {
+        default: [
+          {
+            id: 'style',
+            name: '文风参考',
+            template: '<writing_style>请参考以下文风和写作风格：\n{{text}}</writing_style>',
+            description: '用于导入小说时参考文风'
+          },
+          {
+            id: 'setting',
+            name: '设定参考',
+            template: '<world_setting>以下是世界观和设定信息：\n{{text}}</world_setting>',
+            description: '用于参考世界观设定'
+          },
+          {
+            id: 'character',
+            name: '人设参考',
+            template: '<character_info>以下是相关角色的人物设定：\n{{text}}</character_info>',
+            description: '用于参考人物设定'
+          },
+          {
+            id: 'plot',
+            name: '剧情体验',
+            template: '<story_plot>以下是相关的剧情内容，请参考但不要直接照搬：\n{{text}}</story_plot>',
+            description: '用于体验小说剧情'
+          },
+          {
+            id: 'context',
+            name: '上下文记录',
+            template: '<new_context>注意：以下是新添加的重要上下文记录：\n{{text}}</new_context>',
+            description: '强调是新添加的记录'
+          }
+        ],
+        custom: []
+      };
+      this.updateAndSave();
+    }
+
+    // 初始化自定义预设的显示
+    this.updateCustomPresetOptions();
+
+    // 设置当前选中的预设
+    if (this.settings.active_preset_id) {
+      $('#vectors_enhanced_template_preset').val(this.settings.active_preset_id);
+      this.updateDeleteButtonVisibility();
+    }
+
+    // 预设选择变化事件
+    $('#vectors_enhanced_template_preset').on('change', () => {
+      const selectedId = $('#vectors_enhanced_template_preset').val();
+      if (selectedId) {
+        this.applyPreset(selectedId);
+      }
+      this.updateDeleteButtonVisibility();
+    });
+
+    // 保存预设按钮事件
+    $('#vectors_enhanced_save_preset').on('click', async () => {
+      await this.saveCustomPreset();
+    });
+
+    // 删除预设按钮事件
+    $('#vectors_enhanced_delete_preset').on('click', async () => {
+      await this.deleteCustomPreset();
+    });
+  }
+
+  /**
+   * 应用预设模板
+   * @param {string} presetId 预设ID
+   */
+  applyPreset(presetId) {
+    // 查找预设
+    let preset = this.settings.template_presets.default.find(p => p.id === presetId);
+    if (!preset) {
+      preset = this.settings.template_presets.custom.find(p => p.id === presetId);
+    }
+
+    if (preset) {
+      // 应用模板
+      $('#vectors_enhanced_template').val(preset.template);
+      this.settings.template = preset.template;
+      this.settings.active_preset_id = presetId;
+      this.updateAndSave();
+    }
+  }
+
+  /**
+   * 保存自定义预设
+   */
+  async saveCustomPreset() {
+    const { callGenericPopup, POPUP_TYPE } = await import('../../../popup.js');
+    
+    // 获取当前模板内容
+    const currentTemplate = $('#vectors_enhanced_template').val().trim();
+    if (!currentTemplate) {
+      if (typeof toastr !== 'undefined') {
+        toastr.warning('请先输入模板内容');
+      }
+      return;
+    }
+
+    // 弹出对话框获取预设信息
+    const html = `
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div>
+          <label>预设名称：</label>
+          <input type="text" id="preset_name" class="text_pole" placeholder="例如：战斗场景" style="width: 100%;">
+        </div>
+        <div>
+          <label>预设描述：</label>
+          <input type="text" id="preset_description" class="text_pole" placeholder="例如：用于描述战斗场景" style="width: 100%;">
+        </div>
+      </div>
+    `;
+
+    const result = await callGenericPopup(html, POPUP_TYPE.INPUT, '保存模板预设', { 
+      okButton: '保存',
+      cancelButton: '取消'
+    });
+
+    if (result) {
+      const name = $('#preset_name').val().trim();
+      const description = $('#preset_description').val().trim();
+
+      if (!name) {
+        if (typeof toastr !== 'undefined') {
+          toastr.warning('请输入预设名称');
+        }
+        return;
+      }
+
+      // 生成唯一ID
+      const id = `custom_${Date.now()}`;
+
+      // 添加到自定义预设
+      if (!this.settings.template_presets.custom) {
+        this.settings.template_presets.custom = [];
+      }
+
+      this.settings.template_presets.custom.push({
+        id,
+        name,
+        template: currentTemplate,
+        description: description || ''
+      });
+
+      // 更新UI并保存
+      this.updateCustomPresetOptions();
+      $('#vectors_enhanced_template_preset').val(id);
+      this.settings.active_preset_id = id;
+      this.updateDeleteButtonVisibility();
+      this.updateAndSave();
+
+      if (typeof toastr !== 'undefined') {
+        toastr.success(`预设"${name}"已保存`);
+      }
+    }
+  }
+
+  /**
+   * 删除自定义预设
+   */
+  async deleteCustomPreset() {
+    const selectedId = $('#vectors_enhanced_template_preset').val();
+    if (!selectedId || !selectedId.startsWith('custom_')) {
+      return;
+    }
+
+    const preset = this.settings.template_presets.custom.find(p => p.id === selectedId);
+    if (!preset) {
+      return;
+    }
+
+    const { callGenericPopup, POPUP_TYPE, POPUP_RESULT } = await import('../../../popup.js');
+    
+    const result = await callGenericPopup(
+      `确定要删除预设"${preset.name}"吗？`,
+      POPUP_TYPE.CONFIRM,
+      '删除预设'
+    );
+
+    if (result === POPUP_RESULT.AFFIRMATIVE) {
+      // 从列表中移除
+      const index = this.settings.template_presets.custom.findIndex(p => p.id === selectedId);
+      if (index !== -1) {
+        this.settings.template_presets.custom.splice(index, 1);
+      }
+
+      // 重置选择
+      $('#vectors_enhanced_template_preset').val('');
+      this.settings.active_preset_id = null;
+      
+      // 更新UI
+      this.updateCustomPresetOptions();
+      this.updateDeleteButtonVisibility();
+      this.updateAndSave();
+
+      if (typeof toastr !== 'undefined') {
+        toastr.success(`预设"${preset.name}"已删除`);
+      }
+    }
+  }
+
+  /**
+   * 更新自定义预设选项
+   */
+  updateCustomPresetOptions() {
+    const customGroup = $('#vectors_enhanced_custom_presets_group');
+    customGroup.empty();
+
+    if (this.settings.template_presets && this.settings.template_presets.custom && this.settings.template_presets.custom.length > 0) {
+      this.settings.template_presets.custom.forEach(preset => {
+        const option = $('<option></option>')
+          .attr('value', preset.id)
+          .attr('title', preset.description || '')
+          .text(preset.name);
+        customGroup.append(option);
+      });
+      customGroup.show();
+    } else {
+      customGroup.hide();
+    }
+  }
+
+  /**
+   * 更新删除按钮的可见性
+   */
+  updateDeleteButtonVisibility() {
+    const selectedId = $('#vectors_enhanced_template_preset').val();
+    const isCustom = selectedId && selectedId.startsWith('custom_');
+    $('#vectors_enhanced_delete_preset').toggle(isCustom);
   }
 
   /**
