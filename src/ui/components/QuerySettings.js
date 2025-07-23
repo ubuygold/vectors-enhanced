@@ -87,6 +87,29 @@ export class QuerySettings {
             this.handleFieldChange('rerank_success_notify', e.target.checked);
         });
 
+        // Query instruction settings
+        $('#vectors_enhanced_query_instruction_enabled').on('change', (e) => {
+            this.handleQueryInstructionToggle(e.target.checked);
+        });
+
+        $('#vectors_enhanced_query_instruction_template').on('input', (e) => {
+            this.handleFieldChange('query_instruction_template', e.target.value);
+        });
+
+        // Query instruction preset selector
+        $('#vectors_enhanced_query_instruction_preset').on('change', (e) => {
+            this.handlePresetChange(e.target.value);
+        });
+
+        // Rerank deduplication settings
+        $('#vectors_enhanced_rerank_deduplication_enabled').on('change', (e) => {
+            this.handleRerankDeduplicationToggle(e.target.checked);
+        });
+
+        $('#vectors_enhanced_rerank_deduplication_instruction').on('input', (e) => {
+            this.handleFieldChange('rerank_deduplication_instruction', e.target.value);
+        });
+
         console.log('QuerySettings: Event listeners bound');
     }
 
@@ -132,9 +155,10 @@ export class QuerySettings {
         const rerankEnabled = this.settings.rerank_enabled;
         const rerankDetails = $('#vectors_enhanced_rerank_enabled').closest('details');
         
-        if (rerankEnabled) {
-            rerankDetails.attr('open', true);
-        }
+        // 注释掉自动展开的逻辑，保持用户的折叠状态
+        // if (rerankEnabled) {
+        //     rerankDetails.attr('open', true);
+        // }
         
         // Enable/disable rerank configuration fields
         const configFields = [
@@ -163,6 +187,60 @@ export class QuerySettings {
         console.log(`QuerySettings: Updated rerank visibility (enabled: ${rerankEnabled})`);
     }
 
+
+    /**
+     * Handle query instruction toggle
+     */
+    handleQueryInstructionToggle(enabled) {
+        console.log(`QuerySettings: Query instruction ${enabled ? 'enabled' : 'disabled'}`);
+        
+        this.settings.query_instruction_enabled = enabled;
+        this.saveSettings();
+        
+        // 显示/隐藏查询指令设置
+        if (enabled) {
+            $('#query_instruction_settings').slideDown();
+        } else {
+            $('#query_instruction_settings').slideUp();
+        }
+    }
+
+    /**
+     * Handle preset change
+     */
+    handlePresetChange(presetKey) {
+        console.log(`QuerySettings: Preset changed to: ${presetKey}`);
+        
+        this.settings.query_instruction_preset = presetKey;
+        
+        // Update template from preset
+        if (this.settings.query_instruction_presets && this.settings.query_instruction_presets[presetKey]) {
+            this.settings.query_instruction_template = this.settings.query_instruction_presets[presetKey];
+            $('#vectors_enhanced_query_instruction_template').val(this.settings.query_instruction_template);
+        }
+        
+        this.saveSettings();
+        this.onSettingsChange('query_instruction_preset', presetKey);
+        this.onSettingsChange('query_instruction_template', this.settings.query_instruction_template);
+    }
+
+    /**
+     * Handle rerank deduplication toggle
+     */
+    handleRerankDeduplicationToggle(enabled) {
+        console.log(`QuerySettings: Rerank deduplication ${enabled ? 'enabled' : 'disabled'}`);
+        
+        this.settings.rerank_deduplication_enabled = enabled;
+        this.saveSettings();
+        
+        // 显示/隐藏去重设置
+        if (enabled) {
+            $('#rerank_deduplication_settings').slideDown();
+        } else {
+            $('#rerank_deduplication_settings').slideUp();
+        }
+    }
+
     /**
      * Load current settings into UI elements
      */
@@ -181,6 +259,41 @@ export class QuerySettings {
                 }
             }
         });
+        
+        // Load experimental settings
+        const experimentalFields = [
+            'query_instruction_enabled',
+            'query_instruction_template',
+            'query_instruction_preset',
+            'rerank_deduplication_enabled',
+            'rerank_deduplication_instruction'
+        ];
+        
+        experimentalFields.forEach(field => {
+            const fieldId = `#vectors_enhanced_${field}`;
+            const element = $(fieldId);
+            
+            if (element.length && this.settings[field] !== undefined) {
+                if (element.attr('type') === 'checkbox') {
+                    element.prop('checked', this.settings[field]);
+                } else {
+                    element.val(this.settings[field]);
+                }
+            }
+        });
+        
+        // 根据设置更新实验性功能的显示状态
+        if (this.settings.query_instruction_enabled) {
+            $('#query_instruction_settings').show();
+        } else {
+            $('#query_instruction_settings').hide();
+        }
+        
+        if (this.settings.rerank_deduplication_enabled) {
+            $('#rerank_deduplication_settings').show();
+        } else {
+            $('#rerank_deduplication_settings').hide();
+        }
         
         // Update visibility after loading settings
         this.updateRerankVisibility();

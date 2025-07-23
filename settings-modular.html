@@ -446,6 +446,15 @@
             <label for="vectors_enhanced_vllm_model">vLLM 模型名称</label>
             <input id="vectors_enhanced_vllm_model" class="text_pole" type="text" placeholder="BAAI/bge-large-zh-v1.5" />
           </div>
+          <div class="flex-container flexFlowColumn">
+            <label for="vectors_enhanced_vllm_api_key">
+              vLLM API Key
+              <small style="opacity: 0.7; display: block; margin-top: 0.25rem;">
+                <i class="fa-solid fa-info-circle"></i> 留空时将使用文本生成设置中的 vLLM API key
+              </small>
+            </label>
+            <input id="vectors_enhanced_vllm_api_key" class="text_pole" type="password" placeholder="可选 - 优先使用文本生成设置" />
+          </div>
         </div>
 
         <!-- Ollama Settings -->
@@ -659,6 +668,93 @@
               <label for="vectors_enhanced_rerank_hybrid_alpha"><small>混合权重</small></label>
               <input id="vectors_enhanced_rerank_hybrid_alpha" type="number" class="text_pole" min="0" max="1" step="0.1">
             </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Experimental Settings -->
+    <div id="vectors_enhanced_experimental_settings_section" class="vectors-enhanced-section">
+      <details>
+        <summary>
+          <strong>
+            <i class="fa-solid fa-flask"></i> 实验性功能
+          </strong>
+        </summary>
+        
+        <div class="flex-container flexFlowColumn m-t-0-5">
+          <!-- Query Instruction Settings -->
+          <div class="experimental-feature-section" style="margin-bottom: 10px; padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px;">
+            <label class="checkbox_label" for="vectors_enhanced_query_instruction_enabled" title="在查询时添加指令，引导向量系统查找特定类型的内容">
+              <input id="vectors_enhanced_query_instruction_enabled" type="checkbox" />
+              <span style="font-weight: bold;">
+                <i class="fa-solid fa-search"></i> 启用查询指令增强
+              </span>
+            </label>
+            
+            <div id="query_instruction_settings" style="display: none; margin-top: 10px; margin-left: 1.5rem;">
+              <div style="margin-bottom: 0.5rem;">
+                <label for="vectors_enhanced_query_instruction_preset">
+                  <small>预设模板:</small>
+                </label>
+                <select id="vectors_enhanced_query_instruction_preset" class="text_pole" style="width: 100%;">
+                  <option value="character">角色相关 - 查找角色特征、性格、关系或行动描述</option>
+                  <option value="plot">剧情相关 - 查找剧情细节、伏笔或重要事件</option>
+                  <option value="worldview">世界观相关 - 查找设定细节、背景知识或世界机制</option>
+                  <option value="writing_style">文风相关 - 查找叙事技巧、文笔风格或语言模式</option>
+                  <option value="general">通用检索 - 根据查询内容检索相关段落</option>
+                </select>
+              </div>
+              <label for="vectors_enhanced_query_instruction_template">
+                <small>当前指令模板:</small>
+              </label>
+              <textarea id="vectors_enhanced_query_instruction_template" 
+                       class="text_pole" 
+                       rows="3"
+                       placeholder="例如：Given a query, retrieve relevant passages from the context"
+                       style="width: 100%; font-size: 12px; resize: vertical;"></textarea>
+              <small style="opacity: 0.7; display: block; margin-top: 5px;">
+                <i class="fa-solid fa-info-circle"></i> 
+                此指令将以 "Instruct: [您的指令]\nQuery:[查询内容]" 的格式发送（注意Query后无空格）
+              </small>
+            </div>
+          </div>
+          
+          <!-- Rerank Deduplication Settings -->
+          <div class="experimental-feature-section" style="padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px;">
+            <label class="checkbox_label" for="vectors_enhanced_rerank_deduplication_enabled" title="在重排序时进行智能去重">
+              <input id="vectors_enhanced_rerank_deduplication_enabled" type="checkbox" />
+              <span style="font-weight: bold;">
+                <i class="fa-solid fa-filter"></i> 启用 Rerank 智能去重
+              </span>
+            </label>
+            
+            <div id="rerank_deduplication_settings" style="display: none; margin-top: 10px; margin-left: 1.5rem;">
+              <label for="vectors_enhanced_rerank_deduplication_instruction">
+                <small>去重指令:</small>
+              </label>
+              <textarea id="vectors_enhanced_rerank_deduplication_instruction" 
+                       class="text_pole" 
+                       rows="6"
+                       placeholder="定义去重规则..."
+                       style="width: 100%; font-size: 12px; resize: vertical;"></textarea>
+              <small style="opacity: 0.7; display: block; margin-top: 5px;">
+                <i class="fa-solid fa-info-circle"></i> 
+                此指令将作为 "instruct" 参数发送给 Rerank API
+              </small>
+              <small style="color: var(--SmartThemeQuoteColor); display: block; margin-top: 5px;">
+                <i class="fa-solid fa-triangle-exclamation"></i> 
+                <strong>兼容性提示：</strong>仅部分 rerank API/模型支持指令功能（如 bge-reranker-v2-m3）。
+                标准 rerank API（Cohere、Jina AI 等）可能会忽略此参数。请确认您的 API 支持此功能。
+              </small>
+            </div>
+          </div>
+          
+          <div class="experimental-warning" style="margin-top: 15px; padding: 10px; background-color: var(--SmartThemeBodyColor); border: 1px solid var(--SmartThemeQuoteColor); border-radius: 5px;">
+            <small style="color: var(--SmartThemeQuoteColor);">
+              <i class="fa-solid fa-triangle-exclamation"></i> 
+              <strong>注意：</strong>实验性功能可能不稳定，且需要特定的模型支持。请谨慎使用。
+            </small>
           </div>
         </div>
       </details>

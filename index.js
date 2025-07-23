@@ -106,6 +106,7 @@ const settings = {
   local_model: '', // 本地transformers模型名称
   vllm_model: '',
   vllm_url: '',
+  vllm_api_key: '', // vLLM API key
   ollama_model: 'rjmalagon/gte-qwen2-1.5b-instruct-embed-f16',
   ollama_url: '', // ollama API地址
   ollama_keep: false,
@@ -132,8 +133,22 @@ const settings = {
   rerank_top_n: 20,
   rerank_hybrid_alpha: 0.7, // Rerank score weight
   rerank_success_notify: true, // 是否显示Rerank成功通知
+  
+  // Experimental settings
+  query_instruction_enabled: false, // 启用查询指令
+  query_instruction_template: 'Given a query, retrieve relevant passages from the context', // 查询指令模板
+  query_instruction_preset: 'general', // 当前选中的预设
+  query_instruction_presets: {
+    character: 'Given a character-related query, retrieve passages that describe character traits, personality, relationships, or actions',
+    plot: 'Given a story context, retrieve passages that contain plot-relevant details, foreshadowing, or significant events',
+    worldview: 'Given a world-building query, retrieve passages that contain setting details, lore information, or world mechanics',
+    writing_style: 'Given a writing style query, retrieve passages that exemplify narrative techniques, prose style, or linguistic patterns',
+    general: 'Given a query, retrieve relevant passages from the context'
+  },
+  rerank_deduplication_enabled: false, // 启用Rerank去重
+  rerank_deduplication_instruction: '执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n3. 同质化文档仅保留最相关的一条，其余降权至后50%位置', // Rerank去重指令
 
-   // Injection settings
+  // Injection settings
   template: '<must_know>以下是从相关背景知识库，包含重要的上下文、设定或细节：\n{{text}}</must_know>',
   position: extension_prompt_types.IN_PROMPT,
   depth: 2,
@@ -2174,13 +2189,19 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
     // Query vectors based on recent messages
     const queryMessages = Math.min(settings.query_messages || 3, chat.length);
-    const queryText = chat
+    let queryText = chat
       .slice(-queryMessages)
       .map(x => x.mes)
       .join('\n');
     if (!queryText.trim()) {
       logTimingAndReturn('查询文本为空');
       return;
+    }
+    
+    // 实验性功能：添加查询指令
+    if (settings.query_instruction_enabled && settings.query_instruction_template) {
+      queryText = `Instruct: ${settings.query_instruction_template}\nQuery:${queryText}`;
+      console.debug('Vectors: Using instruction-enhanced query');
     }
 
     // Get all enabled tasks for this chat
@@ -2300,6 +2321,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       }
     }
 
+    // 在 rerank 之前不要限制结果数量，让 rerank 有更多候选项
     // Rerank results if enabled
     if (settings.rerank_enabled && allResults.length > 0) {
         console.debug('Vectors: Reranking enabled. Starting rerank process...');
@@ -2316,18 +2338,27 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                 index: index  // 使用实际索引，而不是 undefined
             }));
 
+            // 构建 rerank 请求体
+            const rerankBody = {
+                query: queryText,
+                documents: documentsToRerank.map(x => x.text),
+                model: settings.rerank_model,
+                "top_n": Math.min(documentsToRerank.length, settings.rerank_top_n || 20),  // 确保 top_n 不超过文档数量
+            };
+            
+            // 实验性功能：添加去重指令
+            if (settings.rerank_deduplication_enabled && settings.rerank_deduplication_instruction) {
+                rerankBody.instruct = settings.rerank_deduplication_instruction;
+                console.debug('Vectors: Using deduplication instruction for rerank');
+            }
+
             const rerankResponse = await fetch(settings.rerank_url, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${settings.rerank_apiKey}`
                 },
-                body: JSON.stringify({
-                    query: queryText,
-                    documents: documentsToRerank.map(x => x.text),
-                    model: settings.rerank_model,
-                    "top_n": settings.rerank_top_n,
-                })
+                body: JSON.stringify(rerankBody)
             });
 
             if (!rerankResponse.ok) {
@@ -2371,6 +2402,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                         ...cleanResult,
                         hybrid_score: hybridScore,
                         rerank_score: relevanceScore,
+                        original_score: result.score,  // 保留原始分数用于调试
                         _rerank_success: relevanceScore > 0  // 标记是否成功获取 rerank 分数
                     };
                 });
@@ -2381,6 +2413,15 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                 // 统计成功率（用于调试）
                 const successCount = allResults.filter(r => r._rerank_success).length;
                 console.debug(`Vectors: Rerank completed. ${successCount}/${allResults.length} items successfully reranked`);
+                
+                // 输出前几个结果的分数用于调试
+                console.debug('Vectors: Top 5 results after rerank:', allResults.slice(0, 5).map((r, i) => ({
+                    index: i,
+                    hybrid_score: r.hybrid_score?.toFixed(4),
+                    rerank_score: r.rerank_score?.toFixed(4),
+                    original_score: r.original_score?.toFixed(4),
+                    text_preview: r.text?.substring(0, 50) + '...'
+                })));
                 
                 // 如果成功率太低，可能是 API 格式问题
                 if (successCount === 0 && allResults.length > 0) {
@@ -2399,7 +2440,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
              // 确保完全恢复原始状态
              allResults = allResults.map((result, index) => {
                  // 清理所有可能添加的属性
-                 const { hybrid_score, rerank_score, _rerank_index, _rerank_success, ...originalResult } = result;
+                 const { hybrid_score, rerank_score, original_score, _rerank_index, _rerank_success, ...originalResult } = result;
                  return originalResult;
              });
              
@@ -2413,11 +2454,16 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
     }
 
-    // 在排序后，限制结果数量为 max_results
-    const maxResults = settings.max_results || 10;
-    if (allResults.length > maxResults) {
-      console.debug(`Vectors: Limiting results from ${allResults.length} to ${maxResults}`);
-      allResults = allResults.slice(0, maxResults);
+    // 在排序后，限制结果数量
+    // 如果启用了 rerank，使用 rerank_top_n 作为限制
+    // 否则使用 max_results
+    const finalLimit = settings.rerank_enabled ? 
+        Math.min(settings.rerank_top_n || 20, settings.max_results || 10) : 
+        (settings.max_results || 10);
+    
+    if (allResults.length > finalLimit) {
+      console.debug(`Vectors: Limiting final results from ${allResults.length} to ${finalLimit}`);
+      allResults = allResults.slice(0, finalLimit);
     }
 
     // 初始化变量
@@ -2431,9 +2477,8 @@ async function rearrangeChat(chat, contextSize, abort, type) {
     } else {
       console.debug(`Vectors: Found ${allResults.length} total results after limiting`);
 
-      // 如果启用了rerank，可能会进一步减少结果数
-      const finalResultCount = settings.rerank_enabled ? Math.min(settings.rerank_top_n, allResults.length) : allResults.length;
-      topResults = allResults.slice(0, finalResultCount);
+      // 使用所有限制后的结果
+      topResults = allResults;
 
       console.debug(`Vectors: Using top ${topResults.length} results`);
 
@@ -2625,6 +2670,8 @@ function getVectorsRequestBody(args = {}) {
     case 'vllm':
       body.apiUrl = settings.vllm_url || textgenerationwebui_settings.server_urls[textgen_types.VLLM];
       body.model = settings.vllm_model;
+      // 优先使用文本生成API的设置，如果没有则使用向量设置的API key
+      body.apiKey = textgenerationwebui_settings.api_key_vllm || settings.vllm_api_key || '';
       break;
     case 'ollama':
       body.model = settings.ollama_model;
@@ -2825,6 +2872,32 @@ jQuery(async () => {
   if (settings.rerank_success_notify === undefined) {
     settings.rerank_success_notify = true;
   }
+  
+  // 确保实验性功能设置存在
+  if (settings.query_instruction_enabled === undefined) {
+    settings.query_instruction_enabled = false;
+  }
+  if (settings.query_instruction_template === undefined) {
+    settings.query_instruction_template = 'Given a query, retrieve relevant passages from the context';
+  }
+  if (settings.query_instruction_preset === undefined) {
+    settings.query_instruction_preset = 'general';
+  }
+  if (settings.query_instruction_presets === undefined) {
+    settings.query_instruction_presets = {
+      character: 'Given a character-related query, retrieve passages that describe character traits, personality, relationships, or actions',
+      plot: 'Given a story context, retrieve passages that contain plot-relevant details, foreshadowing, or significant events',
+      worldview: 'Given a world-building query, retrieve passages that contain setting details, lore information, or world mechanics',
+      writing_style: 'Given a writing style query, retrieve passages that exemplify narrative techniques, prose style, or linguistic patterns',
+      general: 'Given a query, retrieve relevant passages from the context'
+    };
+  }
+  if (settings.rerank_deduplication_enabled === undefined) {
+    settings.rerank_deduplication_enabled = false;
+  }
+  if (settings.rerank_deduplication_instruction === undefined) {
+    settings.rerank_deduplication_instruction = '执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n3. 同质化文档仅保留最相关的一条，其余降权至后50%位置';
+  }
 
    // 确保所有必需的结构都存在
   if (!settings.selected_content.chat.range) {
@@ -2834,6 +2907,11 @@ jQuery(async () => {
   // 确保 vector_tasks 存在
   if (!settings.vector_tasks) {
     settings.vector_tasks = {};
+  }
+
+  // 确保 vllm_api_key 存在
+  if (settings.vllm_api_key === undefined) {
+    settings.vllm_api_key = '';
   }
 
   // 保存修正后的设置 - 使用深度合并而不是浅拷贝

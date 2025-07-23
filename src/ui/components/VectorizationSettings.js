@@ -22,7 +22,7 @@ export class VectorizationSettings {
             },
             vllm: {
                 selector: '#vectors_enhanced_vllm_settings',
-                fields: ['vllm_model', 'vllm_url']
+                fields: ['vllm_model', 'vllm_url', 'vllm_api_key']
             },
             ollama: {
                 selector: '#vectors_enhanced_ollama_settings',
