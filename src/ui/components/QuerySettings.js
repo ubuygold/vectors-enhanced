@@ -13,6 +13,14 @@ export class QuerySettings {
         this.settings = dependencies.settings;
         this.configManager = dependencies.configManager;
         this.onSettingsChange = dependencies.onSettingsChange || (() => {});
+        this.toastr = dependencies.toastr || window.toastr;
+        
+        // Dependencies for preview functionality
+        this.callGenericPopup = dependencies.callGenericPopup;
+        this.POPUP_TYPE = dependencies.POPUP_TYPE;
+        this.rearrangeChat = dependencies.rearrangeChat;
+        this.getContext = dependencies.getContext;
+        this.getCurrentChatId = dependencies.getCurrentChatId;
         
         // Rerank configuration fields
         this.rerankFields = [
@@ -110,6 +118,16 @@ export class QuerySettings {
             this.handleFieldChange('rerank_deduplication_instruction', e.target.value);
         });
 
+        // Reset button for rerank deduplication instruction
+        $('#reset_rerank_deduplication_instruction').on('click', () => {
+            this.resetRerankDeduplicationInstruction();
+        });
+
+        // Preview injection button
+        $('#vectors_enhanced_preview_injection').on('click', () => {
+            this.previewInjectedContent();
+        });
+
         console.log('QuerySettings: Event listeners bound');
     }
 
@@ -196,6 +214,7 @@ export class QuerySettings {
         
         this.settings.query_instruction_enabled = enabled;
         this.saveSettings();
+        this.onSettingsChange('query_instruction_enabled', enabled);
         
         // 显示/隐藏查询指令设置
         if (enabled) {
@@ -232,6 +251,7 @@ export class QuerySettings {
         
         this.settings.rerank_deduplication_enabled = enabled;
         this.saveSettings();
+        this.onSettingsChange('rerank_deduplication_enabled', enabled);
         
         // 显示/隐藏去重设置
         if (enabled) {
@@ -480,6 +500,211 @@ export class QuerySettings {
         this.updateRerankVisibility();
         
         console.log('QuerySettings: Rerank settings reset to defaults');
+    }
+
+    /**
+     * Reset rerank deduplication instruction to default
+     */
+    resetRerankDeduplicationInstruction() {
+        const defaultInstruction = '执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n3. 同质化文档仅保留最相关的一条，其余降权至后50%位置';
+        
+        this.settings.rerank_deduplication_instruction = defaultInstruction;
+        $('#vectors_enhanced_rerank_deduplication_instruction').val(defaultInstruction);
+        
+        this.saveSettings();
+        this.onSettingsChange('rerank_deduplication_instruction', defaultInstruction);
+        
+        // Show feedback
+        if (this.toastr) {
+            this.toastr.success('已重置为默认去重指令');
+        }
+    }
+
+    /**
+     * Preview injected content with experimental features
+     */
+    async previewInjectedContent() {
+        try {
+            if (!this.getCurrentChatId || !this.getContext || !this.rearrangeChat) {
+                this.toastr.error('预览功能未正确初始化');
+                return;
+            }
+
+            const chatId = this.getCurrentChatId();
+            if (!chatId || chatId === 'null' || chatId === 'undefined') {
+                this.toastr.warning('请先选择一个聊天');
+                return;
+            }
+
+            const context = this.getContext();
+            if (!context.chat || context.chat.length === 0) {
+                this.toastr.warning('当前聊天没有消息');
+                return;
+            }
+
+            // 创建一个临时的上下文来捕获注入的内容
+            let capturedContent = null;
+            const originalSetExtensionPrompt = window.setExtensionPrompt;
+            
+            // 临时保存通知设置并禁用它们
+            const originalShowNotification = this.settings.show_query_notification;
+            const originalRerankNotify = this.settings.rerank_success_notify;
+            this.settings.show_query_notification = false;
+            this.settings.rerank_success_notify = false;
+            
+            // 临时替换 setExtensionPrompt 来捕获内容
+            window.setExtensionPrompt = (tag, content) => {
+                if (tag === '3_vectors') {
+                    capturedContent = content;
+                }
+            };
+
+            try {
+                // 调用 rearrangeChat 来获取实际的注入内容
+                await this.rearrangeChat(context.chat, 0, () => {}, 'normal');
+                
+                // 恢复原始函数和设置
+                window.setExtensionPrompt = originalSetExtensionPrompt;
+                this.settings.show_query_notification = originalShowNotification;
+                this.settings.rerank_success_notify = originalRerankNotify;
+
+                if (!capturedContent) {
+                    this.toastr.info('没有向量内容被注入');
+                    return;
+                }
+
+                // 分析内容
+                const queryInstructionEnabled = this.settings.query_instruction_enabled;
+                const rerankEnabled = this.settings.rerank_enabled;
+                const deduplicationEnabled = this.settings.rerank_deduplication_enabled;
+                
+                // 计算内容统计
+                const contentStats = this._analyzeInjectedContent(capturedContent);
+                
+                // 构建显示内容
+                let displayHtml = '<div style="max-height: 600px; overflow-y: auto;">';
+                
+                // 显示实验性功能状态
+                displayHtml += '<div style="margin-bottom: 15px; padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px;">';
+                displayHtml += '<h4 style="margin: 0 0 10px 0;">实验性功能状态</h4>';
+                displayHtml += '<ul style="margin: 0; padding-left: 20px;">';
+                displayHtml += `<li>查询指令增强: <strong>${queryInstructionEnabled ? '已启用' : '未启用'}</strong>`;
+                if (queryInstructionEnabled) {
+                    displayHtml += `<br><small style="opacity: 0.8;">指令: "${this.settings.query_instruction_template}"</small>`;
+                }
+                displayHtml += '</li>';
+                displayHtml += `<li>Rerank: <strong>${rerankEnabled ? '已启用' : '未启用'}</strong>`;
+                if (rerankEnabled && deduplicationEnabled) {
+                    displayHtml += `<br><small style="opacity: 0.8;">智能去重: 已启用</small>`;
+                }
+                displayHtml += '</li>';
+                displayHtml += '</ul>';
+                displayHtml += '</div>';
+                
+                // 显示内容统计
+                displayHtml += '<div style="margin-bottom: 15px; padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px;">';
+                displayHtml += '<h4 style="margin: 0 0 10px 0;">注入内容统计</h4>';
+                displayHtml += '<ul style="margin: 0; padding-left: 20px;">';
+                displayHtml += `<li>总字符数: <strong>${contentStats.totalChars}</strong></li>`;
+                displayHtml += `<li>聊天记录: <strong>${contentStats.chatCount}</strong> 条</li>`;
+                displayHtml += `<li>文件内容: <strong>${contentStats.fileCount}</strong> 个</li>`;
+                displayHtml += `<li>世界信息: <strong>${contentStats.worldInfoCount}</strong> 条</li>`;
+                displayHtml += '</ul>';
+                displayHtml += '</div>';
+                
+                // 显示实际内容
+                displayHtml += '<div style="margin-bottom: 15px;">';
+                displayHtml += '<h4 style="margin: 0 0 10px 0;">注入的原始内容</h4>';
+                displayHtml += '<pre style="white-space: pre-wrap; word-wrap: break-word; background-color: var(--SmartThemeBlurTintColor); padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">';
+                displayHtml += this._escapeHtml(capturedContent);
+                displayHtml += '</pre>';
+                displayHtml += '</div>';
+                
+                displayHtml += '</div>';
+
+                // 显示弹窗
+                if (this.callGenericPopup && this.POPUP_TYPE) {
+                    await this.callGenericPopup(displayHtml, this.POPUP_TYPE.TEXT, '', {
+                        wide: true,
+                        large: true,
+                        okButton: '关闭',
+                        allowHorizontalScrolling: true,
+                        allowVerticalScrolling: true
+                    });
+                } else {
+                    // 降级到 alert
+                    alert('注入内容预览:\n\n' + capturedContent);
+                }
+                
+            } catch (error) {
+                // 恢复原始函数和设置
+                window.setExtensionPrompt = originalSetExtensionPrompt;
+                this.settings.show_query_notification = originalShowNotification;
+                this.settings.rerank_success_notify = originalRerankNotify;
+                console.error('预览注入内容时出错:', error);
+                this.toastr.error('预览失败: ' + error.message);
+            }
+            
+        } catch (error) {
+            console.error('预览注入内容失败:', error);
+            this.toastr.error('预览失败: ' + error.message);
+        }
+    }
+
+    /**
+     * Analyze injected content
+     * @private
+     */
+    _analyzeInjectedContent(content) {
+        const stats = {
+            totalChars: content.length,
+            chatCount: 0,
+            fileCount: 0,
+            worldInfoCount: 0
+        };
+
+        // Count different content types based on tags
+        const chatMatches = content.match(/<past_chat>[\s\S]*?<\/past_chat>/g);
+        const fileMatches = content.match(/<databank>[\s\S]*?<\/databank>/g);
+        const worldInfoMatches = content.match(/<world_part>[\s\S]*?<\/world_part>/g);
+
+        if (chatMatches) {
+            // Count individual chat items within the tag
+            chatMatches.forEach(match => {
+                // Simple heuristic: count line breaks as rough message count
+                const lines = match.split('\n').filter(line => line.trim().length > 0);
+                stats.chatCount += Math.max(1, Math.floor(lines.length / 2)); // Rough estimate
+            });
+        }
+
+        if (fileMatches) {
+            stats.fileCount = fileMatches.length;
+        }
+
+        if (worldInfoMatches) {
+            // Count individual world info items
+            worldInfoMatches.forEach(match => {
+                const lines = match.split('\n').filter(line => line.trim().length > 0);
+                stats.worldInfoCount += Math.max(1, Math.floor(lines.length / 2)); // Rough estimate
+            });
+        }
+
+        return stats;
+    }
+
+    /**
+     * Escape HTML for safe display
+     * @private
+     */
+    _escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
     }
 
     /**

@@ -63,6 +63,7 @@ import { getMessages, createVectorItem, getHiddenMessages } from './src/utils/ch
 import { StorageAdapter } from './src/infrastructure/storage/StorageAdapter.js';
 import { VectorizationAdapter } from './src/infrastructure/api/VectorizationAdapter.js';
 import { eventBus } from './src/infrastructure/events/eventBus.instance.js';
+import { RerankService } from './src/services/rerank/index.js';
 
 /**
  * @typedef {object} HashedMessage
@@ -260,6 +261,8 @@ let syncBlocked = false;
 let storageAdapter = null;
 // 创建向量化适配器实例
 let vectorizationAdapter = null;
+// 创建 Rerank 服务实例
+let rerankService = null;
 
 // 防重复通知机制
 let lastNotificationTime = 0;
@@ -2321,149 +2324,28 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       }
     }
 
+    // 保存原始查询结果数量（用于通知显示）
+    const originalQueryCount = allResults.length;
+
     // 在 rerank 之前不要限制结果数量，让 rerank 有更多候选项
-    // Rerank results if enabled
-    if (settings.rerank_enabled && allResults.length > 0) {
-        console.debug('Vectors: Reranking enabled. Starting rerank process...');
-        try {
-            // 确保每个结果都有索引
-            const indexedResults = allResults.map((result, index) => ({
-                ...result,
-                _rerank_index: index  // 使用内部属性名，避免冲突
-            }));
-            
-            // 准备文档，同时发送索引（兼容需要的 API）
-            const documentsToRerank = indexedResults.map((x, index) => ({
-                text: x.text,
-                index: index  // 使用实际索引，而不是 undefined
-            }));
-
-            // 构建 rerank 请求体
-            const rerankBody = {
-                query: queryText,
-                documents: documentsToRerank.map(x => x.text),
-                model: settings.rerank_model,
-                "top_n": Math.min(documentsToRerank.length, settings.rerank_top_n || 20),  // 确保 top_n 不超过文档数量
-            };
-            
-            // 实验性功能：添加去重指令
-            if (settings.rerank_deduplication_enabled && settings.rerank_deduplication_instruction) {
-                rerankBody.instruct = settings.rerank_deduplication_instruction;
-                console.debug('Vectors: Using deduplication instruction for rerank');
-            }
-
-            const rerankResponse = await fetch(settings.rerank_url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${settings.rerank_apiKey}`
-                },
-                body: JSON.stringify(rerankBody)
-            });
-
-            if (!rerankResponse.ok) {
-                throw new Error(`Rerank API failed: ${rerankResponse.statusText}`);
-            }
-
-            const rerankedData = await rerankResponse.json();
-            console.debug('Vectors: Rerank API response:', rerankedData);
-
-            // 智能处理不同的响应格式
-            const alpha = settings.rerank_hybrid_alpha;
-            
-            // 检查响应格式并自适应
-            if (rerankedData.results && Array.isArray(rerankedData.results)) {
-                allResults = indexedResults.map((result, arrayIndex) => {
-                    let relevanceScore = 0;
-                    
-                    // 尝试多种匹配方式
-                    const rerankedResult = 
-                        // 方式1：通过 index 字段匹配
-                        rerankedData.results.find(r => r.index === result._rerank_index) ||
-                        // 方式2：通过数组位置匹配（如果 API 按顺序返回）
-                        rerankedData.results[arrayIndex] ||
-                        // 方式3：如果结果数组长度匹配，使用对应位置
-                        (rerankedData.results.length === indexedResults.length ? rerankedData.results[arrayIndex] : null);
-                    
-                    if (rerankedResult && typeof rerankedResult.relevance_score === 'number') {
-                        relevanceScore = rerankedResult.relevance_score;
-                    } else if (rerankedResult && typeof rerankedResult.score === 'number') {
-                        // 兼容可能使用 'score' 而不是 'relevance_score' 的 API
-                        relevanceScore = rerankedResult.score;
-                    }
-                    
-                    // 计算混合分数
-                    const hybridScore = relevanceScore * alpha + result.score * (1 - alpha);
-                    
-                    // 移除临时索引属性
-                    const { _rerank_index, ...cleanResult } = result;
-                    
-                    return {
-                        ...cleanResult,
-                        hybrid_score: hybridScore,
-                        rerank_score: relevanceScore,
-                        original_score: result.score,  // 保留原始分数用于调试
-                        _rerank_success: relevanceScore > 0  // 标记是否成功获取 rerank 分数
-                    };
-                });
-                
-                // 按混合分数排序
-                allResults.sort((a, b) => (b.hybrid_score || 0) - (a.hybrid_score || 0));
-                
-                // 统计成功率（用于调试）
-                const successCount = allResults.filter(r => r._rerank_success).length;
-                console.debug(`Vectors: Rerank completed. ${successCount}/${allResults.length} items successfully reranked`);
-                
-                // 输出前几个结果的分数用于调试
-                console.debug('Vectors: Top 5 results after rerank:', allResults.slice(0, 5).map((r, i) => ({
-                    index: i,
-                    hybrid_score: r.hybrid_score?.toFixed(4),
-                    rerank_score: r.rerank_score?.toFixed(4),
-                    original_score: r.original_score?.toFixed(4),
-                    text_preview: r.text?.substring(0, 50) + '...'
-                })));
-                
-                // 如果成功率太低，可能是 API 格式问题
-                if (successCount === 0 && allResults.length > 0) {
-                    console.warn('Vectors: No items were successfully reranked. API response format may be incompatible.');
-                    // 但仍然保留混合分数排序（即使 rerank 分数都是 0）
-                }
-                
-            } else {
-                // 响应格式完全不符合预期
-                throw new Error('Unexpected rerank API response format');
-            }
-
-         } catch (error) {
-             console.error('Vectors: Reranking failed. Falling back to original similarity search.', error);
-             
-             // 确保完全恢复原始状态
-             allResults = allResults.map((result, index) => {
-                 // 清理所有可能添加的属性
-                 const { hybrid_score, rerank_score, original_score, _rerank_index, _rerank_success, ...originalResult } = result;
-                 return originalResult;
-             });
-             
-             // 按原始分数排序
-             allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-             
-             toastr.error('Rerank失败，使用原始搜索结果。');
-        }
+    // Use RerankService if available
+    if (rerankService && rerankService.isEnabled() && allResults.length > 0) {
+        allResults = await rerankService.rerankResults(queryText, allResults);
     } else {
         // If reranking is not enabled, sort by original score
         allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
     }
 
-    // 在排序后，限制结果数量
-    // 如果启用了 rerank，使用 rerank_top_n 作为限制
-    // 否则使用 max_results
-    const finalLimit = settings.rerank_enabled ? 
-        Math.min(settings.rerank_top_n || 20, settings.max_results || 10) : 
-        (settings.max_results || 10);
-    
-    if (allResults.length > finalLimit) {
-      console.debug(`Vectors: Limiting final results from ${allResults.length} to ${finalLimit}`);
-      allResults = allResults.slice(0, finalLimit);
+    // 限制结果数量
+    if (rerankService && rerankService.isEnabled()) {
+      allResults = rerankService.limitResults(allResults, settings.max_results || 10);
+    } else {
+      // 如果没有启用 rerank，使用 max_results
+      const finalLimit = settings.max_results || 10;
+      if (allResults.length > finalLimit) {
+        console.debug(`Vectors: Limiting final results from ${allResults.length} to ${finalLimit}`);
+        allResults = allResults.slice(0, finalLimit);
+      }
     }
 
     // 初始化变量
@@ -2588,20 +2470,26 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       const actuallyInjected = insertedText && insertedText.trim().length > 0;
 
       let message;
-      if (settings.rerank_enabled && finalCount > 0) {
+      const isRerankEnabled = rerankService && rerankService.isEnabled();
+      if (isRerankEnabled && finalCount > 0) {
         // 如果启用了重排，显示重排后的数量
-        message = `查询到 ${allResults.length} 个块，重排后`;
+        message = `查询到 ${originalQueryCount} 个块，重排后`;
         if (actuallyInjected) {
           message += `注入 ${finalCount} 个块。`;
         } else {
           message += `尝试注入 ${finalCount} 个块，但文本获取失败。`;
         }
       } else {
-        // 如果没有启用重排，allResults 已经被限制为 max_results
-        message = `查询到 ${allResults.length} 个块`;
+        // 如果没有启用重排，显示原始查询数量和最终注入数量
+        message = `查询到 ${originalQueryCount} 个块`;
         if (finalCount > 0) {
           if (actuallyInjected) {
-            message += '，已注入。';
+            // 如果查询数量和注入数量不同，显示两个数字
+            if (originalQueryCount > finalCount) {
+              message += `，注入 ${finalCount} 个块。`;
+            } else {
+              message += '，已注入。';
+            }
           } else {
             message += '，但文本获取失败，未能注入。';
           }
@@ -2952,6 +2840,12 @@ jQuery(async () => {
   const querySettings = new QuerySettings({
     settings,
     configManager,
+    toastr,
+    callGenericPopup,
+    POPUP_TYPE,
+    rearrangeChat,
+    getContext,
+    getCurrentChatId,
     onSettingsChange: (field, value) => {
       console.debug(`QuerySettings: ${field} changed to:`, value);
       Object.assign(extension_settings.vectors_enhanced, settings);
@@ -3051,6 +2945,17 @@ jQuery(async () => {
     textgenerationwebui_settings,
     textgen_types
   });
+
+  // 创建 Rerank 服务实例
+  console.log('Vectors Enhanced: Creating RerankService...');
+  rerankService = new RerankService(settings, {
+    toastr: toastr
+  });
+  
+  // 暴露到全局以便测试（仅在开发环境）
+  if (window.location.hostname === 'localhost' || window.location.search.includes('debug=true')) {
+    window.rerankService = rerankService;
+  }
 
   // 创建 SettingsManager 实例
   console.log('Vectors Enhanced: Creating SettingsManager...');

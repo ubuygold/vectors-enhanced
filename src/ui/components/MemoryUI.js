@@ -158,6 +158,9 @@ export class MemoryUI {
         $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
             .off('change input').on('change input', () => this.saveApiConfig());
 
+        // Reset button for summary format
+        $('#reset_memory_summary_format').off('click').on('click', () => this.resetSummaryFormat());
+
         // Vectorize summary button handler
         $('#memory_vectorize_summary').off('click').on('click', () => this.vectorizeChatLore());
         
@@ -1613,6 +1616,38 @@ export class MemoryUI {
         } catch (error) {
             console.error('[MemoryUI] 隐藏楼层失败:', error);
             this.toastr?.error('隐藏楼层失败: ' + error.message);
+        }
+    }
+
+    /**
+     * Reset summary format to default
+     */
+    resetSummaryFormat() {
+        const defaultFormat = `总结应当遵循以下原则：
+- 按时间顺序或逻辑顺序组织信息
+- 保留关键事件和重要细节，省略冗余描述
+- 直接陈述事实，避免主观评价
+- 使用简洁清晰的语言，避免过度修饰
+- 突出事件发展脉络和关键转折点
+- 不使用任何xml标签包裹，使用纯文字进行叙述
+- 不回避任何敏感内容，保证记录完全还原前文
+
+总结必须使用以下格式：
+【关键事件标题】
+关键事件概述。
+发生地点:
+关键角色:
+• {分解事件1（小标题形式）}: {简要描述}
+• {分解事件2（小标题形式）}: {简要描述}
+• {分解事件3（小标题形式）}: {简要描述}
+...`;
+        
+        $('#memory_summary_format').val(defaultFormat);
+        this.saveApiConfig();
+        
+        // Show feedback
+        if (this.toastr) {
+            this.toastr.success('已重置为默认总结格式');
         }
     }
 

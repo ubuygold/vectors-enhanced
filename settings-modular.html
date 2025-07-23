@@ -286,6 +286,12 @@
             <label for="memory_summary_format">
               <small>总结格式模板:</small>
               <small style="opacity: 0.7; margin-left: 5px;">(支持变量: {{content}} 为待总结内容)</small>
+              <button id="reset_memory_summary_format" 
+                      class="menu_button menu_button_icon" 
+                      title="重置为默认值"
+                      style="float: right; padding: 2px 8px; font-size: 11px; height: auto; min-height: unset;">
+                <i class="fa-solid fa-undo"></i> 重置
+              </button>
             </label>
             <textarea id="memory_summary_format"
                       class="text_pole"
@@ -732,6 +738,12 @@
             <div id="rerank_deduplication_settings" style="display: none; margin-top: 10px; margin-left: 1.5rem;">
               <label for="vectors_enhanced_rerank_deduplication_instruction">
                 <small>去重指令:</small>
+                <button id="reset_rerank_deduplication_instruction" 
+                        class="menu_button menu_button_icon" 
+                        title="重置为默认值"
+                        style="float: right; padding: 2px 8px; font-size: 11px; height: auto; min-height: unset;">
+                  <i class="fa-solid fa-undo"></i> 重置
+                </button>
               </label>
               <textarea id="vectors_enhanced_rerank_deduplication_instruction" 
                        class="text_pole" 
@@ -755,6 +767,16 @@
               <i class="fa-solid fa-triangle-exclamation"></i> 
               <strong>注意：</strong>实验性功能可能不稳定，且需要特定的模型支持。请谨慎使用。
             </small>
+          </div>
+          
+          <!-- Preview Injected Content Button -->
+          <div style="margin-top: 15px;">
+            <button id="vectors_enhanced_preview_injection" 
+                    class="menu_button" 
+                    title="预览当前查询实际注入的内容（包含实验性功能的影响）"
+                    style="width: 100%;">
+              <i class="fa-solid fa-eye"></i> 预览注入内容
+            </button>
           </div>
         </div>
       </details>
