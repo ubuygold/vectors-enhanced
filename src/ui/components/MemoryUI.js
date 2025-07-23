@@ -35,11 +35,13 @@ const defaultMemorySettings = {
 ...`, // 默认总结格式
     autoCreateWorldBook: false, // 默认不自动生成世界书
     google_openai: {
-        model: 'gemini-1.5-flash'  // 设置默认模型
+        model: 'gemini-1.5-flash',  // 设置默认模型
+        apiKey: ''  // 添加API密钥字段
     },
     openai_compatible: {
         url: '',
-        model: ''
+        model: '',
+        apiKey: ''  // 添加API密钥字段
     },
     // prompts removed - using preset format
     autoSummarize: {
@@ -636,10 +638,12 @@ export class MemoryUI {
             autoCreateWorldBook: $('#memory_auto_create_world_book').prop('checked'),
             openai_compatible: {
                 url: $('#memory_openai_url').val(),
-                model: $('#memory_openai_model').val() || ''
+                model: $('#memory_openai_model').val() || '',
+                apiKey: $('#memory_openai_api_key').val() || ''  // 直接保存API密钥
             },
             google_openai: {
-                model: $('#memory_google_openai_model').val() || ''
+                model: $('#memory_google_openai_model').val() || '',
+                apiKey: $('#memory_google_openai_api_key').val() || ''  // 直接保存API密钥
             },
             // prompts removed - using preset format
             autoSummarize: {
@@ -655,9 +659,6 @@ export class MemoryUI {
         
         this.settings.memory = memoryConfig;
 
-        // 保存密钥到secrets（保留这部分，因为密钥需要特殊处理）
-        await this.saveApiKeys();
-
         // 保存设置 - 需要先同步到extension_settings
         const context = this.getContext();
         if (context && context.extensionSettings && context.extensionSettings.vectors_enhanced) {
@@ -669,64 +670,6 @@ export class MemoryUI {
             this.saveSettingsDebounced();
         } else if (window.saveSettingsDebounced) {
             window.saveSettingsDebounced();
-        }
-    }
-
-    /**
-     * 保存API密钥
-     */
-    async saveApiKeys() {
-        const headers = this.memoryService.getRequestHeaders ? this.memoryService.getRequestHeaders() : {};
-
-
-        // 保存OpenAI Compatible API Key
-        const openaiKey = $('#memory_openai_api_key').val();
-        if (openaiKey) {
-            // 1. 尝试保存到secrets API（为兼容已设置allowKeysExposure的用户）
-            try {
-                await fetch('/api/secrets/write', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({
-                        key: 'memory_openai_api_key',
-                        value: openaiKey
-                    })
-                });
-            } catch (error) {
-                console.error('保存OpenAI API Key到secrets失败:', error);
-            }
-            
-            // 2. 同时保存到localStorage作为备用
-            try {
-                localStorage.setItem('vectors_enhanced_memory_openai_api_key', openaiKey);
-            } catch (error) {
-                console.error('保存OpenAI API Key到localStorage失败:', error);
-            }
-        }
-        
-        // 保存Google转OpenAI API Key
-        const googleOpenAIKey = $('#memory_google_openai_api_key').val();
-        if (googleOpenAIKey) {
-            // 1. 尝试保存到secrets API
-            try {
-                await fetch('/api/secrets/write', {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({
-                        key: 'memory_google_openai_api_key',
-                        value: googleOpenAIKey
-                    })
-                });
-            } catch (error) {
-                console.error('保存Google转OpenAI API Key到secrets失败:', error);
-            }
-            
-            // 2. 同时保存到localStorage作为备用
-            try {
-                localStorage.setItem('vectors_enhanced_memory_google_openai_api_key', googleOpenAIKey);
-            } catch (error) {
-                console.error('保存Google转OpenAI API Key到localStorage失败:', error);
-            }
         }
     }
 
@@ -759,7 +702,9 @@ export class MemoryUI {
         $('#memory_auto_create_world_book').prop('checked', config.autoCreateWorldBook || false);
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
         $('#memory_openai_model').val(config.openai_compatible?.model || '');
+        $('#memory_openai_api_key').val(config.openai_compatible?.apiKey || '');  // 从设置加载API密钥
         $('#memory_google_openai_model').val(config.google_openai?.model || '');
+        $('#memory_google_openai_api_key').val(config.google_openai?.apiKey || '');  // 从设置加载API密钥
         
         // Auto-summarize settings
         if (config.autoSummarize) {
@@ -781,73 +726,8 @@ export class MemoryUI {
         
         // Prompts loading removed - using preset format
 
-        // 加载密钥
-        await this.loadApiKeys();
-
         // 更新UI显示
         this.initializeApiSourceDisplay(config.source || 'google_openai');
-    }
-
-    /**
-     * 加载API密钥
-     */
-    async loadApiKeys() {
-        const headers = this.memoryService.getRequestHeaders ? this.memoryService.getRequestHeaders() : {};
-        let openaiKeyLoaded = false;
-        let googleKeyLoaded = false;
-
-        // 1. 首先尝试从secrets API加载（为已设置allowKeysExposure的用户）
-        try {
-            const response = await fetch('/api/secrets/view', {
-                method: 'POST',
-                headers: headers
-            });
-
-            if (response.ok) {
-                const secrets = await response.json();
-
-                // 加载OpenAI API Key
-                if (secrets.memory_openai_api_key) {
-                    $('#memory_openai_api_key').val(secrets.memory_openai_api_key);
-                    openaiKeyLoaded = true;
-                    console.log('[MemoryUI] 从secrets加载了OpenAI API Key');
-                }
-                
-                // 加载Google转OpenAI API Key
-                if (secrets.memory_google_openai_api_key) {
-                    $('#memory_google_openai_api_key').val(secrets.memory_google_openai_api_key);
-                    googleKeyLoaded = true;
-                    console.log('[MemoryUI] 从secrets加载了Google API Key');
-                }
-            } else if (response.status === 403) {
-                console.log('[MemoryUI] 无法从secrets加载API密钥（需要设置allowKeysExposure: true），将尝试从localStorage加载');
-            }
-        } catch (error) {
-            console.error('从secrets加载API密钥失败:', error);
-        }
-
-        // 2. 如果从secrets加载失败，尝试从localStorage加载
-        try {
-            // 加载OpenAI API Key
-            if (!openaiKeyLoaded) {
-                const localOpenAIKey = localStorage.getItem('vectors_enhanced_memory_openai_api_key');
-                if (localOpenAIKey) {
-                    $('#memory_openai_api_key').val(localOpenAIKey);
-                    console.log('[MemoryUI] 从localStorage加载了OpenAI API Key');
-                }
-            }
-            
-            // 加载Google转OpenAI API Key
-            if (!googleKeyLoaded) {
-                const localGoogleKey = localStorage.getItem('vectors_enhanced_memory_google_openai_api_key');
-                if (localGoogleKey) {
-                    $('#memory_google_openai_api_key').val(localGoogleKey);
-                    console.log('[MemoryUI] 从localStorage加载了Google API Key');
-                }
-            }
-        } catch (error) {
-            console.error('从localStorage加载API密钥失败:', error);
-        }
     }
 
     /**
