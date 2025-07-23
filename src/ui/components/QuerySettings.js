@@ -525,124 +525,121 @@ export class QuerySettings {
      */
     async previewInjectedContent() {
         try {
-            if (!this.getCurrentChatId || !this.getContext || !this.rearrangeChat) {
-                this.toastr.error('预览功能未正确初始化');
-                return;
-            }
-
-            const chatId = this.getCurrentChatId();
-            if (!chatId || chatId === 'null' || chatId === 'undefined') {
-                this.toastr.warning('请先选择一个聊天');
-                return;
-            }
-
-            const context = this.getContext();
-            if (!context.chat || context.chat.length === 0) {
-                this.toastr.warning('当前聊天没有消息');
-                return;
-            }
-
-            // 创建一个临时的上下文来捕获注入的内容
-            let capturedContent = null;
-            const originalSetExtensionPrompt = window.setExtensionPrompt;
+            // 直接获取最后注入的内容
+            const lastInjected = window.vectors_getLastInjectedContent ? window.vectors_getLastInjectedContent() : null;
             
-            // 临时保存通知设置并禁用它们
-            const originalShowNotification = this.settings.show_query_notification;
-            const originalRerankNotify = this.settings.rerank_success_notify;
-            this.settings.show_query_notification = false;
-            this.settings.rerank_success_notify = false;
+            if (!lastInjected || !lastInjected.content) {
+                this.toastr.info('还没有注入过任何内容，请先发送一条消息');
+                return;
+            }
+
+            const capturedContent = lastInjected.content;
+            const stats = lastInjected.stats || {};
+            const details = lastInjected.details || null;
+
+            // 分析内容
+            const queryInstructionEnabled = stats.queryInstructionEnabled || false;
+            const rerankEnabled = stats.rerankEnabled || false;
+            const deduplicationEnabled = stats.deduplicationEnabled || false;
             
-            // 临时替换 setExtensionPrompt 来捕获内容
-            window.setExtensionPrompt = (tag, content) => {
-                if (tag === '3_vectors') {
-                    capturedContent = content;
-                }
-            };
-
-            try {
-                // 调用 rearrangeChat 来获取实际的注入内容
-                await this.rearrangeChat(context.chat, 0, () => {}, 'normal');
-                
-                // 恢复原始函数和设置
-                window.setExtensionPrompt = originalSetExtensionPrompt;
-                this.settings.show_query_notification = originalShowNotification;
-                this.settings.rerank_success_notify = originalRerankNotify;
-
-                if (!capturedContent) {
-                    this.toastr.info('没有向量内容被注入');
-                    return;
-                }
-
-                // 分析内容
-                const queryInstructionEnabled = this.settings.query_instruction_enabled;
-                const rerankEnabled = this.settings.rerank_enabled;
-                const deduplicationEnabled = this.settings.rerank_deduplication_enabled;
-                
-                // 计算内容统计
-                const contentStats = this._analyzeInjectedContent(capturedContent);
-                
-                // 构建显示内容
-                let displayHtml = '<div style="max-height: 600px; overflow-y: auto;">';
-                
-                // 显示实验性功能状态
-                displayHtml += '<div style="margin-bottom: 15px; padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px;">';
-                displayHtml += '<h4 style="margin: 0 0 10px 0;">实验性功能状态</h4>';
-                displayHtml += '<ul style="margin: 0; padding-left: 20px;">';
-                displayHtml += `<li>查询指令增强: <strong>${queryInstructionEnabled ? '已启用' : '未启用'}</strong>`;
-                if (queryInstructionEnabled) {
-                    displayHtml += `<br><small style="opacity: 0.8;">指令: "${this.settings.query_instruction_template}"</small>`;
-                }
-                displayHtml += '</li>';
-                displayHtml += `<li>Rerank: <strong>${rerankEnabled ? '已启用' : '未启用'}</strong>`;
-                if (rerankEnabled && deduplicationEnabled) {
-                    displayHtml += `<br><small style="opacity: 0.8;">智能去重: 已启用</small>`;
-                }
-                displayHtml += '</li>';
-                displayHtml += '</ul>';
-                displayHtml += '</div>';
-                
-                // 显示内容统计
-                displayHtml += '<div style="margin-bottom: 15px; padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px;">';
-                displayHtml += '<h4 style="margin: 0 0 10px 0;">注入内容统计</h4>';
-                displayHtml += '<ul style="margin: 0; padding-left: 20px;">';
-                displayHtml += `<li>总字符数: <strong>${contentStats.totalChars}</strong></li>`;
-                displayHtml += `<li>聊天记录: <strong>${contentStats.chatCount}</strong> 条</li>`;
-                displayHtml += `<li>文件内容: <strong>${contentStats.fileCount}</strong> 个</li>`;
-                displayHtml += `<li>世界信息: <strong>${contentStats.worldInfoCount}</strong> 条</li>`;
-                displayHtml += '</ul>';
-                displayHtml += '</div>';
-                
-                // 显示实际内容
+            // 构建显示内容
+            let displayHtml = '<div style="max-height: 600px; overflow-y: auto; text-align: left;">';
+            
+            // 顶部信息栏 - 横向排列
+            displayHtml += '<div style="margin-bottom: 15px; padding: 10px; background-color: var(--SmartThemeBlurTintColor); border-radius: 5px; display: flex; flex-wrap: wrap; gap: 20px; align-items: center;">';
+            
+            // 统计信息
+            displayHtml += '<div style="display: flex; gap: 15px; flex-wrap: wrap;">';
+            displayHtml += `<span><strong>${stats.totalChars || capturedContent.length}</strong> 字符</span>`;
+            if (stats.originalQueryCount && stats.finalCount) {
+                displayHtml += `<span>查询 <strong>${stats.originalQueryCount}</strong> → 注入 <strong>${stats.finalCount}</strong> 块</span>`;
+            }
+            if (stats.chatCount > 0) displayHtml += `<span>聊天 <strong>${stats.chatCount}</strong></span>`;
+            if (stats.fileCount > 0) displayHtml += `<span>文件 <strong>${stats.fileCount}</strong></span>`;
+            if (stats.worldInfoCount > 0) displayHtml += `<span>世界信息 <strong>${stats.worldInfoCount}</strong></span>`;
+            displayHtml += '</div>';
+            
+            // 功能状态 - 只显示查询增强和rerank增强的开启状态
+            displayHtml += '<div style="margin-left: auto; display: flex; gap: 10px; align-items: center; font-size: 0.9em;">';
+            
+            // 查询增强状态
+            displayHtml += '<span style="padding: 2px 8px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 3px;">查询增强: ';
+            displayHtml += queryInstructionEnabled ? '<span style="color: var(--SmartThemeQuoteColor);">开启</span>' : '<span style="opacity: 0.6;">关闭</span>';
+            displayHtml += '</span>';
+            
+            // Rerank增强状态
+            displayHtml += '<span style="padding: 2px 8px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 3px;">Rerank增强: ';
+            displayHtml += rerankEnabled ? '<span style="color: var(--SmartThemeQuoteColor);">开启</span>' : '<span style="opacity: 0.6;">关闭</span>';
+            displayHtml += '</span>';
+            
+            displayHtml += '</div>';
+            
+            displayHtml += '</div>';
+            
+            // 如果有详细信息，显示重排前后对比
+            if (details && details.rerankApplied && details.resultsBeforeRerank && details.resultsAfterRerank) {
                 displayHtml += '<div style="margin-bottom: 15px;">';
-                displayHtml += '<h4 style="margin: 0 0 10px 0;">注入的原始内容</h4>';
-                displayHtml += '<pre style="white-space: pre-wrap; word-wrap: break-word; background-color: var(--SmartThemeBlurTintColor); padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto;">';
+                displayHtml += '<div style="margin-bottom: 10px; font-weight: bold;">重排前后对比：</div>';
+                
+                // 使用表格显示对比
+                displayHtml += '<div style="display: flex; gap: 20px; margin-bottom: 15px;">';
+                
+                // 重排前
+                displayHtml += '<div style="flex: 1;">';
+                displayHtml += '<div style="margin-bottom: 5px; font-weight: bold; font-size: 0.9em;">重排前（原始分数）</div>';
+                displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; max-height: 400px; overflow-y: auto;">';
+                details.resultsBeforeRerank.forEach((result, index) => {
+                    displayHtml += `<div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid var(--SmartThemeBorderColor);">`;
+                    displayHtml += `<div style="margin-bottom: 3px;">`;
+                    displayHtml += `<span style="font-weight: bold;">#${index + 1}</span>`;
+                    displayHtml += `</div>`;
+                    displayHtml += `<div style="font-size: 0.85em; opacity: 0.9; white-space: pre-wrap;">${this._escapeHtml(result.text)}</div>`;
+                    displayHtml += `</div>`;
+                });
+                displayHtml += '</div>';
+                displayHtml += '</div>';
+                
+                // 重排后
+                displayHtml += '<div style="flex: 1;">';
+                displayHtml += '<div style="margin-bottom: 5px; font-weight: bold; font-size: 0.9em;">重排后（Rerank分数）</div>';
+                displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; max-height: 400px; overflow-y: auto;">';
+                details.resultsAfterRerank.forEach((result, index) => {
+                    displayHtml += `<div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid var(--SmartThemeBorderColor);">`;
+                    displayHtml += `<div style="margin-bottom: 3px;">`;
+                    displayHtml += `<span style="font-weight: bold;">#${index + 1}</span>`;
+                    displayHtml += `</div>`;
+                    displayHtml += `<div style="font-size: 0.85em; opacity: 0.9; white-space: pre-wrap;">${this._escapeHtml(result.text)}</div>`;
+                    displayHtml += `</div>`;
+                });
+                displayHtml += '</div>';
+                displayHtml += '</div>';
+                
+                displayHtml += '</div>';
+                displayHtml += '</div>';
+            } else if (!details || !details.rerankApplied) {
+                // 如果没有重排，只显示原始结果
+                displayHtml += '<div style="margin-bottom: 10px;">';
+                displayHtml += '<div style="margin-bottom: 5px; font-weight: bold;">查询结果：</div>';
+                displayHtml += '<pre style="white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--SmartThemeBorderColor); padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; margin: 0; text-align: left;">';
                 displayHtml += this._escapeHtml(capturedContent);
                 displayHtml += '</pre>';
                 displayHtml += '</div>';
-                
-                displayHtml += '</div>';
+            }
+            
+            displayHtml += '</div>';
 
-                // 显示弹窗
-                if (this.callGenericPopup && this.POPUP_TYPE) {
-                    await this.callGenericPopup(displayHtml, this.POPUP_TYPE.TEXT, '', {
-                        wide: true,
-                        large: true,
-                        okButton: '关闭',
-                        allowHorizontalScrolling: true,
-                        allowVerticalScrolling: true
-                    });
-                } else {
-                    // 降级到 alert
-                    alert('注入内容预览:\n\n' + capturedContent);
-                }
-                
-            } catch (error) {
-                // 恢复原始函数和设置
-                window.setExtensionPrompt = originalSetExtensionPrompt;
-                this.settings.show_query_notification = originalShowNotification;
-                this.settings.rerank_success_notify = originalRerankNotify;
-                console.error('预览注入内容时出错:', error);
-                this.toastr.error('预览失败: ' + error.message);
+            // 显示弹窗
+            if (this.callGenericPopup && this.POPUP_TYPE) {
+                await this.callGenericPopup(displayHtml, this.POPUP_TYPE.TEXT, '', {
+                    wide: true,
+                    large: true,
+                    okButton: '关闭',
+                    allowHorizontalScrolling: true,
+                    allowVerticalScrolling: true
+                });
+            } else {
+                // 降级到 alert
+                alert('注入内容预览:\n\n' + capturedContent);
             }
             
         } catch (error) {

@@ -85,6 +85,11 @@ const MODULE_NAME = 'vectors-enhanced';
 export const EXTENSION_PROMPT_TAG = '3_vectors';
 export const MEMORY_EXTENSION_TAG = '4_memory';
 
+// 保存最后注入的内容，供预览功能使用
+let lastInjectedContent = null;
+let lastInjectedStats = null;
+let lastQueryDetails = null; // 保存查询的详细信息，包括重排前后的数据
+
 
 // Global ActionButtons instance (initialized in jQuery ready)
 let globalActionButtons = null;
@@ -2241,7 +2246,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       try {
         const results = await storageAdapter.queryCollection(collectionId, queryText, perTaskLimit, settings.score_threshold);
         console.debug(`Vectors: Query results for task ${task.name}:`, results);
-        console.debug(`Vectors: Result structure - has items: ${!!results?.items}, has hashes: ${!!results?.hashes}`);
+        console.debug(`Vectors: Result structure - has items: ${!!results?.items}, has hashes: ${!!results?.hashes}, has distances: ${!!results?.distances}, has similarities: ${!!results?.similarities}`);
 
         // 根据API返回的结构处理结果
         if (results) {
@@ -2256,12 +2261,31 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                 hasScore: !!results.metadata[0].score,
                 keys: Object.keys(results.metadata[0])
               });
+              // 打印完整的第一个结果以查看分数在哪里
+              console.debug(`Vectors: First result full data:`, results.metadata[0]);
+              if (results.distances) {
+                console.debug(`Vectors: Distances array:`, results.distances.slice(0, 3));
+              }
+              if (results.similarities) {
+                console.debug(`Vectors: Similarities array:`, results.similarities.slice(0, 3));
+              }
             }
             results.metadata.forEach((meta, index) => {
               if (meta.text) {
+                // 尝试从多个可能的位置获取分数
+                let score = 0;
+                if (meta.score !== undefined) {
+                  score = meta.score;
+                } else if (results.distances && results.distances[index] !== undefined) {
+                  // 距离越小越相似，转换为相似度分数
+                  score = 1 / (1 + results.distances[index]);
+                } else if (results.similarities && results.similarities[index] !== undefined) {
+                  score = results.similarities[index];
+                }
+                
                 allResults.push({
                   text: meta.text,
-                  score: meta.score || 0,
+                  score: score,
                   metadata: {
                     ...meta,
                     taskName: task.name,
@@ -2276,11 +2300,22 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           // 兼容旧版本：如果API返回了items数组（包含text）
           else if (results.items && Array.isArray(results.items)) {
             console.debug(`Vectors: Using items format for ${collectionId}`);
-            results.items.forEach(item => {
+            results.items.forEach((item, index) => {
               if (item.text) {
+                // 尝试从多个可能的位置获取分数
+                let score = 0;
+                if (item.score !== undefined) {
+                  score = item.score;
+                } else if (results.distances && results.distances[index] !== undefined) {
+                  // 距离越小越相似，转换为相似度分数
+                  score = 1 / (1 + results.distances[index]);
+                } else if (results.similarities && results.similarities[index] !== undefined) {
+                  score = results.similarities[index];
+                }
+                
                 allResults.push({
                   text: item.text,
-                  score: item.score || 0,
+                  score: score,
                   metadata: {
                     ...item.metadata,
                     taskName: task.name,
@@ -2326,11 +2361,20 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
     // 保存原始查询结果数量（用于通知显示）
     const originalQueryCount = allResults.length;
+    
+    // 保存重排前的结果（深拷贝）
+    const resultsBeforeRerank = allResults.map(r => ({
+        text: r.text,
+        score: r.score,
+        metadata: { ...r.metadata }
+    }));
 
     // 在 rerank 之前不要限制结果数量，让 rerank 有更多候选项
     // Use RerankService if available
+    let rerankApplied = false;
     if (rerankService && rerankService.isEnabled() && allResults.length > 0) {
         allResults = await rerankService.rerankResults(queryText, allResults);
+        rerankApplied = true;
     } else {
         // If reranking is not enabled, sort by original score
         allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -2381,19 +2425,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       // Format results with tags
       const formattedParts = [];
 
-      // Process chat messages
-      if (groupedResults.chat && groupedResults.chat.length > 0) {
-        const chatTexts = groupedResults.chat
-          .sort((a, b) => (a.metadata?.index || 0) - (b.metadata?.index || 0))
-          .map(m => m.text)
-          .filter(onlyUnique)
-          .join('\n\n');
-
-        const tag = settings.content_tags?.chat || 'past_chat';
-        formattedParts.push(`<${tag}>\n${chatTexts}\n</${tag}>`);
-      }
-
-      // Process world info
+      // Process world info first
       if (groupedResults.world_info && groupedResults.world_info.length > 0) {
         const wiTexts = groupedResults.world_info
           .map(m => m.text)
@@ -2404,7 +2436,7 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         formattedParts.push(`<${tag}>\n${wiTexts}\n</${tag}>`);
       }
 
-      // Process files
+      // Process files second
       if (groupedResults.file && groupedResults.file.length > 0) {
         const fileTexts = groupedResults.file
           .map(m => m.text)
@@ -2413,6 +2445,18 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 
         const tag = settings.content_tags?.file || 'databank';
         formattedParts.push(`<${tag}>\n${fileTexts}\n</${tag}>`);
+      }
+
+      // Process chat messages last
+      if (groupedResults.chat && groupedResults.chat.length > 0) {
+        const chatTexts = groupedResults.chat
+          .sort((a, b) => (a.metadata?.index || 0) - (b.metadata?.index || 0))
+          .map(m => m.text)
+          .filter(onlyUnique)
+          .join('\n\n');
+
+        const tag = settings.content_tags?.chat || 'past_chat';
+        formattedParts.push(`<${tag}>\n${chatTexts}\n</${tag}>`);
       }
 
       // Process unknown type (fallback for items without type metadata)
@@ -2438,6 +2482,29 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         console.debug(`Vectors: Final injected text length: ${insertedText.length}`);
         totalChars = insertedText.length;
 
+        // 保存注入的内容和统计信息，供预览功能使用
+        lastInjectedContent = insertedText;
+        lastInjectedStats = {
+          totalChars: totalChars,
+          chatCount: groupedResults.chat?.length || 0,
+          fileCount: groupedResults.file?.length || 0,
+          worldInfoCount: groupedResults.world_info?.length || 0,
+          unknownCount: groupedResults.unknown?.length || 0,
+          queryInstructionEnabled: settings.query_instruction_enabled,
+          rerankEnabled: rerankService && rerankService.isEnabled(),
+          deduplicationEnabled: settings.rerank_deduplication_enabled,
+          originalQueryCount: originalQueryCount,
+          finalCount: topResults.length
+        };
+        
+        // 保存详细的查询信息
+        lastQueryDetails = {
+          queryText: queryText,
+          resultsBeforeRerank: resultsBeforeRerank, // 保存所有结果，不限制数量
+          resultsAfterRerank: topResults,
+          rerankApplied: rerankApplied
+        };
+
         setExtensionPrompt(
           EXTENSION_PROMPT_TAG,
           insertedText,
@@ -2450,6 +2517,11 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         console.debug('Vectors: No relevant texts found after formatting');
         // 清空之前可能设置的内容
         setExtensionPrompt(EXTENSION_PROMPT_TAG, '', settings.position, settings.depth, settings.include_wi, settings.depth_role);
+        
+        // 也清空保存的内容
+        lastInjectedContent = null;
+        lastInjectedStats = null;
+        lastQueryDetails = null;
       }
     }
 
@@ -2536,6 +2608,20 @@ async function rearrangeChat(chat, contextSize, abort, type) {
 }
 
 window['vectors_rearrangeChat'] = rearrangeChat;
+
+/**
+ * Get the last injected content for preview
+ * @returns {Object} Last injected content and stats
+ */
+function getLastInjectedContent() {
+  return {
+    content: lastInjectedContent,
+    stats: lastInjectedStats,
+    details: lastQueryDetails
+  };
+}
+
+window['vectors_getLastInjectedContent'] = getLastInjectedContent;
 
 
 

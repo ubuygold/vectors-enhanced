@@ -128,6 +128,24 @@ export class StorageAdapter {
 
             const result = await response.json();
             logger.log(`Query returned ${result.hashes?.length || result.items?.length || 0} results`);
+            
+            // 添加调试日志查看返回的完整结构
+            if (result && (result.hashes?.length > 0 || result.items?.length > 0)) {
+                logger.log('Query result structure:', {
+                    hasHashes: !!result.hashes,
+                    hasMetadata: !!result.metadata,
+                    hasItems: !!result.items,
+                    hasDistances: !!result.distances,
+                    hasSimilarities: !!result.similarities,
+                    keys: Object.keys(result)
+                });
+                
+                // 如果有距离数组，显示前几个值
+                if (result.distances && result.distances.length > 0) {
+                    logger.log('First 3 distances:', result.distances.slice(0, 3));
+                }
+            }
+            
             return result;
         } catch (error) {
             logger.error(`Error querying collection: ${error.message}`);

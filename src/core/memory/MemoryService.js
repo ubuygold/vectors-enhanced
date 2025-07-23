@@ -575,7 +575,7 @@ export class MemoryService {
                     'Authorization': `Bearer ${apiKey}`
                 },
                 body: JSON.stringify({
-                    model: model || 'gemini-2.0-flash',
+                    model: model || 'gemini-2.5-flash',
                     messages: messages,
                     temperature: 1,
                     max_tokens: 10000
