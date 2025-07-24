@@ -42,4 +42,10 @@ CLAUDE.md
 # Documentation
 docs/
 
+# Backup and temporary folders
+vectors-enhanced-*change/
+*-backup/
+*-old/
+backup-*/
+
 

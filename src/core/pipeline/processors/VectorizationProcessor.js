@@ -265,6 +265,17 @@ export class VectorizationProcessor extends ITextProcessor {
             return this.splitByHistoryStoryTags(content, metadata, chunkSize, overlapPercent);
         }
         
+        // Apply type-specific chunking strategies
+        if (metadata.type === 'chat' && !Array.isArray(content)) {
+            logger.log('Using chat-specific chunking strategy');
+            return this.chunkChatMessage(content, metadata, chunkSize, overlapPercent, forceChunkDelimiter);
+        }
+        
+        if (metadata.type === 'world_info' && !Array.isArray(content)) {
+            logger.log('Using world_info-specific chunking strategy');
+            return this.chunkWorldInfo(content, metadata, chunkSize, overlapPercent, forceChunkDelimiter);
+        }
+        
         let chunks = [];
         
         // Handle different content types
@@ -343,35 +354,44 @@ export class VectorizationProcessor extends ITextProcessor {
                     logger.warn(`[WARNING] Summary vectorization item ${i} does not contain history_story tags!`);
                 }
                 
-                // For large items, split into chunks; for small items, keep as single chunk
-                if (itemText.length > chunkSize) {
-                    const itemChunks = this.splitTextIntoChunks(itemText, chunkSize, overlapPercent, forceChunkDelimiter);
-                    itemChunks.forEach((chunkText, chunkIndex) => {
+                // Apply type-specific chunking for array items
+                if (itemMetadata.type === 'chat') {
+                    const chatChunks = this.chunkChatMessage(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
+                    chunks.push(...chatChunks);
+                } else if (itemMetadata.type === 'world_info') {
+                    const wiChunks = this.chunkWorldInfo(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
+                    chunks.push(...wiChunks);
+                } else {
+                    // Default chunking for other types (like files)
+                    if (itemText.length > chunkSize) {
+                        const itemChunks = this.splitTextIntoChunks(itemText, chunkSize, overlapPercent, forceChunkDelimiter);
+                        itemChunks.forEach((chunkText, chunkIndex) => {
+                            chunks.push({
+                                text: chunkText,
+                                metadata: {
+                                    ...itemMetadata,
+                                    item_index: i,
+                                    item_total: content.length,
+                                    chunk_index: chunkIndex,
+                                    chunk_total: itemChunks.length,
+                                    is_chunked: true
+                                }
+                            });
+                        });
+                    } else {
+                        // Keep small items as single chunks
                         chunks.push({
-                            text: chunkText,
+                            text: itemText,
                             metadata: {
                                 ...itemMetadata,
                                 item_index: i,
                                 item_total: content.length,
-                                chunk_index: chunkIndex,
-                                chunk_total: itemChunks.length,
-                                is_chunked: true
+                                chunk_index: 0,
+                                chunk_total: 1,
+                                is_chunked: false
                             }
                         });
-                    });
-                } else {
-                    // Keep small items as single chunks
-                    chunks.push({
-                        text: itemText,
-                        metadata: {
-                            ...itemMetadata,
-                            item_index: i,
-                            item_total: content.length,
-                            chunk_index: 0,
-                            chunk_total: 1,
-                            is_chunked: false
-                        }
-                    });
+                    }
                 }
             }
             
@@ -475,31 +495,42 @@ export class VectorizationProcessor extends ITextProcessor {
             
             // If this isn't the last chunk, try to break at a sentence or word boundary
             if (end < text.length) {
-                // Look for sentence boundary first (支持中英文标点)
-                const sentenceMarkers = [
-                    '.', '?', '!',  // 英文标点
-                    '。', '？', '！', // 中文标点
-                    '\n'            // 换行符也是自然边界
-                ];
-                
-                let bestEnd = -1;
-                for (const marker of sentenceMarkers) {
-                    const markerIndex = text.lastIndexOf(marker, end);
-                    if (markerIndex > start + chunkSize * 0.7 && markerIndex > bestEnd) {
-                        bestEnd = markerIndex;
-                    }
-                }
-                
-                if (bestEnd > -1) {
-                    // 在标点后移动一位（除了换行符）
-                    end = bestEnd + (text[bestEnd] === '\n' ? 0 : 1);
+                // First priority: Look for double newlines (paragraph boundaries)
+                const doubleNewlineIndex = text.lastIndexOf('\n\n', end);
+                if (doubleNewlineIndex > start + chunkSize * 0.5) {
+                    end = doubleNewlineIndex + 2; // Include the newlines
                 } else {
-                    // Fall back to word boundary (for English text)
-                    const spaceIndex = text.lastIndexOf(' ', end);
-                    if (spaceIndex > start + chunkSize * 0.7) {
-                        end = spaceIndex;
+                    // Second priority: Look for single newline
+                    const newlineIndex = text.lastIndexOf('\n', end);
+                    if (newlineIndex > start + chunkSize * 0.7) {
+                        end = newlineIndex + 1; // Include the newline
+                    } else {
+                        // Third priority: Look for sentence boundaries (支持中英文标点)
+                        const sentenceMarkers = [
+                            '.', '?', '!',  // 英文标点
+                            '。', '？', '！' // 中文标点
+                        ];
+                        
+                        let bestEnd = -1;
+                        for (const marker of sentenceMarkers) {
+                            const markerIndex = text.lastIndexOf(marker, end);
+                            if (markerIndex > start + chunkSize * 0.7 && markerIndex > bestEnd) {
+                                bestEnd = markerIndex;
+                            }
+                        }
+                        
+                        if (bestEnd > -1) {
+                            // 在标点后移动一位
+                            end = bestEnd + 1;
+                        } else {
+                            // Fall back to word boundary (for English text)
+                            const spaceIndex = text.lastIndexOf(' ', end);
+                            if (spaceIndex > start + chunkSize * 0.7) {
+                                end = spaceIndex;
+                            }
+                            // 对于纯中文文本，如果没有找到合适的分割点，就直接按长度切分
+                        }
                     }
-                    // 对于纯中文文本，如果没有找到合适的分割点，就直接按长度切分
                 }
             }
             
@@ -687,6 +718,307 @@ export class VectorizationProcessor extends ITextProcessor {
         });
         
         logger.log(`Split ${matches.length} history_story tags into ${chunks.length} chunks`);
+        return chunks;
+    }
+    
+    /**
+     * Chunk chat messages with floor priority
+     * @param {string} content - Chat message content
+     * @param {Object} metadata - Message metadata including floor index
+     * @param {number} maxChunkSize - Maximum chunk size
+     * @param {number} overlapPercent - Overlap percentage
+     * @param {string} forceChunkDelimiter - Custom delimiter for chunking
+     * @returns {Array} Array of chunks
+     * @private
+     */
+    chunkChatMessage(content, metadata, maxChunkSize, overlapPercent, forceChunkDelimiter) {
+        const chunks = [];
+        const floorIndex = metadata.index !== undefined ? metadata.index : 'unknown';
+        
+        // Priority 1: Keep floor complete if possible
+        if (content.length <= maxChunkSize) {
+            chunks.push({
+                text: `[META:floor=${floorIndex}] ${content}`,
+                metadata: {
+                    ...metadata,
+                    chunk_index: 0,
+                    chunk_total: 1,
+                    is_chunked: false,
+                    chunk_type: 'chat_floor'
+                }
+            });
+            return chunks;
+        }
+        
+        // Priority 2: Try tag-based chunking if contains tags
+        if (content.includes('</') && content.includes('<')) {
+            logger.log(`Chat message at floor ${floorIndex} contains tags, attempting tag-based chunking`);
+            
+            // Try to split by common tag patterns in chat messages
+            const tagPatterns = [
+                /<system>(.*?)<\/system>/gs,
+                /<prompt>(.*?)<\/prompt>/gs,
+                /<response>(.*?)<\/response>/gs,
+                /<thinking>(.*?)<\/thinking>/gs,
+                /<action>(.*?)<\/action>/gs,
+                /<dialogue>(.*?)<\/dialogue>/gs,
+                /<narration>(.*?)<\/narration>/gs,
+                /<ooc>(.*?)<\/ooc>/gs  // Out of character
+            ];
+            
+            let tagChunks = [];
+            let remainingContent = content;
+            
+            for (const pattern of tagPatterns) {
+                const matches = [...content.matchAll(pattern)];
+                if (matches.length > 0) {
+                    matches.forEach((match, tagIndex) => {
+                        const tagContent = match[1].trim();
+                        const tagName = match[0].match(/<(\w+)>/)[1];
+                        
+                        if (tagContent.length <= maxChunkSize) {
+                            tagChunks.push({
+                                text: `[META:floor=${floorIndex},tag=${tagName}] ${tagContent}`,
+                                metadata: {
+                                    ...metadata,
+                                    tag_name: tagName,
+                                    tag_index: tagIndex,
+                                    is_tag_chunk: true
+                                }
+                            });
+                        } else {
+                            // Tag content too large, need to split
+                            const subChunks = this.splitTextIntoChunks(tagContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                            subChunks.forEach((subChunk, subIndex) => {
+                                tagChunks.push({
+                                    text: `[META:floor=${floorIndex},tag=${tagName},chunk=${subIndex + 1}/${subChunks.length}] ${subChunk}`,
+                                    metadata: {
+                                        ...metadata,
+                                        tag_name: tagName,
+                                        tag_index: tagIndex,
+                                        sub_chunk_index: subIndex,
+                                        sub_chunk_total: subChunks.length,
+                                        is_tag_chunk: true
+                                    }
+                                });
+                            });
+                        }
+                        
+                        // Remove matched content from remaining
+                        remainingContent = remainingContent.replace(match[0], '');
+                    });
+                }
+            }
+            
+            // If we found tags and have remaining content, add it as a separate chunk
+            if (tagChunks.length > 0) {
+                remainingContent = remainingContent.trim();
+                if (remainingContent.length > 0) {
+                    if (remainingContent.length <= maxChunkSize) {
+                        tagChunks.push({
+                            text: `[META:floor=${floorIndex},tag=other] ${remainingContent}`,
+                            metadata: {
+                                ...metadata,
+                                tag_name: 'other',
+                                is_tag_chunk: true
+                            }
+                        });
+                    } else {
+                        const remainingChunks = this.splitTextIntoChunks(remainingContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        remainingChunks.forEach((chunk, index) => {
+                            tagChunks.push({
+                                text: `[META:floor=${floorIndex},tag=other,chunk=${index + 1}/${remainingChunks.length}] ${chunk}`,
+                                metadata: {
+                                    ...metadata,
+                                    tag_name: 'other',
+                                    sub_chunk_index: index,
+                                    sub_chunk_total: remainingChunks.length,
+                                    is_tag_chunk: true
+                                }
+                            });
+                        });
+                    }
+                }
+                
+                // Add chunk indexing to all tag chunks
+                tagChunks.forEach((chunk, index) => {
+                    chunk.metadata.chunk_index = index;
+                    chunk.metadata.chunk_total = tagChunks.length;
+                    chunk.metadata.is_chunked = tagChunks.length > 1;
+                    chunk.metadata.chunk_type = 'chat_floor';
+                });
+                
+                logger.log(`Chat message at floor ${floorIndex} split into ${tagChunks.length} tag-based chunks`);
+                return tagChunks;
+            }
+        }
+        
+        // Priority 3: Size-based chunking with intelligent boundaries
+        logger.log(`Chat message at floor ${floorIndex} exceeds ${maxChunkSize} chars, applying size-based chunking`);
+        const sizeChunks = this.splitTextIntoChunks(content, maxChunkSize, overlapPercent, forceChunkDelimiter);
+        
+        sizeChunks.forEach((chunkText, chunkIndex) => {
+            chunks.push({
+                text: `[META:floor=${floorIndex},chunk=${chunkIndex + 1}/${sizeChunks.length}] ${chunkText}`,
+                metadata: {
+                    ...metadata,
+                    chunk_index: chunkIndex,
+                    chunk_total: sizeChunks.length,
+                    is_chunked: true,
+                    chunk_type: 'chat_floor'
+                }
+            });
+        });
+        
+        logger.log(`Chat message at floor ${floorIndex} split into ${chunks.length} chunks`);
+        return chunks;
+    }
+    
+    /**
+     * Chunk world info entries with entry priority
+     * @param {string} content - World info entry content
+     * @param {Object} metadata - Entry metadata including comment
+     * @param {number} maxChunkSize - Maximum chunk size
+     * @param {number} overlapPercent - Overlap percentage
+     * @param {string} forceChunkDelimiter - Custom delimiter for chunking
+     * @returns {Array} Array of chunks
+     * @private
+     */
+    chunkWorldInfo(content, metadata, maxChunkSize, overlapPercent, forceChunkDelimiter) {
+        const chunks = [];
+        const entryIdentifier = metadata.comment || metadata.name || `Entry ${metadata.uid || 'unknown'}`;
+        
+        // Priority 1: Keep entry complete if possible
+        if (content.length <= maxChunkSize) {
+            chunks.push({
+                text: `[META:entry=${entryIdentifier}] ${content}`,
+                metadata: {
+                    ...metadata,
+                    chunk_index: 0,
+                    chunk_total: 1,
+                    is_chunked: false,
+                    chunk_type: 'world_info_entry'
+                }
+            });
+            return chunks;
+        }
+        
+        // Priority 2: Try tag-based chunking if contains tags
+        if (content.includes('</') && content.includes('<')) {
+            logger.log(`World info entry "${entryIdentifier}" contains tags, attempting tag-based chunking`);
+            
+            // Try to split by common tag patterns
+            const tagPatterns = [
+                /<history_story>(.*?)<\/history_story>/gs,
+                /<scenario>(.*?)<\/scenario>/gs,
+                /<character>(.*?)<\/character>/gs,
+                /<world>(.*?)<\/world>/gs
+            ];
+            
+            let tagChunks = [];
+            let remainingContent = content;
+            
+            for (const pattern of tagPatterns) {
+                const matches = [...content.matchAll(pattern)];
+                if (matches.length > 0) {
+                    matches.forEach((match, tagIndex) => {
+                        const tagContent = match[1].trim();
+                        const tagName = match[0].match(/<(\w+)>/)[1];
+                        
+                        if (tagContent.length <= maxChunkSize) {
+                            tagChunks.push({
+                                text: `[META:entry=${entryIdentifier},tag=${tagName}] ${tagContent}`,
+                                metadata: {
+                                    ...metadata,
+                                    tag_name: tagName,
+                                    tag_index: tagIndex,
+                                    is_tag_chunk: true
+                                }
+                            });
+                        } else {
+                            // Tag content too large, need to split
+                            const subChunks = this.splitTextIntoChunks(tagContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                            subChunks.forEach((subChunk, subIndex) => {
+                                tagChunks.push({
+                                    text: `[META:entry=${entryIdentifier},tag=${tagName},chunk=${subIndex + 1}/${subChunks.length}] ${subChunk}`,
+                                    metadata: {
+                                        ...metadata,
+                                        tag_name: tagName,
+                                        tag_index: tagIndex,
+                                        sub_chunk_index: subIndex,
+                                        sub_chunk_total: subChunks.length,
+                                        is_tag_chunk: true
+                                    }
+                                });
+                            });
+                        }
+                        
+                        // Remove matched content from remaining
+                        remainingContent = remainingContent.replace(match[0], '');
+                    });
+                }
+            }
+            
+            // If we found tags and have remaining content, add it as a separate chunk
+            if (tagChunks.length > 0) {
+                remainingContent = remainingContent.trim();
+                if (remainingContent.length > 0) {
+                    if (remainingContent.length <= maxChunkSize) {
+                        tagChunks.push({
+                            text: `[META:entry=${entryIdentifier},tag=other] ${remainingContent}`,
+                            metadata: {
+                                ...metadata,
+                                tag_name: 'other',
+                                is_tag_chunk: true
+                            }
+                        });
+                    } else {
+                        const remainingChunks = this.splitTextIntoChunks(remainingContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        remainingChunks.forEach((chunk, index) => {
+                            tagChunks.push({
+                                text: `[META:entry=${entryIdentifier},tag=other,chunk=${index + 1}/${remainingChunks.length}] ${chunk}`,
+                                metadata: {
+                                    ...metadata,
+                                    tag_name: 'other',
+                                    sub_chunk_index: index,
+                                    sub_chunk_total: remainingChunks.length,
+                                    is_tag_chunk: true
+                                }
+                            });
+                        });
+                    }
+                }
+                
+                // Add chunk indexing to all tag chunks
+                tagChunks.forEach((chunk, index) => {
+                    chunk.metadata.chunk_index = index;
+                    chunk.metadata.chunk_total = tagChunks.length;
+                    chunk.metadata.is_chunked = tagChunks.length > 1;
+                    chunk.metadata.chunk_type = 'world_info_entry';
+                });
+                
+                return tagChunks;
+            }
+        }
+        
+        // Priority 3: Size-based chunking with intelligent boundaries
+        logger.log(`World info entry "${entryIdentifier}" exceeds ${maxChunkSize} chars, applying size-based chunking`);
+        const sizeChunks = this.splitTextIntoChunks(content, maxChunkSize, overlapPercent, forceChunkDelimiter);
+        
+        sizeChunks.forEach((chunkText, chunkIndex) => {
+            chunks.push({
+                text: `[META:entry=${entryIdentifier},chunk=${chunkIndex + 1}/${sizeChunks.length}] ${chunkText}`,
+                metadata: {
+                    ...metadata,
+                    chunk_index: chunkIndex,
+                    chunk_total: sizeChunks.length,
+                    is_chunked: true,
+                    chunk_type: 'world_info_entry'
+                }
+            });
+        });
+        
+        logger.log(`World info entry "${entryIdentifier}" split into ${chunks.length} chunks`);
         return chunks;
     }
 }

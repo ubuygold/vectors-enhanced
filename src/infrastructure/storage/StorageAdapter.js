@@ -146,6 +146,22 @@ export class StorageAdapter {
                 }
             }
             
+            // Decode metadata from text field if present
+            if (result.metadata && Array.isArray(result.metadata)) {
+                result.metadata = result.metadata.map(item => {
+                    if (item.text) {
+                        const decoded = this.decodeMetadataFromText(item.text);
+                        return {
+                            ...item,
+                            text: decoded.text,
+                            decodedType: decoded.metadata.type,
+                            decodedOriginalIndex: decoded.metadata.originalIndex
+                        };
+                    }
+                    return item;
+                });
+            }
+            
             return result;
         } catch (error) {
             logger.error(`Error querying collection: ${error.message}`);
@@ -193,10 +209,16 @@ export class StorageAdapter {
                     if (hashes.includes(metadata.hash)) {
                         // 只添加有实际文本内容的项目
                         if (metadata.text && metadata.text.trim()) {
+                            // Decode metadata from text
+                            const decoded = this.decodeMetadataFromText(metadata.text);
                             texts.push({
                                 hash: metadata.hash,
-                                text: metadata.text,
-                                metadata: metadata
+                                text: decoded.text,
+                                metadata: {
+                                    ...metadata,
+                                    decodedType: decoded.metadata.type,
+                                    decodedOriginalIndex: decoded.metadata.originalIndex
+                                }
                             });
                         }
                     }
@@ -279,5 +301,41 @@ export class StorageAdapter {
                 count: 0
             };
         }
+    }
+
+    /**
+     * Decode metadata from encoded text
+     * @param {string} encodedText - Text with metadata prefix
+     * @returns {{text: string, metadata: {type?: string, originalIndex?: number, floor?: number, entry?: string, tag?: string, chunk?: string}}}
+     * @private
+     */
+    decodeMetadataFromText(encodedText) {
+        if (!encodedText) {
+            return { text: encodedText, metadata: {} };
+        }
+        
+        const metaMatch = encodedText.match(/^\[META:([^\]]+)\]/);
+        if (!metaMatch) {
+            return { text: encodedText, metadata: {} };
+        }
+        
+        const metaString = metaMatch[1];
+        const text = encodedText.substring(metaMatch[0].length);
+        const metadata = {};
+        
+        // Parse metadata key-value pairs
+        const pairs = metaString.split(',');
+        for (const pair of pairs) {
+            const [key, value] = pair.split('=');
+            if (key && value) {
+                if (key === 'originalIndex' || key === 'floor') {
+                    metadata[key] = parseInt(value, 10);
+                } else {
+                    metadata[key] = value;
+                }
+            }
+        }
+        
+        return { text, metadata };
     }
 }

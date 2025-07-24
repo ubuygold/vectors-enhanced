@@ -1376,19 +1376,32 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
 
         // Convert pipeline result to chunks format
         if (dispatchResult.success && dispatchResult.vectors) {
-          const chunks = dispatchResult.vectors.map((vector, idx) => ({
-            hash: getHashValue(vector.text || vector.content),
-            text: vector.text || vector.content,
-            index: allProcessedChunks.length + idx,
-            metadata: {
-              ...vector.metadata,
-              ...contentBlock.metadata,
-              type: contentBlock.type,
-              chunk_index: idx,
-              chunk_total: dispatchResult.vectors.length,
-              pipeline_processed: true
-            }
-          }));
+          const chunks = dispatchResult.vectors.map((vector, idx) => {
+            // Get the original index from metadata
+            const originalIndex = vector.metadata?.originalIndex ?? 
+                                contentBlock.metadata?.originalIndex ?? 
+                                contentBlock.metadata?.index ?? 
+                                idx;
+            
+            // Encode metadata into text field to preserve it through SillyTavern's storage
+            const metadataPrefix = `[META:type=${contentBlock.type},originalIndex=${originalIndex}]`;
+            const rawText = vector.text || vector.content;
+            const encodedText = `${metadataPrefix}${rawText}`;
+            
+            return {
+              hash: getHashValue(encodedText),
+              text: encodedText,
+              index: allProcessedChunks.length + idx,
+              metadata: {
+                ...vector.metadata,
+                ...contentBlock.metadata,
+                type: contentBlock.type,
+                chunk_index: idx,
+                chunk_total: dispatchResult.vectors.length,
+                pipeline_processed: true
+              }
+            };
+          });
 
           allProcessedChunks.push(...chunks);
         }
@@ -2099,6 +2112,41 @@ function getHashValue(str) {
 }
 
 /**
+ * Decode metadata from encoded text
+ * @param {string} encodedText - Text with metadata prefix
+ * @returns {{text: string, metadata: {type?: string, originalIndex?: number, floor?: number, entry?: string, tag?: string, chunk?: string}}}
+ */
+function decodeMetadataFromText(encodedText) {
+  if (!encodedText) {
+    return { text: encodedText, metadata: {} };
+  }
+  
+  const metaMatch = encodedText.match(/^\[META:([^\]]+)\]/);
+  if (!metaMatch) {
+    return { text: encodedText, metadata: {} };
+  }
+  
+  const metaString = metaMatch[1];
+  const text = encodedText.substring(metaMatch[0].length);
+  const metadata = {};
+  
+  // Parse metadata key-value pairs
+  const pairs = metaString.split(',');
+  for (const pair of pairs) {
+    const [key, value] = pair.split('=');
+    if (key && value) {
+      if (key === 'originalIndex' || key === 'floor') {
+        metadata[key] = parseInt(value, 10);
+      } else {
+        metadata[key] = value;
+      }
+    }
+  }
+  
+  return { text, metadata };
+}
+
+/**
  * Synchronizes chat vectors
  * @param {number} batchSize Batch size for processing
  * @returns {Promise<number>} Number of remaining items
@@ -2279,6 +2327,9 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                     ...meta,
                     taskName: task.name,
                     taskId: task.taskId,
+                    // Include decoded metadata if available
+                    type: meta.decodedType || meta.type,
+                    originalIndex: meta.decodedOriginalIndex !== undefined ? meta.decodedOriginalIndex : meta.originalIndex
                   },
                 });
               } else {
@@ -2309,6 +2360,9 @@ async function rearrangeChat(chat, contextSize, abort, type) {
                     ...item.metadata,
                     taskName: task.name,
                     taskId: task.taskId,
+                    // Include decoded metadata if available
+                    type: item.metadata?.decodedType || item.metadata?.type,
+                    originalIndex: item.metadata?.decodedOriginalIndex !== undefined ? item.metadata?.decodedOriginalIndex : item.metadata?.originalIndex
                   },
                 });
               }
