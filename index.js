@@ -536,12 +536,22 @@ async function getRawContentForScanning() {
   if (selectedContent.files.enabled) {
     const fileMap = getAllAvailableFiles();
     const allFiles = Array.from(fileMap.values());
+    let fileIndex = 0;  // 为文件添加索引
     for (const file of allFiles) {
       if (!selectedContent.files.selected.includes(file.url)) continue;
       try {
         const text = await getFileAttachment(file.url);
         if (text && text.trim()) {
-          items.push({ type: 'file', text: text, metadata: { name: file.name }, selected: true });
+          items.push({ 
+            type: 'file', 
+            text: text, 
+            metadata: { 
+              name: file.name,
+              originalIndex: fileIndex  // 添加原始索引
+            }, 
+            selected: true 
+          });
+          fileIndex++;  // 递增文件索引
         }
       } catch (error) {
         console.error(`Vectors: Error processing file for scanning ${file.name}:`, error);
@@ -612,6 +622,7 @@ async function getVectorizableContent(contentSettings = null) {
     console.debug(`Vectors: Selected files in settings: ${selectedContent.files.selected.length}`, selectedContent.files.selected);
 
     let processedFileCount = 0;
+    let fileIndex = 0;  // 为文件添加索引
     for (const file of allFiles) {
       if (!selectedContent.files.selected.includes(file.url)) continue;
 
@@ -625,11 +636,13 @@ async function getVectorizableContent(contentSettings = null) {
               name: file.name,
               url: file.url,
               size: file.size,
+              originalIndex: fileIndex,  // 添加原始索引
             },
             selected: true,
           });
           processedFileCount++;
-          console.debug(`Vectors: Successfully processed file: ${file.name}`);
+          fileIndex++;  // 递增文件索引
+          console.debug(`Vectors: Successfully processed file: ${file.name} with index ${fileIndex - 1}`);
         } else {
           console.warn(`Vectors: File ${file.name} is empty or failed to read`);
         }
@@ -1377,15 +1390,29 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         // Convert pipeline result to chunks format
         if (dispatchResult.success && dispatchResult.vectors) {
           const chunks = dispatchResult.vectors.map((vector, idx) => {
-            // Get the original index from metadata
-            const originalIndex = vector.metadata?.originalIndex ?? 
-                                contentBlock.metadata?.originalIndex ?? 
-                                contentBlock.metadata?.index ?? 
-                                idx;
-            
-            // Encode metadata into text field to preserve it through SillyTavern's storage
-            const metadataPrefix = `[META:type=${contentBlock.type},originalIndex=${originalIndex}]`;
             const rawText = vector.text || vector.content;
+            
+            let originalIndex;
+            
+            // Special handling for file type - extract originalIndex from the content
+            if (contentBlock.type === 'file' && rawText.includes('originalIndex=')) {
+              // Extract originalIndex from file META tag
+              const match = rawText.match(/originalIndex=(\d+)/);
+              if (match) {
+                originalIndex = parseInt(match[1], 10);
+              } else {
+                // Fallback if parsing fails
+                originalIndex = idx;
+              }
+            } else {
+              // For other types (chat, world_info), use metadata
+              originalIndex = vector.metadata?.originalIndex ?? 
+                            contentBlock.metadata?.originalIndex ?? 
+                            contentBlock.metadata?.index ?? 
+                            idx;
+            }
+            
+            const metadataPrefix = `[META:type=${contentBlock.type},originalIndex=${originalIndex}]`;
             const encodedText = `${metadataPrefix}${rawText}`;
             
             return {
@@ -2465,6 +2492,23 @@ async function rearrangeChat(chat, contextSize, abort, type) {
         Object.keys(groupedResults).map(k => `${k}: ${groupedResults[k].length}`),
       );
 
+      // Sort each group by originalIndex (if available)
+      Object.keys(groupedResults).forEach(type => {
+        groupedResults[type].sort((a, b) => {
+          // First try to decode originalIndex from text
+          const aDecoded = decodeMetadataFromText(a.text);
+          const bDecoded = decodeMetadataFromText(b.text);
+          
+          // Get originalIndex from decoded metadata or fallback to metadata.index
+          const aIndex = aDecoded.metadata.originalIndex ?? a.metadata?.originalIndex ?? a.metadata?.index ?? 0;
+          const bIndex = bDecoded.metadata.originalIndex ?? b.metadata?.originalIndex ?? b.metadata?.index ?? 0;
+          
+          return aIndex - bIndex;
+        });
+        
+        console.debug(`Vectors: Sorted ${type} results by originalIndex`);
+      });
+
       // Format results with tags
       const formattedParts = [];
 
@@ -2493,7 +2537,6 @@ async function rearrangeChat(chat, contextSize, abort, type) {
       // Process chat messages last
       if (groupedResults.chat && groupedResults.chat.length > 0) {
         const chatTexts = groupedResults.chat
-          .sort((a, b) => (a.metadata?.index || 0) - (b.metadata?.index || 0))
           .map(m => m.text)
           .filter(onlyUnique)
           .join('\n\n');

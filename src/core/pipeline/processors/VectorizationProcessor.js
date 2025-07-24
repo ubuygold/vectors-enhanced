@@ -253,8 +253,21 @@ export class VectorizationProcessor extends ITextProcessor {
             taskType: metadata.taskType,
             source: metadata.source,
             type: metadata.type,
+            extractorType: metadata.extractorType,
+            itemCount: metadata.itemCount,
+            originalIndex: metadata.originalIndex,
             allKeys: Object.keys(metadata)
         });
+        
+        // Also log content structure if it's an array
+        if (Array.isArray(content) && content.length > 0) {
+            logger.log('First item in content array:', {
+                type: content[0].type,
+                hasMetadata: !!content[0].metadata,
+                metadataKeys: content[0].metadata ? Object.keys(content[0].metadata) : [],
+                originalIndex: content[0].metadata?.originalIndex
+            });
+        }
         
         // Check if this is summary vectorization mode
         if (metadata.taskType === 'summary_vectorization' && 
@@ -309,12 +322,22 @@ export class VectorizationProcessor extends ITextProcessor {
                     // Preserve original item metadata but don't override critical fields
                     if (item.metadata) {
                         logger.log(`Array item ${i} has its own metadata, merging...`);
+                        logger.log(`Item metadata before merge:`, {
+                            originalIndex: item.metadata.originalIndex,
+                            index: item.metadata.index,
+                            type: item.metadata.type
+                        });
                         // Keep taskType from parent metadata if it exists
                         const preservedTaskType = itemMetadata.taskType;
                         itemMetadata = { ...itemMetadata, ...item.metadata };
                         if (preservedTaskType) {
                             itemMetadata.taskType = preservedTaskType;
                         }
+                        logger.log(`Item metadata after merge:`, {
+                            originalIndex: itemMetadata.originalIndex,
+                            index: itemMetadata.index,
+                            type: itemMetadata.type
+                        });
                     }
                     if (item.id) itemMetadata.originalId = item.id;
                     if (item.type) itemMetadata.originalType = item.type;
@@ -368,6 +391,12 @@ export class VectorizationProcessor extends ITextProcessor {
                     chunks.push(...wiChunks);
                 } else if (itemMetadata.type === 'file') {
                     // Use chapter-aware chunking for files (which might be novels)
+                    logger.log(`Processing file with metadata:`, {
+                        name: itemMetadata.name,
+                        originalIndex: itemMetadata.originalIndex,
+                        type: itemMetadata.type,
+                        allKeys: Object.keys(itemMetadata)
+                    });
                     const fileChunks = this.chunkFileContent(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
                     chunks.push(...fileChunks);
                 } else {
@@ -557,7 +586,32 @@ export class VectorizationProcessor extends ITextProcessor {
             }
         }
         
-        return chunks.filter(chunk => chunk.length > 0);
+        // 过滤掉空块
+        let filteredChunks = chunks.filter(chunk => chunk.length > 0);
+        
+        // 处理过小的块 - 合并最后一个块如果它太小
+        const minChunkSize = Math.min(50, chunkSize * 0.1); // 最小块大小为50字符或块大小的10%
+        if (filteredChunks.length > 1) {
+            const lastChunk = filteredChunks[filteredChunks.length - 1];
+            if (lastChunk.length < minChunkSize) {
+                filteredChunks.pop(); // 移除最后一个块
+                const secondLastChunk = filteredChunks.pop(); // 获取倒数第二个块
+                
+                // 合并最后两个块
+                const mergedChunk = secondLastChunk + '\n\n' + lastChunk;
+                
+                // 如果合并后不超过最大大小的1.2倍，就合并
+                if (mergedChunk.length <= chunkSize * 1.2) {
+                    filteredChunks.push(mergedChunk);
+                } else {
+                    // 否则还是保持分开
+                    filteredChunks.push(secondLastChunk);
+                    filteredChunks.push(lastChunk);
+                }
+            }
+        }
+        
+        return filteredChunks;
     }
     
     /**
@@ -1045,44 +1099,110 @@ export class VectorizationProcessor extends ITextProcessor {
     chunkFileContent(content, metadata, maxChunkSize, overlapPercent, forceChunkDelimiter) {
         const chunks = [];
         const fileName = metadata.name || metadata.filename || 'Unknown File';
+        let globalChunkIndex = 0;  // 添加全局块索引计数器
         
         // Enhanced chapter detection regex
-        const chapterRegex = /^[\s\u3000]*(?:(?:Chapter|chapter|CHAPTER|第|Chapter\s+|第\s*)?([一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟萬]+|\d+|[IVXivx]+)\s*(?:章|节|節|回|話|话|章節|\.)?(?:\s*[:：\-—]\s*|\s+))([^\n\r]{0,100})/gm;
+        // Pattern 1: Standard numbered chapters (第1章, Chapter 1, etc.)
+        // Match patterns like: 第1章, 第一章, Chapter 1, etc. but NOT 第一卷
+        const numberedChapterRegex = /^[\s\u3000]*(?:第\s*([一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟萬]+|\d+)\s*(章|节|節|回|話|话|章節)|(?:Chapter|chapter|CHAPTER)\s*([一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟萬]+|\d+|[IVXivx]+)\s*\.?)(?:\s*[:：\-—]\s*|\s+)([^\n\r]{0,100})/gm;
         
-        // Detect chapters
-        const chapters = [];
+        // Pattern 2: Special chapters (序章, 前言, 后记, etc.)
+        const specialChapterRegex = /^[\s\u3000]*(序章|序言|序|前言|引言|楔子|尾声|后记|後記|终章|終章|番外|外传|外傳|Prologue|Epilogue|Preface|Introduction|Afterword|Extra|Side Story)(?:\s*[:：\-—]\s*|\s+)?([^\n\r]{0,100})?/gim;
+        
+        // Detect all chapters (both numbered and special)
+        const allMatches = [];
+        
+        // Find numbered chapters
         let match;
+        while ((match = numberedChapterRegex.exec(content)) !== null) {
+            // Extract chapter number and title based on which pattern matched
+            let chapterNumber, chapterTitle;
+            if (match[1]) {
+                // Chinese pattern: 第X章
+                chapterNumber = match[1];
+                chapterTitle = match[4] ? match[4].trim() : '';
+            } else if (match[3]) {
+                // English pattern: Chapter X
+                chapterNumber = match[3];
+                chapterTitle = match[4] ? match[4].trim() : '';
+            }
+            
+            allMatches.push({
+                index: match.index,
+                fullMatch: match[0],
+                type: 'numbered',
+                number: chapterNumber,
+                title: chapterTitle
+            });
+        }
+        
+        // Find special chapters
+        while ((match = specialChapterRegex.exec(content)) !== null) {
+            allMatches.push({
+                index: match.index,
+                fullMatch: match[0],
+                type: 'special',
+                specialType: match[1],
+                title: match[2] ? match[2].trim() : match[1]
+            });
+        }
+        
+        // Sort all matches by position
+        allMatches.sort((a, b) => a.index - b.index);
+        
+        // Convert to chapters array
+        const chapters = [];
         let lastIndex = 0;
         
-        while ((match = chapterRegex.exec(content)) !== null) {
+        allMatches.forEach((match, idx) => {
             if (match.index > lastIndex) {
-                // Add any content before this chapter as a preamble/previous chapter continuation
+                // Update previous chapter's end index
                 if (chapters.length > 0) {
                     chapters[chapters.length - 1].endIndex = match.index;
                 }
             }
             
-            const chapterNumber = match[1] || '';
-            const chapterTitle = match[2] ? match[2].trim() : '';
-            
-            chapters.push({
+            const chapter = {
                 startIndex: match.index,
-                endIndex: content.length, // Will be updated by next chapter
-                number: chapterNumber,
-                title: chapterTitle,
-                fullMatch: match[0]
-            });
+                endIndex: content.length, // Will be updated by next match
+                fullMatch: match.fullMatch,
+                type: match.type
+            };
             
+            if (match.type === 'numbered') {
+                chapter.number = match.number;
+                chapter.title = match.title;
+            } else {
+                chapter.specialType = match.specialType;
+                chapter.number = match.specialType; // Use special type as "number" for consistency
+                chapter.title = match.title;
+            }
+            
+            chapters.push(chapter);
             lastIndex = match.index;
-        }
+        });
         
         // If chapters were found, use chapter-based chunking
         if (chapters.length > 0) {
             logger.log(`File "${fileName}" contains ${chapters.length} chapters, using chapter-aware chunking`);
             
+            // Check if there's a short preamble that wasn't chunked separately
+            let shortPreamble = '';
+            if (chapters.length > 0 && chapters[0].startIndex > 0) {
+                const preambleCheck = content.substring(0, chapters[0].startIndex).trim();
+                if (preambleCheck && preambleCheck.length <= 50) {
+                    shortPreamble = preambleCheck + '\n\n';
+                }
+            }
+            
             // Process each chapter
             chapters.forEach((chapter, chapterIndex) => {
-                const chapterContent = content.substring(chapter.startIndex, chapter.endIndex).trim();
+                let chapterContent = content.substring(chapter.startIndex, chapter.endIndex).trim();
+                
+                // For the first chapter, prepend any short preamble
+                if (chapterIndex === 0 && shortPreamble) {
+                    chapterContent = shortPreamble + chapterContent;
+                }
                 const chapterIdentifier = chapter.number ? 
                     (chapter.title ? `第${chapter.number}章 ${chapter.title}` : `第${chapter.number}章`) : 
                     (chapter.title || `Chapter ${chapterIndex + 1}`);
@@ -1090,7 +1210,7 @@ export class VectorizationProcessor extends ITextProcessor {
                 // If chapter fits in one chunk, keep it intact
                 if (chapterContent.length <= maxChunkSize) {
                     chunks.push({
-                        text: `[META:file=${fileName},chapter=${chapter.number},chapterName=${chapter.title || ''},originalIndex=${metadata.originalIndex || 0}] ${chapterContent}`,
+                        text: `[META:file=${fileName},chapter=${chapter.number},chapterName=${chapter.title || ''},originalIndex=${globalChunkIndex++}] ${chapterContent}`,
                         metadata: {
                             ...metadata,
                             chapter_number: chapter.number,
@@ -1172,7 +1292,7 @@ export class VectorizationProcessor extends ITextProcessor {
                         const chunkInfo = `,chunk=${subIndex + 1}/${subChunks.length}`;
                         
                         chunks.push({
-                            text: `[META:file=${fileName},chapter=${chapter.number},chapterName=${chapter.title || ''}${metaTag}${chunkInfo},originalIndex=${metadata.originalIndex || 0}] ${subChunk.text}`,
+                            text: `[META:file=${fileName},chapter=${chapter.number},chapterName=${chapter.title || ''}${metaTag}${chunkInfo},originalIndex=${globalChunkIndex++}] ${subChunk.text}`,
                             metadata: {
                                 ...metadata,
                                 chapter_number: chapter.number,
@@ -1197,14 +1317,23 @@ export class VectorizationProcessor extends ITextProcessor {
             // Handle any content before the first chapter
             if (chapters.length > 0 && chapters[0].startIndex > 0) {
                 const preamble = content.substring(0, chapters[0].startIndex).trim();
-                if (preamble) {
+                // Only create preamble chunk if it's substantial content (more than 50 characters)
+                if (preamble && preamble.length > 50) {
+                    // Check if the first chapter is already a special chapter like 序章 or 前言
+                    const firstChapterIsSpecial = chapters[0].type === 'special' && 
+                        ['序章', '序言', '序', '前言', '引言', '楔子', 'Prologue', 'Preface', 'Introduction'].includes(chapters[0].specialType);
+                    
+                    // If first chapter is already a preamble-type chapter, treat this content as "未标记内容"
+                    const preambleTitle = firstChapterIsSpecial ? '未标记内容' : '前言';
+                    const preambleNumber = firstChapterIsSpecial ? 'unmarked' : '0';
+                    
                     if (preamble.length <= maxChunkSize) {
                         chunks.unshift({
-                            text: `[META:file=${fileName},chapter=0,chapterName=前言,originalIndex=${metadata.originalIndex || 0}] ${preamble}`,
+                            text: `[META:file=${fileName},chapter=${preambleNumber},chapterName=${preambleTitle},originalIndex=${globalChunkIndex++}] ${preamble}`,
                             metadata: {
                                 ...metadata,
-                                chapter_number: '0',
-                                chapter_title: '前言',
+                                chapter_number: preambleNumber,
+                                chapter_title: preambleTitle,
                                 chapter_index: -1,
                                 chapter_total: chapters.length,
                                 chunk_index: 0,
@@ -1217,17 +1346,66 @@ export class VectorizationProcessor extends ITextProcessor {
                         const preambleChunks = this.splitTextIntoChunks(preamble, maxChunkSize, overlapPercent, forceChunkDelimiter);
                         preambleChunks.forEach((chunk, idx) => {
                             chunks.unshift({
-                                text: `[META:file=${fileName},chapter=0,chapterName=前言,chunk=${idx + 1}/${preambleChunks.length},originalIndex=${metadata.originalIndex || 0}] ${chunk}`,
+                                text: `[META:file=${fileName},chapter=${preambleNumber},chapterName=${preambleTitle},chunk=${idx + 1}/${preambleChunks.length},originalIndex=${globalChunkIndex++}] ${chunk}`,
                                 metadata: {
                                     ...metadata,
-                                    chapter_number: '0',
-                                    chapter_title: '前言',
+                                    chapter_number: preambleNumber,
+                                    chapter_title: preambleTitle,
                                     chapter_index: -1,
                                     chapter_total: chapters.length,
                                     chunk_index: idx,
                                     chunk_total: preambleChunks.length,
                                     is_chunked: true,
                                     chunk_type: 'file_preamble'
+                                }
+                            });
+                        });
+                    }
+                }
+            }
+            
+            // Handle any content after the last chapter (e.g., epilogue, afterword that wasn't detected)
+            const lastChapter = chapters[chapters.length - 1];
+            if (lastChapter && lastChapter.endIndex < content.length) {
+                const epilogue = content.substring(lastChapter.endIndex).trim();
+                if (epilogue) {
+                    // Check if the last chapter is already an epilogue-type chapter
+                    const lastChapterIsEpilogue = lastChapter.type === 'special' && 
+                        ['尾声', '后记', '後記', '终章', '終章', '番外', 'Epilogue', 'Afterword', 'Extra'].includes(lastChapter.specialType);
+                    
+                    const epilogueTitle = lastChapterIsEpilogue ? '附录' : '后记';
+                    const epilogueNumber = lastChapterIsEpilogue ? 'appendix' : 'epilogue';
+                    
+                    if (epilogue.length <= maxChunkSize) {
+                        chunks.push({
+                            text: `[META:file=${fileName},chapter=${epilogueNumber},chapterName=${epilogueTitle},originalIndex=${globalChunkIndex++}] ${epilogue}`,
+                            metadata: {
+                                ...metadata,
+                                chapter_number: epilogueNumber,
+                                chapter_title: epilogueTitle,
+                                chapter_index: chapters.length,
+                                chapter_total: chapters.length,
+                                chunk_index: 0,
+                                chunk_total: 1,
+                                is_chunked: false,
+                                chunk_type: 'file_epilogue'
+                            }
+                        });
+                    } else {
+                        const epilogueChunks = this.splitTextIntoChunks(epilogue, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        epilogueChunks.forEach((chunk, idx) => {
+                            chunks.push({
+                                text: `[META:file=${fileName},chapter=${epilogueNumber},chapterName=${epilogueTitle},chunk=${idx + 1}/${epilogueChunks.length},originalIndex=${globalChunkIndex++}] ${chunk}`,
+                                metadata: {
+                                    ...metadata,
+                                    chapter_number: epilogueNumber,
+                                    chapter_title: epilogueTitle,
+                                    chapter_index: chapters.length,
+                                    chapter_total: chapters.length,
+                                    chunk_index: idx,
+                                    chunk_total: epilogueChunks.length,
+                                    is_chunked: true,
+                                    chunk_type: 'file_epilogue'
                                 }
                             });
                         });
@@ -1244,7 +1422,7 @@ export class VectorizationProcessor extends ITextProcessor {
         
         if (content.length <= maxChunkSize) {
             chunks.push({
-                text: `[META:file=${fileName},originalIndex=${metadata.originalIndex || 0}] ${content}`,
+                text: `[META:file=${fileName},originalIndex=${globalChunkIndex++}] ${content}`,
                 metadata: {
                     ...metadata,
                     chunk_index: 0,
@@ -1257,7 +1435,7 @@ export class VectorizationProcessor extends ITextProcessor {
             const regularChunks = this.splitTextIntoChunks(content, maxChunkSize, overlapPercent, forceChunkDelimiter);
             regularChunks.forEach((chunkText, chunkIndex) => {
                 chunks.push({
-                    text: `[META:file=${fileName},chunk=${chunkIndex + 1}/${regularChunks.length},originalIndex=${metadata.originalIndex || 0}] ${chunkText}`,
+                    text: `[META:file=${fileName},chunk=${chunkIndex + 1}/${regularChunks.length},originalIndex=${globalChunkIndex++}] ${chunkText}`,
                     metadata: {
                         ...metadata,
                         chunk_index: chunkIndex,

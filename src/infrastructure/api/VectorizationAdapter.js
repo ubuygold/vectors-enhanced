@@ -123,20 +123,42 @@ export class VectorizationAdapter {
             // 准备向量化项目 - 格式化为storageAdapter.insertVectorItems()期望的格式
             const result = {
                 success: true,
-                items: items.map((item, index) => ({
-                    // 保持SillyTavern insertVectorItems需要的格式
-                    text: item.text,
-                    hash: item.hash || this.generateHash(item.text),
-                    index: item.index !== undefined ? item.index : index,
-                    metadata: {
-                        ...(item.metadata || {}),
-                        vectorization_source: source,
-                        prepared_at: new Date().toISOString(),
-                        // 保持原始类型信息
-                        originalType: item.type || 'unknown',
-                        originalId: item.id || `item_${index}`
+                items: items.map((item, index) => {
+                    // Debug first item
+                    if (index === 0) {
+                        logger.log('First item metadata before mapping:', {
+                            originalMetadata: item.metadata,
+                            hasOriginalIndex: item.metadata?.originalIndex !== undefined,
+                            originalIndex: item.metadata?.originalIndex
+                        });
                     }
-                }))
+                    
+                    const mappedItem = {
+                        // 保持SillyTavern insertVectorItems需要的格式
+                        text: item.text,
+                        hash: item.hash || this.generateHash(item.text),
+                        index: item.index !== undefined ? item.index : index,
+                        metadata: {
+                            ...(item.metadata || {}),
+                            vectorization_source: source,
+                            prepared_at: new Date().toISOString(),
+                            // 保持原始类型信息
+                            originalType: item.type || 'unknown',
+                            originalId: item.id || `item_${index}`
+                        }
+                    };
+                    
+                    // Debug first mapped item
+                    if (index === 0) {
+                        logger.log('First item metadata after mapping:', {
+                            mappedMetadata: mappedItem.metadata,
+                            hasOriginalIndex: mappedItem.metadata?.originalIndex !== undefined,
+                            originalIndex: mappedItem.metadata?.originalIndex
+                        });
+                    }
+                    
+                    return mappedItem;
+                })
             };
             
             logger.log(`Vectorization preparation completed for ${result.items.length} items`);
