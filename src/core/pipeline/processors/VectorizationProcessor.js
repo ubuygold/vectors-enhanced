@@ -246,6 +246,7 @@ export class VectorizationProcessor extends ITextProcessor {
     prepareVectorizationChunks(content, metadata, vectorizationSettings) {
         const chunkSize = vectorizationSettings.chunk_size || 1000;
         const overlapPercent = vectorizationSettings.overlap_percent || 10;
+        const forceChunkDelimiter = vectorizationSettings.force_chunk_delimiter;
         
         // Log metadata at the start of prepareVectorizationChunks
         logger.log('prepareVectorizationChunks received metadata:', {
@@ -344,7 +345,7 @@ export class VectorizationProcessor extends ITextProcessor {
                 
                 // For large items, split into chunks; for small items, keep as single chunk
                 if (itemText.length > chunkSize) {
-                    const itemChunks = this.splitTextIntoChunks(itemText, chunkSize, overlapPercent);
+                    const itemChunks = this.splitTextIntoChunks(itemText, chunkSize, overlapPercent, forceChunkDelimiter);
                     itemChunks.forEach((chunkText, chunkIndex) => {
                         chunks.push({
                             text: chunkText,
@@ -378,7 +379,7 @@ export class VectorizationProcessor extends ITextProcessor {
             
         } else if (typeof content === 'string') {
             // Single string content - split into chunks
-            const textChunks = this.splitTextIntoChunks(content, chunkSize, overlapPercent);
+            const textChunks = this.splitTextIntoChunks(content, chunkSize, overlapPercent, forceChunkDelimiter);
             chunks = textChunks.map((chunkText, index) => ({
                 text: chunkText,
                 metadata: {
@@ -390,7 +391,7 @@ export class VectorizationProcessor extends ITextProcessor {
             }));
         } else if (content && content.text) {
             // Object with text property
-            const textChunks = this.splitTextIntoChunks(content.text, chunkSize, overlapPercent);
+            const textChunks = this.splitTextIntoChunks(content.text, chunkSize, overlapPercent, forceChunkDelimiter);
             chunks = textChunks.map((chunkText, index) => ({
                 text: chunkText,
                 metadata: {
@@ -403,7 +404,7 @@ export class VectorizationProcessor extends ITextProcessor {
         } else {
             // Fallback: convert to string and process
             const textContent = String(content);
-            const textChunks = this.splitTextIntoChunks(textContent, chunkSize, overlapPercent);
+            const textChunks = this.splitTextIntoChunks(textContent, chunkSize, overlapPercent, forceChunkDelimiter);
             chunks = textChunks.map((chunkText, index) => ({
                 text: chunkText,
                 metadata: {
@@ -422,11 +423,49 @@ export class VectorizationProcessor extends ITextProcessor {
      * Split text into chunks (adapted from main system)
      * @private
      */
-    splitTextIntoChunks(text, chunkSize = 1000, overlapPercent = 10) {
+    splitTextIntoChunks(text, chunkSize = 1000, overlapPercent = 10, forceChunkDelimiter = null) {
         if (!text || text.length <= chunkSize) {
             return [text];
         }
         
+        // 如果提供了自定义分隔符，先尝试按分隔符分割
+        if (forceChunkDelimiter && forceChunkDelimiter.trim()) {
+            const delimiter = forceChunkDelimiter.trim();
+            const parts = text.split(delimiter);
+            
+            // 如果分割成功且产生了多个部分
+            if (parts.length > 1) {
+                const delimiterChunks = [];
+                
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    
+                    // 处理每个部分
+                    if (part.length <= chunkSize) {
+                        // 如果部分小于 chunkSize，直接作为一个块
+                        if (part.trim()) {
+                            delimiterChunks.push(part.trim());
+                        }
+                    } else {
+                        // 如果部分大于 chunkSize，需要进一步分割
+                        const subChunks = this.splitTextIntoChunksWithoutDelimiter(part, chunkSize, overlapPercent);
+                        delimiterChunks.push(...subChunks);
+                    }
+                }
+                
+                return delimiterChunks.filter(chunk => chunk.length > 0);
+            }
+        }
+        
+        // 如果没有自定义分隔符或分隔符分割失败，使用原有的智能分割逻辑
+        return this.splitTextIntoChunksWithoutDelimiter(text, chunkSize, overlapPercent);
+    }
+    
+    /**
+     * 原有的智能分块逻辑（不使用自定义分隔符）
+     * @private
+     */
+    splitTextIntoChunksWithoutDelimiter(text, chunkSize = 1000, overlapPercent = 10) {
         const chunks = [];
         const overlapSize = Math.floor(chunkSize * overlapPercent / 100);
         let start = 0;
@@ -436,21 +475,31 @@ export class VectorizationProcessor extends ITextProcessor {
             
             // If this isn't the last chunk, try to break at a sentence or word boundary
             if (end < text.length) {
-                // Look for sentence boundary first
-                const sentenceEnd = text.lastIndexOf('.', end);
-                const questionEnd = text.lastIndexOf('?', end);
-                const exclamationEnd = text.lastIndexOf('!', end);
+                // Look for sentence boundary first (支持中英文标点)
+                const sentenceMarkers = [
+                    '.', '?', '!',  // 英文标点
+                    '。', '？', '！', // 中文标点
+                    '\n'            // 换行符也是自然边界
+                ];
                 
-                const maxSentenceEnd = Math.max(sentenceEnd, questionEnd, exclamationEnd);
+                let bestEnd = -1;
+                for (const marker of sentenceMarkers) {
+                    const markerIndex = text.lastIndexOf(marker, end);
+                    if (markerIndex > start + chunkSize * 0.7 && markerIndex > bestEnd) {
+                        bestEnd = markerIndex;
+                    }
+                }
                 
-                if (maxSentenceEnd > start + chunkSize * 0.7) {
-                    end = maxSentenceEnd + 1;
+                if (bestEnd > -1) {
+                    // 在标点后移动一位（除了换行符）
+                    end = bestEnd + (text[bestEnd] === '\n' ? 0 : 1);
                 } else {
-                    // Fall back to word boundary
+                    // Fall back to word boundary (for English text)
                     const spaceIndex = text.lastIndexOf(' ', end);
                     if (spaceIndex > start + chunkSize * 0.7) {
                         end = spaceIndex;
                     }
+                    // 对于纯中文文本，如果没有找到合适的分割点，就直接按长度切分
                 }
             }
             
@@ -582,7 +631,7 @@ export class VectorizationProcessor extends ITextProcessor {
         
         if (matches.length === 0) {
             logger.warn('No history_story tags found in content, falling back to normal chunking');
-            return this.splitTextIntoChunks(content, maxChunkSize, overlapPercent).map((chunkText, index) => ({
+            return this.splitTextIntoChunks(content, maxChunkSize, overlapPercent, metadata.forceChunkDelimiter).map((chunkText, index) => ({
                 text: chunkText,
                 metadata: {
                     ...metadata,
@@ -602,7 +651,7 @@ export class VectorizationProcessor extends ITextProcessor {
             if (tagContent.length > 3000) {
                 logger.log(`History story tag ${tagIndex} exceeds 3000 chars (${tagContent.length}), applying secondary chunking`);
                 
-                const secondaryChunks = this.splitTextIntoChunks(tagContent, maxChunkSize, overlapPercent);
+                const secondaryChunks = this.splitTextIntoChunks(tagContent, maxChunkSize, overlapPercent, metadata.forceChunkDelimiter);
                 
                 secondaryChunks.forEach((chunkText, chunkIndex) => {
                     chunks.push({

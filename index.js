@@ -26,7 +26,6 @@ import {
 } from '../../../extensions.js';
 import { oai_settings } from '../../../openai.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../popup.js';
-import { registerDebugFunction } from '../../../power-user.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
@@ -37,11 +36,10 @@ import {
   waitUntilCondition,
 } from '../../../utils.js';
 import { getSortedEntries, saveWorldInfo, loadWorldInfo } from '../../../world-info.js';
-import { splitTextIntoChunks as splitTextIntoChunksUtil } from './src/utils/textChunking.js';
 import { shouldSkipContent } from './src/utils/contentFilter.js';
 import { extractTagContent, extractSimpleTag, extractComplexTag, extractHtmlFormatTag } from './src/utils/tagExtractor.js';
 import { scanTextForTags, generateTagSuggestions } from './src/utils/tagScanner.js';
-import { updateContentSelection as updateContentSelectionNew, updateMasterSwitchState as updateMasterSwitchStateNew, toggleSettings as toggleSettingsNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew, triggerDownload } from './src/ui/domUtils.js';
+import { updateMasterSwitchState as updateMasterSwitchStateNew, hideProgress as hideProgressNew, updateProgress as updateProgressNew, triggerDownload } from './src/ui/domUtils.js';
 import { SettingsManager } from './src/ui/settingsManager.js';
 import { ConfigManager } from './src/infrastructure/ConfigManager.js';
 import { updateChatSettings } from './src/ui/components/ChatSettings.js';
@@ -455,16 +453,6 @@ function getFileCollectionId(fileUrl) {
   return `file_${getHashValue(fileUrl)}`;
 }
 
-/**
- * Wrapper function for splitTextIntoChunks to maintain backward compatibility
- * @param {string} text Text to split
- * @param {number} chunkSize Size of each chunk
- * @param {number} overlapPercent Overlap percentage
- * @returns {string[]} Array of text chunks
- */
-function splitTextIntoChunks(text, chunkSize, overlapPercent) {
-  return splitTextIntoChunksUtil(text, chunkSize, overlapPercent, settings.force_chunk_delimiter);
-}
 
 /**
  * Gets all available files from different sources
@@ -1324,7 +1312,8 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
         vectorizationSettings: {
           source: settings.source,
           chunk_size: settings.chunk_size,
-          overlap_percent: settings.overlap_percent
+          overlap_percent: settings.overlap_percent,
+          force_chunk_delimiter: settings.force_chunk_delimiter
         }
       };
 
@@ -3606,7 +3595,7 @@ function createDebugAPI() {
     event_types: event_types,
 
     // 调试注册（如果可用）
-    registerDebugFunction: typeof registerDebugFunction !== 'undefined' ? registerDebugFunction : null,
+    registerDebugFunction: null,
 
     // 上下文访问
     getContext: getContext,
