@@ -276,6 +276,11 @@ export class VectorizationProcessor extends ITextProcessor {
             return this.chunkWorldInfo(content, metadata, chunkSize, overlapPercent, forceChunkDelimiter);
         }
         
+        if (metadata.type === 'file' && !Array.isArray(content)) {
+            logger.log('Using file-specific (chapter-aware) chunking strategy');
+            return this.chunkFileContent(content, metadata, chunkSize, overlapPercent, forceChunkDelimiter);
+        }
+        
         let chunks = [];
         
         // Handle different content types
@@ -361,8 +366,12 @@ export class VectorizationProcessor extends ITextProcessor {
                 } else if (itemMetadata.type === 'world_info') {
                     const wiChunks = this.chunkWorldInfo(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
                     chunks.push(...wiChunks);
+                } else if (itemMetadata.type === 'file') {
+                    // Use chapter-aware chunking for files (which might be novels)
+                    const fileChunks = this.chunkFileContent(itemText, itemMetadata, chunkSize, overlapPercent, forceChunkDelimiter);
+                    chunks.push(...fileChunks);
                 } else {
-                    // Default chunking for other types (like files)
+                    // Default chunking for other types
                     if (itemText.length > chunkSize) {
                         const itemChunks = this.splitTextIntoChunks(itemText, chunkSize, overlapPercent, forceChunkDelimiter);
                         itemChunks.forEach((chunkText, chunkIndex) => {
@@ -1019,6 +1028,248 @@ export class VectorizationProcessor extends ITextProcessor {
         });
         
         logger.log(`World info entry "${entryIdentifier}" split into ${chunks.length} chunks`);
+        return chunks;
+    }
+    
+    /**
+     * Chunk file content with chapter detection support
+     * Prioritizes chapter integrity for novel-like content
+     * @param {string} content - File content
+     * @param {Object} metadata - File metadata including name
+     * @param {number} maxChunkSize - Maximum chunk size
+     * @param {number} overlapPercent - Overlap percentage
+     * @param {string} forceChunkDelimiter - Custom delimiter for chunking
+     * @returns {Array} Array of chunks
+     * @private
+     */
+    chunkFileContent(content, metadata, maxChunkSize, overlapPercent, forceChunkDelimiter) {
+        const chunks = [];
+        const fileName = metadata.name || metadata.filename || 'Unknown File';
+        
+        // Enhanced chapter detection regex
+        const chapterRegex = /^[\s\u3000]*(?:(?:Chapter|chapter|CHAPTER|第|Chapter\s+|第\s*)?([一二三四五六七八九十百千万零壹贰叁肆伍陆柒捌玖拾佰仟萬]+|\d+|[IVXivx]+)\s*(?:章|节|節|回|話|话|章節|\.)?(?:\s*[:：\-—]\s*|\s+))([^\n\r]{0,100})/gm;
+        
+        // Detect chapters
+        const chapters = [];
+        let match;
+        let lastIndex = 0;
+        
+        while ((match = chapterRegex.exec(content)) !== null) {
+            if (match.index > lastIndex) {
+                // Add any content before this chapter as a preamble/previous chapter continuation
+                if (chapters.length > 0) {
+                    chapters[chapters.length - 1].endIndex = match.index;
+                }
+            }
+            
+            const chapterNumber = match[1] || '';
+            const chapterTitle = match[2] ? match[2].trim() : '';
+            
+            chapters.push({
+                startIndex: match.index,
+                endIndex: content.length, // Will be updated by next chapter
+                number: chapterNumber,
+                title: chapterTitle,
+                fullMatch: match[0]
+            });
+            
+            lastIndex = match.index;
+        }
+        
+        // If chapters were found, use chapter-based chunking
+        if (chapters.length > 0) {
+            logger.log(`File "${fileName}" contains ${chapters.length} chapters, using chapter-aware chunking`);
+            
+            // Process each chapter
+            chapters.forEach((chapter, chapterIndex) => {
+                const chapterContent = content.substring(chapter.startIndex, chapter.endIndex).trim();
+                const chapterIdentifier = chapter.number ? 
+                    (chapter.title ? `第${chapter.number}章 ${chapter.title}` : `第${chapter.number}章`) : 
+                    (chapter.title || `Chapter ${chapterIndex + 1}`);
+                
+                // If chapter fits in one chunk, keep it intact
+                if (chapterContent.length <= maxChunkSize) {
+                    chunks.push({
+                        text: `[META:file=${fileName},chapter=${chapter.number},chapterName=${chapter.title || ''},originalIndex=${metadata.originalIndex || 0}] ${chapterContent}`,
+                        metadata: {
+                            ...metadata,
+                            chapter_number: chapter.number,
+                            chapter_title: chapter.title,
+                            chapter_index: chapterIndex,
+                            chapter_total: chapters.length,
+                            chunk_index: 0,
+                            chunk_total: 1,
+                            is_chunked: false,
+                            chunk_type: 'file_chapter'
+                        }
+                    });
+                } else {
+                    // Chapter is too large, need to split while preserving chapter info
+                    logger.log(`Chapter "${chapterIdentifier}" exceeds ${maxChunkSize} chars, applying sub-chunking`);
+                    
+                    // Try to split by tags first if present
+                    let subChunks = [];
+                    if (chapterContent.includes('</') && chapterContent.includes('<')) {
+                        // Similar tag patterns as in other methods
+                        const tagPatterns = [
+                            /<scene>(.*?)<\/scene>/gs,
+                            /<dialogue>(.*?)<\/dialogue>/gs,
+                            /<description>(.*?)<\/description>/gs,
+                            /<action>(.*?)<\/action>/gs
+                        ];
+                        
+                        let tagFound = false;
+                        let remainingChapterContent = chapterContent;
+                        
+                        for (const pattern of tagPatterns) {
+                            const tagMatches = [...chapterContent.matchAll(pattern)];
+                            if (tagMatches.length > 0) {
+                                tagFound = true;
+                                tagMatches.forEach((tagMatch) => {
+                                    const tagContent = tagMatch[1].trim();
+                                    const tagName = tagMatch[0].match(/<(\w+)>/)[1];
+                                    
+                                    if (tagContent.length <= maxChunkSize) {
+                                        subChunks.push({
+                                            text: tagContent,
+                                            tag: tagName
+                                        });
+                                    } else {
+                                        // Tag content still too large
+                                        const tagSubChunks = this.splitTextIntoChunks(tagContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                                        tagSubChunks.forEach((chunk, idx) => {
+                                            subChunks.push({
+                                                text: chunk,
+                                                tag: tagName,
+                                                tagChunkIndex: idx,
+                                                tagChunkTotal: tagSubChunks.length
+                                            });
+                                        });
+                                    }
+                                    remainingChapterContent = remainingChapterContent.replace(tagMatch[0], '');
+                                });
+                            }
+                        }
+                        
+                        // Add remaining content if any
+                        if (tagFound && remainingChapterContent.trim()) {
+                            const remainingChunks = this.splitTextIntoChunks(remainingChapterContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                            remainingChunks.forEach(chunk => {
+                                subChunks.push({ text: chunk, tag: 'other' });
+                            });
+                        }
+                    }
+                    
+                    // If no tags found or no tag splitting done, use regular chunking
+                    if (subChunks.length === 0) {
+                        const regularChunks = this.splitTextIntoChunks(chapterContent, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        subChunks = regularChunks.map(chunk => ({ text: chunk }));
+                    }
+                    
+                    // Add all sub-chunks with proper metadata
+                    subChunks.forEach((subChunk, subIndex) => {
+                        const metaTag = subChunk.tag ? `,tag=${subChunk.tag}` : '';
+                        const chunkInfo = `,chunk=${subIndex + 1}/${subChunks.length}`;
+                        
+                        chunks.push({
+                            text: `[META:file=${fileName},chapter=${chapter.number},chapterName=${chapter.title || ''}${metaTag}${chunkInfo},originalIndex=${metadata.originalIndex || 0}] ${subChunk.text}`,
+                            metadata: {
+                                ...metadata,
+                                chapter_number: chapter.number,
+                                chapter_title: chapter.title,
+                                chapter_index: chapterIndex,
+                                chapter_total: chapters.length,
+                                chunk_index: subIndex,
+                                chunk_total: subChunks.length,
+                                is_chunked: true,
+                                chunk_type: 'file_chapter',
+                                ...(subChunk.tag && { tag_name: subChunk.tag }),
+                                ...(subChunk.tagChunkIndex !== undefined && { 
+                                    tag_chunk_index: subChunk.tagChunkIndex,
+                                    tag_chunk_total: subChunk.tagChunkTotal
+                                })
+                            }
+                        });
+                    });
+                }
+            });
+            
+            // Handle any content before the first chapter
+            if (chapters.length > 0 && chapters[0].startIndex > 0) {
+                const preamble = content.substring(0, chapters[0].startIndex).trim();
+                if (preamble) {
+                    if (preamble.length <= maxChunkSize) {
+                        chunks.unshift({
+                            text: `[META:file=${fileName},chapter=0,chapterName=前言,originalIndex=${metadata.originalIndex || 0}] ${preamble}`,
+                            metadata: {
+                                ...metadata,
+                                chapter_number: '0',
+                                chapter_title: '前言',
+                                chapter_index: -1,
+                                chapter_total: chapters.length,
+                                chunk_index: 0,
+                                chunk_total: 1,
+                                is_chunked: false,
+                                chunk_type: 'file_preamble'
+                            }
+                        });
+                    } else {
+                        const preambleChunks = this.splitTextIntoChunks(preamble, maxChunkSize, overlapPercent, forceChunkDelimiter);
+                        preambleChunks.forEach((chunk, idx) => {
+                            chunks.unshift({
+                                text: `[META:file=${fileName},chapter=0,chapterName=前言,chunk=${idx + 1}/${preambleChunks.length},originalIndex=${metadata.originalIndex || 0}] ${chunk}`,
+                                metadata: {
+                                    ...metadata,
+                                    chapter_number: '0',
+                                    chapter_title: '前言',
+                                    chapter_index: -1,
+                                    chapter_total: chapters.length,
+                                    chunk_index: idx,
+                                    chunk_total: preambleChunks.length,
+                                    is_chunked: true,
+                                    chunk_type: 'file_preamble'
+                                }
+                            });
+                        });
+                    }
+                }
+            }
+            
+            logger.log(`File "${fileName}" split into ${chunks.length} chunks across ${chapters.length} chapters`);
+            return chunks;
+        }
+        
+        // No chapters found, treat as regular file
+        logger.log(`File "${fileName}" has no detected chapters, using regular chunking`);
+        
+        if (content.length <= maxChunkSize) {
+            chunks.push({
+                text: `[META:file=${fileName},originalIndex=${metadata.originalIndex || 0}] ${content}`,
+                metadata: {
+                    ...metadata,
+                    chunk_index: 0,
+                    chunk_total: 1,
+                    is_chunked: false,
+                    chunk_type: 'file_content'
+                }
+            });
+        } else {
+            const regularChunks = this.splitTextIntoChunks(content, maxChunkSize, overlapPercent, forceChunkDelimiter);
+            regularChunks.forEach((chunkText, chunkIndex) => {
+                chunks.push({
+                    text: `[META:file=${fileName},chunk=${chunkIndex + 1}/${regularChunks.length},originalIndex=${metadata.originalIndex || 0}] ${chunkText}`,
+                    metadata: {
+                        ...metadata,
+                        chunk_index: chunkIndex,
+                        chunk_total: regularChunks.length,
+                        is_chunked: true,
+                        chunk_type: 'file_content'
+                    }
+                });
+            });
+        }
+        
+        logger.log(`File "${fileName}" split into ${chunks.length} chunks`);
         return chunks;
     }
 }

@@ -2135,7 +2135,7 @@ function decodeMetadataFromText(encodedText) {
   for (const pair of pairs) {
     const [key, value] = pair.split('=');
     if (key && value) {
-      if (key === 'originalIndex' || key === 'floor') {
+      if (key === 'originalIndex' || key === 'floor' || key === 'chapter') {
         metadata[key] = parseInt(value, 10);
       } else {
         metadata[key] = value;
