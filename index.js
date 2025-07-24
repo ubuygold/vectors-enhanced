@@ -2503,10 +2503,33 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           const aIndex = aDecoded.metadata.originalIndex ?? a.metadata?.originalIndex ?? a.metadata?.index ?? 0;
           const bIndex = bDecoded.metadata.originalIndex ?? b.metadata?.originalIndex ?? b.metadata?.index ?? 0;
           
-          return aIndex - bIndex;
+          // 对于世界书类型的特殊处理
+          if (type === 'world_info') {
+            // 提取条目标识符和分块信息
+            const aEntry = aDecoded.metadata.entry || '';
+            const bEntry = bDecoded.metadata.entry || '';
+            
+            // 提取分块编号 (从 "chunk=1/3" 格式中提取)
+            const aChunkMatch = a.text.match(/chunk=(\d+)\/\d+/);
+            const bChunkMatch = b.text.match(/chunk=(\d+)\/\d+/);
+            const aChunkNum = aChunkMatch ? parseInt(aChunkMatch[1]) : 0;
+            const bChunkNum = bChunkMatch ? parseInt(bChunkMatch[1]) : 0;
+            
+            // 如果是同一个条目的不同分块
+            if (aEntry === bEntry && aEntry !== '') {
+              // 同一条目内按chunk编号升序
+              return aChunkNum - bChunkNum;
+            } else {
+              // 不同条目之间按originalIndex降序
+              return bIndex - aIndex;
+            }
+          } else {
+            // 其他类型保持升序
+            return aIndex - bIndex;
+          }
         });
         
-        console.debug(`Vectors: Sorted ${type} results by originalIndex`);
+        console.debug(`Vectors: Sorted ${type} results by originalIndex (${type === 'world_info' ? 'custom logic' : 'ascending'})`);
       });
 
       // Format results with tags
