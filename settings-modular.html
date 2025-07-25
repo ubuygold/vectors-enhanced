@@ -299,6 +299,44 @@
                       style="width: 100%; font-family: monospace; font-size: 12px;"
                       placeholder="输入自定义的总结格式..."></textarea>
           </div>
+          
+          <!-- Detail Level Dropdown -->
+          <div class="memory-detail-level" style="margin-top: 10px;">
+            <label for="memory_detail_level">
+              <small>总结详细程度:</small>
+              <small style="opacity: 0.7; margin-left: 5px;">(需要在模板里保留{{length}})</small>
+            </label>
+            <select id="memory_detail_level" class="text_pole" style="width: 100%;">
+              <option value="concise">简洁 - 每个事件不少于3句话，100字</option>
+              <option value="normal">正常 - 每个事件不少于5句话，150字</option>
+              <option value="detailed">详细 - 每个事件不少于7句话，250字</option>
+            </select>
+          </div>
+          
+          <!-- Max Tokens Input -->
+          <div class="memory-max-tokens" style="margin-top: 10px;">
+            <label for="memory_max_tokens">
+              <small>最大输出 Token 数:</small>
+            </label>
+            <input id="memory_max_tokens" 
+                   type="number" 
+                   class="text_pole" 
+                   style="width: 100%;" 
+                   min="0" 
+                   max="100000" 
+                   step="1"
+                   placeholder="8192">
+          </div>
+          
+          <!-- Auto Create World Book Checkbox -->
+          <div class="memory-auto-create-wb" style="margin-top: 10px;">
+            <label class="checkbox_label" for="memory_auto_create_world_book" title="总结后自动创建世界书并绑定到对话">
+              <input id="memory_auto_create_world_book" type="checkbox" />
+              <span>
+                <small>总结后自动创建世界书</small>
+              </span>
+            </label>
+          </div>
 
           <!-- Auto-Summarize Settings -->
           <div class="memory-auto-summarize-section" style="margin-top: 15px;">

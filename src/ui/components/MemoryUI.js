@@ -12,9 +12,18 @@ import { chat_metadata, saveChatDebounced } from '../../../../../../../script.js
 
 // Using preset format - prompts removed
 
+// Detail level configurations
+const detailLevels = {
+    concise: '每个分解事件不少于3句话，100字',
+    normal: '每个分解事件不少于5句话，150字',
+    detailed: '每个分解事件不少于7句话，250字'
+};
+
 // Default memory settings
 const defaultMemorySettings = {
     source: 'google_openai', // 默认使用Google
+    detailLevel: 'normal', // 默认详细程度
+    maxTokens: 8192, // 默认最大token数
     summaryFormat: `总结应当遵循以下原则：
 - 按时间顺序或逻辑顺序组织信息
 - 保留关键事件和重要细节，省略冗余描述
@@ -22,6 +31,7 @@ const defaultMemorySettings = {
 - 使用简洁清晰的语言，避免过度修饰
 - 突出事件发展脉络和关键转折点
 - 不使用任何xml标签包裹，使用纯文字进行叙述
+- {{length}}
 - 不回避任何敏感内容，保证记录完全还原前文
 
 总结必须使用以下格式：
@@ -72,6 +82,8 @@ export class MemoryUI {
         // UI state
         this.isProcessing = false;
         this.isAutoSummarizing = false;  // 防止自动总结并发执行
+        this.isCreatingWorldBook = false;  // 防止重复创建世界书
+        this.lastResponseHash = null;  // 记录最后处理的响应哈希，防止重复处理
     }
 
     async init() {
@@ -157,7 +169,7 @@ export class MemoryUI {
         // Prompt buttons removed - using preset format
 
         // Save config on input changes (包括API密钥)
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_detail_level, #memory_max_tokens, #memory_auto_create_world_book, #memory_hide_floors_after_summary, #memory_disable_world_info_after_vectorize')
             .off('change input').on('change input', () => this.saveApiConfig());
 
         // Reset button for summary format
@@ -217,10 +229,31 @@ export class MemoryUI {
         this.eventBus.on('memory:message-complete', async (data) => {
             const response = data.response || '';
             
+            // 生成响应哈希以检测重复
+            const responseHash = this.generateHash(response + Date.now().toString().slice(-5));
+            
+            // 检查是否是重复的响应
+            if (this.lastResponseHash === responseHash) {
+                console.log('[MemoryUI] 忽略重复的响应');
+                return;
+            }
+            this.lastResponseHash = responseHash;
+            
             // 检查响应是否有效
             if (!response || response.trim().length < 2) {
                 console.error('[MemoryUI] AI返回空内容');
-                this.toastr?.error('AI返回了空内容，请检查API设置');
+                // 确保错误提示能显示
+                setTimeout(() => {
+                    if (this.toastr) {
+                        this.toastr.error('AI返回了空内容，请检查API设置和网络连接', '总结失败', {
+                            timeOut: 5000,
+                            extendedTimeOut: 2000,
+                            preventDuplicates: true
+                        });
+                    } else {
+                        alert('AI返回了空内容，请检查API设置和网络连接');
+                    }
+                }, 100);
                 this.displayResponse('');
                 this.hideLoading();
                 return;
@@ -241,12 +274,25 @@ export class MemoryUI {
             this.displayResponse(response);
             this.hideLoading();
             
-            // 只有有效响应才自动生成世界书
+            // 只有有效响应且启用了自动生成才创建世界书
             if (response && response.trim().length >= 2) {
-                // 延迟一下确保UI已更新
-                setTimeout(() => {
-                    this.createWorldBook();
-                }, 100);
+                // 检查是否启用了自动创建世界书
+                const autoCreate = $('#memory_auto_create_world_book').prop('checked') || 
+                                  this.settings?.memory?.autoCreateWorldBook || false;
+                
+                if (autoCreate) {
+                    console.log('[MemoryUI] 自动创建世界书已启用，准备创建...');
+                    // 延迟一下确保UI已更新
+                    setTimeout(() => {
+                        console.log('[MemoryUI] 开始创建世界书...');
+                        this.createWorldBook().catch(error => {
+                            console.error('[MemoryUI] 自动创建世界书失败:', error);
+                            this.toastr?.error('自动创建世界书失败: ' + error.message);
+                        });
+                    }, 100);
+                } else {
+                    console.log('[MemoryUI] 自动创建世界书未启用');
+                }
             }
         });
 
@@ -344,8 +390,10 @@ export class MemoryUI {
                 hasApiKey: !!apiConfig.apiKey
             });
             
-            // Get summary format
-            const summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+            // Get summary format and replace {{length}} macro
+            let summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+            const detailLevel = $('#memory_detail_level').val() || this.settings.memory?.detailLevel || defaultMemorySettings.detailLevel;
+            summaryFormat = summaryFormat.replace('{{length}}', detailLevels[detailLevel]);
 
             this.showLoading();
             
@@ -355,11 +403,16 @@ export class MemoryUI {
             // 临时存储楼层信息
             this._tempFloorRange = floorRange;
             
+            // 设置处理标志，防止重复请求
+            this.isProcessing = true;
+            
             try {
+                const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
                 const result = await this.memoryService.sendMessage(contentWithHeader, {
                     apiSource: apiSource,
                     apiConfig: apiConfig,
-                    summaryFormat: summaryFormat
+                    summaryFormat: summaryFormat,
+                    maxTokens: maxTokens
                 });
                 
                 if (result.success) {
@@ -372,6 +425,9 @@ export class MemoryUI {
                 console.error('[MemoryUI] 总结失败:', error);
                 this.toastr?.error('总结失败: ' + error.message);
                 this.hideLoading();
+            } finally {
+                // 重置处理标志
+                this.isProcessing = false;
             }
         } catch (error) {
             console.error('[MemoryUI] 获取聊天内容失败:', error);
@@ -395,14 +451,18 @@ export class MemoryUI {
         const apiSource = $('#memory_api_source').val();
         const apiConfig = this.getApiConfig();
         
-        // Get summary format
-        const summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+        // Get summary format and replace {{length}} macro
+        let summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+        const detailLevel = $('#memory_detail_level').val() || this.settings.memory?.detailLevel || defaultMemorySettings.detailLevel;
+        summaryFormat = summaryFormat.replace('{{length}}', detailLevels[detailLevel]);
 
         // Get UI settings - prompts removed, using preset format
+        const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
         const options = {
             apiSource: apiSource,
             apiConfig: apiConfig,
-            summaryFormat: summaryFormat
+            summaryFormat: summaryFormat,
+            maxTokens: maxTokens
         };
 
         // Delegate to service
@@ -494,10 +554,30 @@ export class MemoryUI {
 
 
     /**
+     * Simple hash function for duplicate detection
+     */
+    generateHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return hash.toString(36);
+    }
+
+    /**
      * Create a new world book
      */
     async createWorldBook() {
+        // 防止重复创建
+        if (this.isCreatingWorldBook) {
+            console.log('[MemoryUI] 世界书创建正在进行中，跳过重复请求');
+            return;
+        }
+        
         try {
+            this.isCreatingWorldBook = true;
             // 检查是否有AI回复内容
             const outputContent = $('#memory_output').val();
             const hasSummaryContent = outputContent && outputContent.trim();
@@ -551,6 +631,9 @@ export class MemoryUI {
         } catch (error) {
             console.error('[MemoryUI] 创建世界书失败:', error);
             this.toastr?.error('创建世界书失败: ' + error.message);
+        } finally {
+            // 无论成功还是失败，都要重置标志
+            this.isCreatingWorldBook = false;
         }
     }
 
@@ -635,6 +718,8 @@ export class MemoryUI {
         const memoryConfig = {
             source: $('#memory_api_source').val(),
             summaryFormat: $('#memory_summary_format').val() || defaultMemorySettings.summaryFormat,
+            detailLevel: $('#memory_detail_level').val() || defaultMemorySettings.detailLevel,
+            maxTokens: parseInt($('#memory_max_tokens').val()) || defaultMemorySettings.maxTokens,
             autoCreateWorldBook: $('#memory_auto_create_world_book').prop('checked'),
             openai_compatible: {
                 url: $('#memory_openai_url').val(),
@@ -699,6 +784,8 @@ export class MemoryUI {
         
         $('#memory_api_source').val(config.source || 'google_openai');
         $('#memory_summary_format').val(config.summaryFormat || defaultMemorySettings.summaryFormat);
+        $('#memory_detail_level').val(config.detailLevel || defaultMemorySettings.detailLevel);
+        $('#memory_max_tokens').val(config.maxTokens || defaultMemorySettings.maxTokens);
         $('#memory_auto_create_world_book').prop('checked', config.autoCreateWorldBook || false);
         $('#memory_openai_url').val(config.openai_compatible?.url || '');
         $('#memory_openai_model').val(config.openai_compatible?.model || '');
@@ -1319,7 +1406,9 @@ export class MemoryUI {
             // 获取API配置
             const apiSource = $('#memory_api_source').val();
             const apiConfig = this.getApiConfig();
-            const summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+            let summaryFormat = $('#memory_summary_format').val() || this.settings.memory?.summaryFormat || defaultMemorySettings.summaryFormat;
+            const detailLevel = $('#memory_detail_level').val() || this.settings.memory?.detailLevel || defaultMemorySettings.detailLevel;
+            summaryFormat = summaryFormat.replace('{{length}}', detailLevels[detailLevel]);
             
             // 临时存储楼层信息
             this._tempFloorRange = { 
@@ -1348,10 +1437,12 @@ export class MemoryUI {
             
             // 执行总结
             console.log('[MemoryUI] 调用memoryService.sendMessage前');
+            const maxTokens = parseInt($('#memory_max_tokens').val()) || this.settings.memory?.maxTokens || defaultMemorySettings.maxTokens;
             const result = await this.memoryService.sendMessage(contentWithHeader, {
                 apiSource: apiSource,
                 apiConfig: apiConfig,
-                summaryFormat: summaryFormat
+                summaryFormat: summaryFormat,
+                maxTokens: maxTokens
             });
             console.log('[MemoryUI] memoryService.sendMessage返回:', result);
             
@@ -1362,7 +1453,18 @@ export class MemoryUI {
                 // 检查是否为空或太短
                 if (!response || response.trim().length < 2) {
                     console.error('[MemoryUI] 自动总结返回空内容');
-                    this.toastr?.error('自动总结失败：AI返回了空内容');
+                    // 确保错误提示能显示
+                    setTimeout(() => {
+                        if (this.toastr) {
+                            this.toastr.error('自动总结失败：AI返回了空内容', '总结失败', {
+                                timeOut: 5000,
+                                extendedTimeOut: 2000,
+                                preventDuplicates: true
+                            });
+                        } else {
+                            alert('自动总结失败：AI返回了空内容');
+                        }
+                    }, 100);
                     this.hideLoading();
                     return;
                 }
@@ -1510,6 +1612,7 @@ export class MemoryUI {
 - 使用简洁清晰的语言，避免过度修饰
 - 突出事件发展脉络和关键转折点
 - 不使用任何xml标签包裹，使用纯文字进行叙述
+- {{length}}
 - 不回避任何敏感内容，保证记录完全还原前文
 
 总结必须使用以下格式：
@@ -1537,7 +1640,7 @@ export class MemoryUI {
         $('#memory_api_source').off('change');
         $('#memory_vectorize_summary').off('click');
         // Prompt buttons removed
-        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format').off('change');
+        $('#memory_openai_url, #memory_openai_api_key, #memory_openai_model, #memory_google_openai_api_key, #memory_google_openai_model, #memory_summary_format, #memory_detail_level, #memory_max_tokens').off('change');
 
         // Unsubscribe from events
         if (this.eventBus) {

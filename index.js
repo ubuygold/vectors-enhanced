@@ -227,6 +227,8 @@ const settings = {
   // Memory management settings
   memory: {
     source: 'main',
+    detailLevel: 'normal', // 默认详细程度
+    maxTokens: 8192, // 默认最大token数
     google: {
       model: ''
     },
@@ -241,6 +243,7 @@ const settings = {
 - 使用简洁清晰的语言，避免过度修饰
 - 突出事件发展脉络和关键转折点
 - 不使用任何xml标签包裹，使用纯文字进行叙述
+- {{length}}
 - 不回避任何敏感内容，保证记录完全还原前文
 
 总结必须使用以下格式：

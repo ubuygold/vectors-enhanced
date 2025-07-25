@@ -32,7 +32,8 @@ export class MemoryService {
             includeContext = true,
             apiSource = 'google_openai',
             apiConfig = {},
-            summaryFormat = '' // 自定义总结格式
+            summaryFormat = '', // 自定义总结格式
+            maxTokens = 8192 // 最大token数
         } = options;
 
         try {
@@ -56,12 +57,12 @@ export class MemoryService {
             switch(apiSource) {
                 case 'openai_compatible':
                     // 调用OpenAI兼容API
-                    response = await this.callOpenAICompatibleAPI(fullPrompt, apiConfig, summaryFormat);
+                    response = await this.callOpenAICompatibleAPI(fullPrompt, apiConfig, summaryFormat, maxTokens);
                     break;
 
                 case 'google_openai':
                     // 使用Google格式但通过OpenAI兼容API
-                    response = await this.callGoogleViaOpenAI(fullPrompt, apiConfig, summaryFormat);
+                    response = await this.callGoogleViaOpenAI(fullPrompt, apiConfig, summaryFormat, maxTokens);
                     break;
 
                 default:
@@ -237,9 +238,10 @@ export class MemoryService {
      * @param {string} prompt - 提示词
      * @param {Object} config - API配置
      * @param {string} summaryFormat - 自定义总结格式
+     * @param {number} maxTokens - 最大token数
      * @returns {Promise<string>} AI响应
      */
-    async callOpenAICompatibleAPI(prompt, config, summaryFormat = '') {
+    async callOpenAICompatibleAPI(prompt, config, summaryFormat = '', maxTokens = 8192) {
         const { url, apiKey, model } = config;
 
         if (!url || !apiKey) {
@@ -256,6 +258,10 @@ export class MemoryService {
         }
 
         try {
+            // 创建超时控制器
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 150000); // 150秒超时
+            
             // 构建消息格式 - 使用preset.js中定义的结构
             const messages = [];
 
@@ -307,10 +313,13 @@ export class MemoryService {
                     messages: messages,
                     model: model || 'gpt-3.5-turbo',
                     temperature: 1,
-                    max_tokens: 10000,
+                    max_tokens: maxTokens,
                     stream: false
-                })
+                }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 const error = await response.text();
@@ -324,6 +333,10 @@ export class MemoryService {
             return content;
 
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.error('[OpenAI] 请求超时');
+                throw new Error('API请求超时（150秒），请检查网络连接或稍后重试');
+            }
             console.error('[OpenAI] 调用失败:', error.message);
             console.error('[OpenAI] 错误详情:', error);
             throw error;
@@ -527,9 +540,10 @@ export class MemoryService {
      * @param {string} prompt - 提示词
      * @param {Object} config - API配置
      * @param {string} summaryFormat - 自定义总结格式
+     * @param {number} maxTokens - 最大token数
      * @returns {Promise<string>} AI响应
      */
-    async callGoogleViaOpenAI(prompt, config, summaryFormat = '') {
+    async callGoogleViaOpenAI(prompt, config, summaryFormat = '', maxTokens = 8192) {
         const { apiKey, model } = config;
 
         if (!apiKey) {
@@ -540,6 +554,10 @@ export class MemoryService {
         const endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
         try {
+            // 创建超时控制器
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 150000); // 150秒超时
+            
             // 使用简化的消息格式，避免复杂的多轮对话
             const messages = [
            {
@@ -578,9 +596,12 @@ export class MemoryService {
                     model: model || 'gemini-2.5-flash',
                     messages: messages,
                     temperature: 1,
-                    max_tokens: 10000
-                })
+                    max_tokens: maxTokens
+                }),
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: response.statusText }));
@@ -597,6 +618,10 @@ export class MemoryService {
             return data.choices[0].message.content;
 
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.error('[Google via OpenAI] 请求超时');
+                throw new Error('API请求超时（150秒），请检查网络连接或稍后重试');
+            }
             console.error('[Google via OpenAI] 调用失败:', error.message);
             console.error('[Google via OpenAI] 错误详情:', error);
             throw error;
