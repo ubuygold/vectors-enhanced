@@ -139,18 +139,18 @@ const settings = {
   rerank_success_notify: true, // 是否显示Rerank成功通知
   
   // Experimental settings
-  query_instruction_enabled: false, // 启用查询指令
-  query_instruction_template: 'Given a query, retrieve relevant passages from the context', // 查询指令模板
-  query_instruction_preset: 'general', // 当前选中的预设
+  query_instruction_enabled: false, // Enable query instruction
+  query_instruction_template: 'Given a query, retrieve relevant passages from the context. Consider all available metadata including floor (chronological position), world info entries, and chapter/section markers to ensure comprehensive retrieval.', // Query instruction template
+  query_instruction_preset: 'general', // Current selected preset
   query_instruction_presets: {
-    character: 'Given a character-related query, retrieve passages that describe character traits, personality, relationships, or actions',
-    plot: 'Given a story context, retrieve passages that contain plot-relevant details, foreshadowing, or significant events',
-    worldview: 'Given a world-building query, retrieve passages that contain setting details, lore information, or world mechanics',
-    writing_style: 'Given a writing style query, retrieve passages that exemplify narrative techniques, prose style, or linguistic patterns',
-    general: 'Given a query, retrieve relevant passages from the context'
+    character: 'Given a character-related query, retrieve passages that describe character traits, personality, relationships, or actions. Consider metadata such as floor (chronological position), world info entries, and chapter markers when evaluating relevance.',
+    plot: 'Given a story context, retrieve passages that contain plot-relevant details, foreshadowing, or significant events. Pay attention to metadata including floor numbers (temporal ordering), chapter divisions, and world book entries for contextual relevance.',
+    worldview: 'Given a world-building query, retrieve passages that contain setting details, lore information, or world mechanics. Utilize metadata like world info entry names, chapter context, and chronological floor positions to identify relevant content.',
+    writing_style: 'Given a writing style query, retrieve passages that exemplify narrative techniques, prose style, or linguistic patterns. Consider metadata such as chapter markers and floor positions to understand stylistic evolution throughout the narrative.',
+    general: 'Given a query, retrieve relevant passages from the context. Consider all available metadata including floor (chronological position), world info entries, and chapter/section markers to ensure comprehensive retrieval.'
   },
-  rerank_deduplication_enabled: false, // 启用Rerank去重
-  rerank_deduplication_instruction: '执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n3. 同质化文档仅保留最相关的一条，其余降权至后50%位置', // Rerank去重指令
+  rerank_deduplication_enabled: false, // Enable Rerank deduplication
+  rerank_deduplication_instruction: 'Execute the following operations:\n1. Sort documents by relevance in descending order\n2. Consider documents as duplicates if they meet ANY of these conditions:\n   - Core content overlap exceeds 60% (reduced from 80% for better precision)\n   - Contains identical continuous passages of 5+ words\n   - Shares the same examples, data points, or evidence\n3. When evaluating duplication, consider metadata differences:\n   - Different originalIndex values indicate temporal separation\n   - Different chunk numbers (chunk=X/Y) from the same entry should be preserved\n   - Different floor numbers represent different chronological positions\n   - Different world info entries or chapter markers indicate distinct contexts\n4. For identified duplicates, keep only the most relevant one, demote others to bottom 30% positions (reduced from 50% for gentler deduplication)', // Rerank deduplication instruction
 
   // Injection settings
   template: '<must_know>以下是从相关背景知识库，包含重要的上下文、设定或细节：\n{{text}}</must_know>',
@@ -1601,6 +1601,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
       vectorizationAbortController = null;
       $('#vectors_enhanced_vectorize').show();
       $('#vectors_enhanced_abort').hide();
+      
+      // 清除文件选择状态，避免中断后再次向量化时使用旧的文件选择
+      if (settings.selected_content.files && settings.selected_content.files.selected) {
+        console.log('Vectors: Clearing file selection after vectorization completion/abort');
+        settings.selected_content.files.selected = [];
+        saveSettingsDebounced();
+      }
     }
 
   } catch (error) {
@@ -1612,6 +1619,13 @@ async function performVectorization(contentSettings, chatId, isIncremental, item
     vectorizationAbortController = null;
     $('#vectors_enhanced_vectorize').show();
     $('#vectors_enhanced_abort').hide();
+    
+    // 清除文件选择状态，避免中断后再次向量化时使用旧的文件选择
+    if (settings.selected_content.files && settings.selected_content.files.selected) {
+      console.log('Vectors: Clearing file selection after vectorization error');
+      settings.selected_content.files.selected = [];
+      saveSettingsDebounced();
+    }
 
     if (globalProgressManager) {
       globalProgressManager.error('严重错误');
@@ -2606,11 +2620,29 @@ async function rearrangeChat(chat, contextSize, abort, type) {
           finalCount: topResults.length
         };
         
+        // 收集最终排序后的结果（按照originalIndex排序后）
+        const finalSortedResults = [];
+        
+        // 按照注入顺序收集结果：world_info -> file -> chat
+        if (groupedResults.world_info) {
+          finalSortedResults.push(...groupedResults.world_info);
+        }
+        if (groupedResults.file) {
+          finalSortedResults.push(...groupedResults.file);
+        }
+        if (groupedResults.chat) {
+          finalSortedResults.push(...groupedResults.chat);
+        }
+        if (groupedResults.unknown) {
+          finalSortedResults.push(...groupedResults.unknown);
+        }
+        
         // 保存详细的查询信息
         lastQueryDetails = {
           queryText: queryText,
           resultsBeforeRerank: resultsBeforeRerank, // 保存所有结果，不限制数量
           resultsAfterRerank: topResults,
+          finalSortedResults: finalSortedResults, // 最终按originalIndex排序后的结果
           rerankApplied: rerankApplied
         };
 
@@ -2961,25 +2993,25 @@ jQuery(async () => {
     settings.query_instruction_enabled = false;
   }
   if (settings.query_instruction_template === undefined) {
-    settings.query_instruction_template = 'Given a query, retrieve relevant passages from the context';
+    settings.query_instruction_template = 'Given a query, retrieve relevant passages from the context. Consider all available metadata including floor (chronological position), world info entries, and chapter/section markers to ensure comprehensive retrieval.';
   }
   if (settings.query_instruction_preset === undefined) {
     settings.query_instruction_preset = 'general';
   }
   if (settings.query_instruction_presets === undefined) {
     settings.query_instruction_presets = {
-      character: 'Given a character-related query, retrieve passages that describe character traits, personality, relationships, or actions',
-      plot: 'Given a story context, retrieve passages that contain plot-relevant details, foreshadowing, or significant events',
-      worldview: 'Given a world-building query, retrieve passages that contain setting details, lore information, or world mechanics',
-      writing_style: 'Given a writing style query, retrieve passages that exemplify narrative techniques, prose style, or linguistic patterns',
-      general: 'Given a query, retrieve relevant passages from the context'
+      character: 'Given a character-related query, retrieve passages that describe character traits, personality, relationships, or actions. Consider metadata such as floor (chronological position), world info entries, and chapter markers when evaluating relevance.',
+      plot: 'Given a story context, retrieve passages that contain plot-relevant details, foreshadowing, or significant events. Pay attention to metadata including floor numbers (temporal ordering), chapter divisions, and world book entries for contextual relevance.',
+      worldview: 'Given a world-building query, retrieve passages that contain setting details, lore information, or world mechanics. Utilize metadata like world info entry names, chapter context, and chronological floor positions to identify relevant content.',
+      writing_style: 'Given a writing style query, retrieve passages that exemplify narrative techniques, prose style, or linguistic patterns. Consider metadata such as chapter markers and floor positions to understand stylistic evolution throughout the narrative.',
+      general: 'Given a query, retrieve relevant passages from the context. Consider all available metadata including floor (chronological position), world info entries, and chapter/section markers to ensure comprehensive retrieval.'
     };
   }
   if (settings.rerank_deduplication_enabled === undefined) {
     settings.rerank_deduplication_enabled = false;
   }
   if (settings.rerank_deduplication_instruction === undefined) {
-    settings.rerank_deduplication_instruction = '执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n3. 同质化文档仅保留最相关的一条，其余降权至后50%位置';
+    settings.rerank_deduplication_instruction = 'Execute the following operations:\n1. Sort documents by relevance in descending order\n2. Consider documents as duplicates if they meet ANY of these conditions:\n   - Core content overlap exceeds 60% (reduced from 80% for better precision)\n   - Contains identical continuous passages of 5+ words\n   - Shares the same examples, data points, or evidence\n3. When evaluating duplication, consider metadata differences:\n   - Different originalIndex values indicate temporal separation\n   - Different chunk numbers (chunk=X/Y) from the same entry should be preserved\n   - Different floor numbers represent different chronological positions\n   - Different world info entries or chapter markers indicate distinct contexts\n4. For identified duplicates, keep only the most relevant one, demote others to bottom 30% positions (reduced from 50% for gentler deduplication)';
   }
 
    // 确保所有必需的结构都存在

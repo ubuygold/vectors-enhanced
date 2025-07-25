@@ -210,6 +210,14 @@ export class QuerySettings {
      * Handle query instruction toggle
      */
     handleQueryInstructionToggle(enabled) {
+        // 检查是否已经启用了向量化查询
+        if (enabled && !this.settings.enabled) {
+            // 如果向量化查询未启用，则不允许启用查询增强
+            this.toastr.warning('请先启用向量化查询功能');
+            $('#vectors_enhanced_query_instruction_enabled').prop('checked', false);
+            return;
+        }
+        
         console.log(`QuerySettings: Query instruction ${enabled ? 'enabled' : 'disabled'}`);
         
         this.settings.query_instruction_enabled = enabled;
@@ -247,6 +255,14 @@ export class QuerySettings {
      * Handle rerank deduplication toggle
      */
     handleRerankDeduplicationToggle(enabled) {
+        // 检查是否已经启用了rerank
+        if (enabled && !this.settings.rerank_enabled) {
+            // 如果rerank未启用，则不允许启用去重
+            this.toastr.warning('请先启用Rerank功能');
+            $('#vectors_enhanced_rerank_deduplication_enabled').prop('checked', false);
+            return;
+        }
+        
         console.log(`QuerySettings: Rerank deduplication ${enabled ? 'enabled' : 'disabled'}`);
         
         this.settings.rerank_deduplication_enabled = enabled;
@@ -506,7 +522,7 @@ export class QuerySettings {
      * Reset rerank deduplication instruction to default
      */
     resetRerankDeduplicationInstruction() {
-        const defaultInstruction = '执行以下操作：\n1. 对高相关文档降序排列\n2. 若两文档满足任一条件则视为同质化：\n - 核心论点重合度 > 80%\n - 包含连续5词以上完全重复段落\n - 使用相同案例/数据支撑\n3. 同质化文档仅保留最相关的一条，其余降权至后50%位置';
+        const defaultInstruction = 'Execute the following operations:\n1. Sort documents by relevance in descending order\n2. Consider documents as duplicates if they meet ANY of these conditions:\n   - Core content overlap exceeds 60% (reduced from 80% for better precision)\n   - Contains identical continuous passages of 5+ words\n   - Shares the same examples, data points, or evidence\n3. When evaluating duplication, consider metadata differences:\n   - Different originalIndex values indicate temporal separation\n   - Different chunk numbers (chunk=X/Y) from the same entry should be preserved\n   - Different floor numbers represent different chronological positions\n   - Different world info entries or chapter markers indicate distinct contexts\n4. For identified duplicates, keep only the most relevant one, demote others to bottom 30% positions (reduced from 50% for gentler deduplication)';
         
         this.settings.rerank_deduplication_instruction = defaultInstruction;
         $('#vectors_enhanced_rerank_deduplication_instruction').val(defaultInstruction);
@@ -579,15 +595,15 @@ export class QuerySettings {
             // 如果有详细信息，显示重排前后对比
             if (details && details.rerankApplied && details.resultsBeforeRerank && details.resultsAfterRerank) {
                 displayHtml += '<div style="margin-bottom: 15px;">';
-                displayHtml += '<div style="margin-bottom: 10px; font-weight: bold;">重排前后对比：</div>';
+                displayHtml += '<div style="margin-bottom: 10px; font-weight: bold;">查询结果处理流程：</div>';
                 
-                // 使用表格显示对比
-                displayHtml += '<div style="display: flex; gap: 20px; margin-bottom: 15px;">';
+                // 使用表格显示对比 - 三列并排
+                displayHtml += '<div style="display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-start;">';
                 
                 // 重排前
-                displayHtml += '<div style="flex: 1;">';
+                displayHtml += '<div style="flex: 1; min-width: 280px;">';
                 displayHtml += '<div style="margin-bottom: 5px; font-weight: bold; font-size: 0.9em;">重排前（原始分数）</div>';
-                displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; max-height: 400px; overflow-y: auto;">';
+                displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; height: 400px; overflow-y: auto;">';
                 details.resultsBeforeRerank.forEach((result, index) => {
                     displayHtml += `<div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid var(--SmartThemeBorderColor);">`;
                     displayHtml += `<div style="margin-bottom: 3px;">`;
@@ -600,9 +616,9 @@ export class QuerySettings {
                 displayHtml += '</div>';
                 
                 // 重排后
-                displayHtml += '<div style="flex: 1;">';
+                displayHtml += '<div style="flex: 1; min-width: 280px;">';
                 displayHtml += '<div style="margin-bottom: 5px; font-weight: bold; font-size: 0.9em;">重排后（Rerank分数）</div>';
-                displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; max-height: 400px; overflow-y: auto;">';
+                displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; height: 400px; overflow-y: auto;">';
                 details.resultsAfterRerank.forEach((result, index) => {
                     displayHtml += `<div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid var(--SmartThemeBorderColor);">`;
                     displayHtml += `<div style="margin-bottom: 3px;">`;
@@ -614,16 +630,62 @@ export class QuerySettings {
                 displayHtml += '</div>';
                 displayHtml += '</div>';
                 
+                // 最终注入顺序（按originalIndex排序后）
+                if (details.finalSortedResults) {
+                    displayHtml += '<div style="flex: 1; min-width: 280px;">';
+                    displayHtml += '<div style="margin-bottom: 5px; font-weight: bold; font-size: 0.9em;">最终注入顺序（按originalIndex排序）</div>';
+                    displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; height: 400px; overflow-y: auto;">';
+                    details.finalSortedResults.forEach((result, index) => {
+                        // 解码metadata以获取类型和originalIndex
+                        const decoded = this._decodeMetadataFromText(result.text);
+                        const type = decoded.metadata.type || result.metadata?.type || 'unknown';
+                        const originalIndex = decoded.metadata.originalIndex ?? result.metadata?.originalIndex ?? '?';
+                        
+                        displayHtml += `<div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid var(--SmartThemeBorderColor);">`;
+                        displayHtml += `<div style="margin-bottom: 3px;">`;
+                        displayHtml += `<span style="font-weight: bold;">#${index + 1}</span>`;
+                        displayHtml += ` <span style="font-size: 0.8em; color: var(--SmartThemeQuoteColor);">[${type}, idx:${originalIndex}]</span>`;
+                        displayHtml += `</div>`;
+                        displayHtml += `<div style="font-size: 0.85em; opacity: 0.9; white-space: pre-wrap;">${this._escapeHtml(result.text)}</div>`;
+                        displayHtml += `</div>`;
+                    });
+                    displayHtml += '</div>';
+                    displayHtml += '</div>';
+                }
+                
                 displayHtml += '</div>';
                 displayHtml += '</div>';
             } else if (!details || !details.rerankApplied) {
-                // 如果没有重排，只显示原始结果
-                displayHtml += '<div style="margin-bottom: 10px;">';
-                displayHtml += '<div style="margin-bottom: 5px; font-weight: bold;">查询结果：</div>';
-                displayHtml += '<pre style="white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--SmartThemeBorderColor); padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; margin: 0; text-align: left;">';
-                displayHtml += this._escapeHtml(capturedContent);
-                displayHtml += '</pre>';
-                displayHtml += '</div>';
+                // 如果没有重排，但有最终排序结果
+                if (details && details.finalSortedResults) {
+                    displayHtml += '<div style="margin-bottom: 15px;">';
+                    displayHtml += '<div style="margin-bottom: 10px; font-weight: bold;">查询结果（按originalIndex排序）：</div>';
+                    displayHtml += '<div style="padding: 10px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 5px; max-height: 400px; overflow-y: auto;">';
+                    details.finalSortedResults.forEach((result, index) => {
+                        // 解码metadata以获取类型和originalIndex
+                        const decoded = this._decodeMetadataFromText(result.text);
+                        const type = decoded.metadata.type || result.metadata?.type || 'unknown';
+                        const originalIndex = decoded.metadata.originalIndex ?? result.metadata?.originalIndex ?? '?';
+                        
+                        displayHtml += `<div style="margin-bottom: 8px; padding: 5px; border-bottom: 1px solid var(--SmartThemeBorderColor);">`;
+                        displayHtml += `<div style="margin-bottom: 3px;">`;
+                        displayHtml += `<span style="font-weight: bold;">#${index + 1}</span>`;
+                        displayHtml += ` <span style="font-size: 0.8em; color: var(--SmartThemeQuoteColor);">[${type}, idx:${originalIndex}]</span>`;
+                        displayHtml += `</div>`;
+                        displayHtml += `<div style="font-size: 0.85em; opacity: 0.9; white-space: pre-wrap;">${this._escapeHtml(result.text)}</div>`;
+                        displayHtml += `</div>`;
+                    });
+                    displayHtml += '</div>';
+                    displayHtml += '</div>';
+                } else {
+                    // 兜底显示原始结果
+                    displayHtml += '<div style="margin-bottom: 10px;">';
+                    displayHtml += '<div style="margin-bottom: 5px; font-weight: bold;">查询结果：</div>';
+                    displayHtml += '<pre style="white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--SmartThemeBorderColor); padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; margin: 0; text-align: left;">';
+                    displayHtml += this._escapeHtml(capturedContent);
+                    displayHtml += '</pre>';
+                    displayHtml += '</div>';
+                }
             }
             
             displayHtml += '</div>';
@@ -702,6 +764,42 @@ export class QuerySettings {
             "'": '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    /**
+     * Decode metadata from encoded text
+     * @private
+     * @param {string} encodedText - Text with metadata prefix
+     * @returns {{text: string, metadata: {type?: string, originalIndex?: number}}}
+     */
+    _decodeMetadataFromText(encodedText) {
+        if (!encodedText) {
+            return { text: encodedText, metadata: {} };
+        }
+        
+        const metaMatch = encodedText.match(/^\[META:([^\]]+)\]/);
+        if (!metaMatch) {
+            return { text: encodedText, metadata: {} };
+        }
+        
+        const metaString = metaMatch[1];
+        const text = encodedText.substring(metaMatch[0].length);
+        const metadata = {};
+        
+        // Parse metadata key-value pairs
+        const pairs = metaString.split(',');
+        for (const pair of pairs) {
+            const [key, value] = pair.split('=');
+            if (key && value) {
+                if (key === 'originalIndex' || key === 'floor' || key === 'chapter') {
+                    metadata[key] = parseInt(value, 10);
+                } else {
+                    metadata[key] = value;
+                }
+            }
+        }
+        
+        return { text, metadata };
     }
 
     /**

@@ -217,6 +217,13 @@ export class SettingsManager {
         if (this.settings.rerank_enabled) {
           $('#vectors_enhanced_enabled').prop('checked', true);
           this.settings.enabled = true;
+        } else {
+          // 如果 Rerank 被禁用，同时禁用依赖的去重功能
+          if (this.settings.rerank_deduplication_enabled) {
+            this.settings.rerank_deduplication_enabled = false;
+            $('#vectors_enhanced_rerank_deduplication_enabled').prop('checked', false);
+            $('#rerank_deduplication_settings').slideUp();
+          }
         }
         
         this.updateAndSave();
@@ -274,6 +281,17 @@ export class SettingsManager {
       .prop('checked', this.settings.enabled)
       .on('input', () => {
         this.settings.enabled = $('#vectors_enhanced_enabled').prop('checked');
+        
+        // 如果向量查询被禁用，同时禁用依赖的功能
+        if (!this.settings.enabled) {
+          // 禁用查询指令增强
+          if (this.settings.query_instruction_enabled) {
+            this.settings.query_instruction_enabled = false;
+            $('#vectors_enhanced_query_instruction_enabled').prop('checked', false);
+            $('#query_instruction_settings').slideUp();
+          }
+        }
+        
         this.updateAndSave();
       });
 
