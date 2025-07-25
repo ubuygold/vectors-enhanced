@@ -116,6 +116,7 @@
     margin-right: 8px;
 }
 
+
 /* Task Details Dialog */
 .external-task-details {
     padding: 20px;
@@ -621,7 +622,7 @@
 /* External Task Styles - 外挂任务样式（旧版已移除，使用新的布局样式） */
 
 /* 任务列表项统一高度 */
-.checkbox_label {
+.vector-enhanced-task-item .checkbox_label {
     min-height: 48px;
     display: flex;
     align-items: center;
@@ -633,7 +634,7 @@
 }
 
 /* 任务内容区域 */
-.checkbox_label .task-content {
+.vector-enhanced-task-item .checkbox_label .task-content {
     display: flex;
     align-items: center;
     flex: 1;
@@ -641,7 +642,7 @@
 }
 
 /* 任务名称样式 - 支持省略号 */
-.checkbox_label .task-name {
+.vector-enhanced-task-item .checkbox_label .task-name {
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -651,7 +652,7 @@
 }
 
 /* 外挂任务标记 - 固定宽度，不被压缩 */
-.checkbox_label .external-task-badge {
+.vector-enhanced-task-item .checkbox_label .external-task-badge {
     flex-shrink: 0;
     width: 1.2em;
     text-align: center;
@@ -660,7 +661,7 @@
 }
 
 /* 任务信息（小字部分） */
-.checkbox_label .task-info {
+.vector-enhanced-task-item .checkbox_label .task-info {
     display: block;
     font-size: 0.85em;
     color: var(--SmartThemeEmColor);
@@ -671,28 +672,28 @@
 }
 
 /* 外挂任务样式 - 与普通任务保持一致 */
-.checkbox_label.external-task {
+.vector-enhanced-task-item .checkbox_label.external-task {
     /* 与普通任务完全一致，无特殊样式 */
 }
 
 /* 孤儿任务稍微降低透明度 */
-.checkbox_label.external-task.orphaned {
+.vector-enhanced-task-item .checkbox_label.external-task.orphaned {
     opacity: 0.7;
 }
 
 /* 孤儿任务文本样式 */
-.orphaned-task {
+.vector-enhanced-task-item .orphaned-task {
     color: var(--SmartThemeQuoteColor);
     text-decoration: line-through;
 }
 
 /* 孤儿任务的外挂标记 */
-.checkbox_label.external-task.orphaned .external-task-badge {
+.vector-enhanced-task-item .checkbox_label.external-task.orphaned .external-task-badge {
     filter: grayscale(100%);
 }
 
 /* 禁用的外挂任务 */
-.checkbox_label.external-task input[type="checkbox"]:not(:checked) ~ .task-content {
+.vector-enhanced-task-item .checkbox_label.external-task input[type="checkbox"]:not(:checked) ~ .task-content {
     opacity: 0.7;
 }
 

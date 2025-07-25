@@ -9,5 +9,5 @@
   "author": "RaphllA",
   "version": "1.2.5",
   "homePage": "https://github.com/RaphllA/vectors-enhanced",
-  "description": "- 添加 vLLM API key 设置，支持独立配置或使用文本生成设置\n- 添加实验性功能：embedding 查询指令模板（5个预设：角色/剧情/世界观/文风/通用）\n- 添加实验性功能：rerank 去重指令（需要兼容的 API 支持）\n- 修正 embedding 查询格式以符合官方文档（Query: 后无空格）"
+  "description": "-具体更新内容查看文档"
 }

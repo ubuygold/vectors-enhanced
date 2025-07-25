@@ -5,6 +5,7 @@
 
 // 导入必要的函数
 import { getCurrentChatId } from '../../../../../../../script.js';
+import { callGenericPopup, POPUP_TYPE } from '../../../../../../popup.js';
 
 export class ExternalTaskUI {
     constructor() {
@@ -196,32 +197,23 @@ export class ExternalTaskUI {
                 });
             };
 
-            // 检查 callPopup 是否可用
-            if (typeof callPopup !== 'function') {
-                console.error('callPopup function not available, using fallback');
-                // 后备方案：显示为模态框
-                const modal = $('<div class="modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999;"><div class="modal-content" style="background: var(--SmartThemeBlurTintColor); padding: 20px; border-radius: 8px; max-width: 600px; width: 90%; color: var(--SmartThemeBodyColor);"></div></div>');
-                modal.find('.modal-content').html(dialogHtml);
-                $('body').append(modal);
+            // 创建自定义模态框
+            const modal = $('<div class="modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; box-sizing: border-box;"><div class="modal-content" style="background: var(--SmartThemeBlurTintColor); padding: 20px; border-radius: 8px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto; color: var(--SmartThemeBodyColor); margin: auto; position: relative;"></div></div>');
+            modal.find('.modal-content').html(dialogHtml);
+            $('body').append(modal);
 
-                // 点击背景关闭
-                modal.on('click', function(e) {
-                    if (e.target === this) {
-                        modal.remove();
-                    }
-                });
+            // 点击背景关闭
+            modal.on('click', function(e) {
+                if (e.target === this) {
+                    modal.remove();
+                }
+            });
 
-                // 更新关闭函数
-                window.closeCurrentPopup = () => modal.remove();
+            // 更新关闭函数
+            window.closeCurrentPopup = () => modal.remove();
 
-                // 模态框添加到 DOM 后绑定事件
-                setTimeout(bindDialogEvents, 100);
-            } else {
-                // 使用 SillyTavern 的 callPopup
-                callPopup(dialogHtml, 'text', '', { wide: false, large: false });
-                // 弹窗显示后绑定事件
-                setTimeout(bindDialogEvents, 100);
-            }
+            // 模态框添加到 DOM 后绑定事件
+            setTimeout(bindDialogEvents, 100);
 
         } catch (error) {
             console.error('Failed to show import dialog:', error);
@@ -254,7 +246,7 @@ export class ExternalTaskUI {
                 if (vectorizationTasks.length > 0) {
                     let displayName = chatId; // Default fallback
                     let characterName = null;
-                    
+
                     // Step 1: Try to extract character name from the chatId itself
                     // For complete chatIds like "林曦瑶 - 2025-07-16@02h30m11s"
                     const parts = chatId.split(' - ');
@@ -262,7 +254,7 @@ export class ExternalTaskUI {
                         // This is a complete chatId with character name
                         characterName = parts[0];
                     }
-                    
+
                     // Step 2: If no character name found in chatId, try metadata
                     if (!characterName) {
                         characterName = chatMetadata[chatId]?.character_name;
@@ -273,9 +265,9 @@ export class ExternalTaskUI {
                         // Try each task until we find a character name
                         for (const task of tasks) {
                             if (task.textContent && Array.isArray(task.textContent)) {
-                                const aiChunk = task.textContent.find(chunk => 
-                                    chunk.metadata && 
-                                    chunk.metadata.is_user === false && 
+                                const aiChunk = task.textContent.find(chunk =>
+                                    chunk.metadata &&
+                                    chunk.metadata.is_user === false &&
                                     chunk.metadata.name
                                 );
                                 if (aiChunk && aiChunk.metadata.name) {
@@ -295,10 +287,10 @@ export class ExternalTaskUI {
                         // Handle different possible date formats from SillyTavern
                         // Examples: "2025-07-16@02h30m11s", "2025-7-9 @20h 26m 15s 653ms"
                         let parsableDateString = timestampString.trim();
-                        
+
                         // Extract date and time parts
                         const dateTimeMatch = parsableDateString.match(/(\d{4})-(\d{1,2})-(\d{1,2})\s*@?\s*(\d{1,2})h\s*(\d{1,2})m\s*(\d{1,2})s/);
-                        
+
                         if (dateTimeMatch) {
                             const [_, year, month, day, hours, minutes, seconds] = dateTimeMatch;
                             // Create a proper date string
@@ -605,12 +597,11 @@ export class ExternalTaskUI {
                 </div>
             `;
 
-            if (typeof callPopup === 'function') {
-                callPopup(detailsHtml, 'text');
-            } else {
-                console.error('callPopup function not available');
-                alert('无法显示详情对话框');
-            }
+            await callGenericPopup(detailsHtml, POPUP_TYPE.TEXT, '', {
+                okButton: '关闭',
+                wide: true,
+                large: false
+            });
 
         } catch (error) {
             console.error('Failed to view task details:', error);
